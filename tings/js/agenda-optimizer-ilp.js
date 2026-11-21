@@ -894,10 +894,20 @@ function listPlaceFitsOnDay(
       const anchors = [slot.start,state.startClock,...windowEdges,...routeAnchors,...arrivalAnchors]
         .filter(ts=>Number.isFinite(ts) && ts < slot.end)
         .sort((a,b)=>a-b);
+      // Anchors clamp to Math.max(startClock, slot.start, anchor), so slot
+      // starts, clock seeds, and every window edge before the clock collapse
+      // onto one cursor. The probe clones identical state for an identical
+      // cursor, so dedupe the cursor before cloning instead of discarding the
+      // duplicate fit after paying for the probe. Anchors ascend, so the
+      // cursor is non-decreasing and this preserves the traversal order.
+      let probedCursor = null;
       for(const anchor of anchors){
+        const cursor = Math.max(state.startClock,slot.start,anchor);
+        if(cursor === probedCursor)continue;
+        probedCursor = cursor;
         const clone = clonePlacementState(state);
         clone.slots = [slot];
-        clone.startClock = Math.max(state.startClock,slot.start,anchor);
+        clone.startClock = cursor;
         // A linked fill's preferred clock is one option. Reporting that same
         // clock for every earlier anchor hides the start that can still sit
         // before a required successor, and the ILP then has no feasible chain.
@@ -1098,6 +1108,120 @@ function appendOptimizerOverlapCliques(GLPK,subjectTo,opts){
   }
 }
 
+// PURE: one legal clock per REQUIRED candidate from a bounded greedy pass on
+// a cloned day state — required rows first, then longest duration, then
+// candidate order. The sparse edge enumeration offers candidates mostly
+// same-clock options; a fully-required day can then have no co-selectable
+// option set, the strict model is infeasible, and the relaxed retry
+// maximizes item count instead of minutes — silently dropping long due work
+// a compatible set would have kept. Returns [] unless the witness places
+// every required fixed candidate: only then do the seed clocks prove the
+// strict model satisfiable. On relaxed/overcapacity days a partial seed
+// would only reshuffle the relaxed incumbent and cannibalize protected
+// breakable minutes, so those days keep the baseline option set. The clocks
+// are offered per candidate as ordinary options (never commitments) and
+// GLPK stays free to choose a different, better schedule. Bounded: one
+// clone, one probe and one commit per candidate. When the prior plan already
+// covers every required fixed candidate its clocks are the same witness, so
+// reuse them without packing.
+function optimizerSeedPackStarts(state,fixedCandidates,requiredOccurrenceIndices,dayPrior){
+  if(!Array.isArray(fixedCandidates) || !fixedCandidates.length)return [];
+  if(typeof tryPlaceOnDay !== 'function'
+    || typeof clonePlacementState !== 'function'
+    || typeof commitPlacement !== 'function')return [];
+  const required = requiredOccurrenceIndices instanceof Set
+    ? requiredOccurrenceIndices : new Set();
+  const requiredFixed = required.size
+    ? fixedCandidates.filter(c=>c && required.has(c.i))
+    : [];
+  const priorByIndex = new Map();
+  if(Array.isArray(dayPrior)){
+    for(const p of dayPrior){
+      if(!p || !Number.isFinite(Number(p.start)))continue;
+      for(const c of fixedCandidates){
+        if(c && c.h && (Number(c.i) === Number(p.i) || (p.hid && c.h.hid === p.hid))){
+          if(!priorByIndex.has(c.i))priorByIndex.set(c.i,Number(p.start));
+        }
+      }
+    }
+    const priorCoversRequired = requiredFixed.length
+      && requiredFixed.every(c=>priorByIndex.has(c.i));
+    if(priorCoversRequired){
+      return fixedCandidates.filter(c=>priorByIndex.has(c.i))
+        .map(c=>({i:c.i,start:priorByIndex.get(c.i)}));
+    }
+  }
+  if(!requiredFixed.length)return [];
+  // Committing this speculative pack can reconcile routes, which mutates
+  // existing fits, rows and day items. Isolate those objects as well as the
+  // top-level counters so a rejected witness cannot alter committed work.
+  const clone = {
+    ...clonePlacementState(state),
+    rows:state.rows.map(row=>({...row})),
+    fills:state.fills.map(entry=>({...entry,fill:{...entry.fill},fit:{...entry.fit}})),
+    day:{...state.day,agendaItems:(state.day?.agendaItems || []).map(item=>({...item}))},
+    _committedRoutePlan:null
+  };
+  // Direct partners must be witnessed in dependency order: a successor
+  // probed before its required predecessor cannot sit adjacent to it, the
+  // witness then misses a required row, and the seed would be skipped
+  // entirely (schedule-links regression). Cycles fall through to candidate
+  // order so the witness stays bounded.
+  const orderEdges = typeof plannerOrderConstraintsForDay === 'function'
+    ? plannerOrderConstraintsForDay(state.dayBase)
+      .filter(edge=>edge && edge.adjacency === 'direct') : [];
+  const hidToCandidate = new Map(fixedCandidates
+    .filter(c=>c.h && c.h.hid).map(c=>[c.h.hid,c]));
+  const predecessorOf = new Map();
+  for(const edge of orderEdges){
+    const predecessor = hidToCandidate.get(edge.beforeHid);
+    const successor = hidToCandidate.get(edge.afterHid);
+    if(predecessor && successor && predecessor !== successor){
+      predecessorOf.set(successor.i,predecessor.i);
+    }
+  }
+  const rankBefore = (a,b)=>required.has(b && b.i) - required.has(a && a.i)
+    || (typeof clampDuration === 'function'
+      ? clampDuration(b && b.h && b.h.durationMinutes) - clampDuration(a && a.h && a.h.durationMinutes)
+      : 0)
+    || (Number(a && a.i) || 0) - (Number(b && b.i) || 0);
+  const ordered = [];
+  const orderedSeen = new Set();
+  const ready = fixedCandidates.filter(c=>c && !predecessorOf.has(c.i)).sort(rankBefore);
+  while(ready.length){
+    const c = ready.shift();
+    if(orderedSeen.has(c.i))continue;
+    orderedSeen.add(c.i);
+    ordered.push(c);
+    for(const other of fixedCandidates){
+      if(!other || orderedSeen.has(other.i) || predecessorOf.get(other.i) !== c.i)continue;
+      if(!ready.some(w=>w && w.i === other.i))ready.push(other);
+    }
+    ready.sort(rankBefore);
+  }
+  for(const c of fixedCandidates){
+    if(!c || orderedSeen.has(c.i))continue;
+    ordered.push(c);
+    orderedSeen.add(c.i);
+  }
+  const placed = [];
+  const witness = new Set();
+  for(const c of ordered){
+    if(!c || !c.h)continue;
+    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    const fit = tryPlaceOnDay(clone,fill,{allowNetwork:false});
+    if(!fit || !Number.isFinite(Number(fit.placeStart)))continue;
+    commitPlacement(clone,fill,fit);
+    if(required.has(c.i))witness.add(c.i);
+    placed.push({i:c.i,start:Number(fit.placeStart)});
+  }
+  // A witness that misses a required candidate cannot prove strict
+  // feasibility; offering its partial clocks would only perturb the relaxed
+  // incumbent. Skip the seed on those days.
+  if(!requiredFixed.every(c=>witness.has(c.i)))return [];
+  return placed;
+}
+
 // Solve set-packing ILP for one day. Returns array of {fill, fit} or null on failure.
 function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,solveOptions = {}){
   const options = [];
@@ -1158,6 +1282,15 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   const fillByIndex = new Map(fixedCandidates.map(c=>[c.i,{
     h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity
   }]));
+  // One compatible legal packing for the required rows (prior clocks when
+  // they cover them, otherwise a cheap greedy witness on a cloned state).
+  // Without it a fully-required day can enumerate no co-selectable option
+  // set at all, relax its hard rows, and maximize item count over minutes —
+  // dropping long due work while reporting an optimal short-item pack.
+  // Injected per candidate so dense capped days keep their ordinary options.
+  const seedByIndex = new Map(optimizerSeedPackStarts(
+    state,fixedCandidates,requiredOccurrenceIndices,dayPrior
+  ).map(entry=>[entry.i,entry.start]));
   const fitsByIndex = new Map();
   const mergeFits = (index,incoming,chainEnds = null)=>{
     const current = fitsByIndex.get(index) || [];
@@ -1185,8 +1318,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     return added;
   };
   for(const c of fixedCandidates){
+    const seedStart = seedByIndex.get(c.i);
     mergeFits(c.i,optimizerFitsForFill(
-      state,fillByIndex.get(c.i),dayCandidates,candidateBoundaryEdges
+      state,fillByIndex.get(c.i),dayCandidates,
+      seedStart != null ? [...candidateBoundaryEdges,seedStart] : candidateBoundaryEdges,
+      seedStart != null ? [seedStart] : []
     ));
   }
   const linkedEdges = (typeof plannerOrderConstraintsForDay === 'function'
@@ -1225,12 +1361,15 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
         predecessorContexts.push({fill:fillByIndex.get(predecessor.i),fit});
         if(predecessorContexts.length >= 12)break;
       }
+      const successorSeed = seedByIndex.get(successor.i);
       const extraFits = optimizerFitsForFill(
         state,
         fillByIndex.get(successor.i),
         dayCandidates,
-        [...candidateBoundaryEdges,...predecessorEnds],
-        predecessorEnds,
+        successorSeed != null
+          ? [...candidateBoundaryEdges,successorSeed,...predecessorEnds]
+          : [...candidateBoundaryEdges,...predecessorEnds],
+        successorSeed != null ? [successorSeed,...predecessorEnds] : predecessorEnds,
         edge.adjacency === 'sometime' ? predecessorContexts : []
       );
       added += mergeFits(successor.i,extraFits,predecessorEnds);
@@ -2747,9 +2886,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   // Week-holistic hours repair: move can-wait items off short daily breakables.
   if(typeof repairWeekPlacedHours === 'function'){
     total += repairWeekPlacedHours(candidates,dayStates,settings,{
-      deep:Boolean(solveOptions.refine),
-      maxContiguityTrials:solveOptions.refine ? 28 : 0,
-      maxContiguityVictims:3
+      deep:Boolean(solveOptions.refine)
     });
   }
   if(typeof pullStrictDueMovablesForward === 'function'){
@@ -2794,6 +2931,55 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
 }
 
 let _plannerWeekDayMemo = {dirtyKey:'',todayBase:0,days:null};
+
+// A full solve can improve the objective while needlessly moving an imminent
+// row. Restore the mounted week as a separate draft for the shared hours
+// repair. New placements use live slots; only retained rows keep old clocks.
+function repairIncumbentWeekHours(data,candidates,dayStates,settings,memoDays){
+  if(memoDays?.length !== dayStates.length)return null;
+  const now = Date.now();
+  const drafts = [];
+  const byIndex = new Map(candidates.map(c=>[c.i,c]));
+  for(const [offset,live] of dayStates.entries()){
+    const prior = memoDays[offset];
+    if(prior.dayBase !== live.dayBase || !Array.isArray(prior.timeline))return null;
+    const day = live.isTodayDay && prior.plannedAt >= live.dayBase && prior.plannedAt < now
+      ? buildDayAgenda(data,settings,live.dayBase,{weekMode:true,now:prior.plannedAt})
+      : {...live.day,agendaItems:[]};
+    const state = createDayPlacementState(day,settings,{now,weekMode:true});
+    const scheduled = prior.timeline.filter(row=>row.kind === 'scheduled');
+    if(scheduled.length !== state.rows.length || scheduled.some(row=>!state.rows.some(fixed=>
+      fixed.i === row.i && fixed.start === row.start && fixed.end === row.end
+      && fixed.locationId === row.locationId)))return null;
+    const committed = prior.timeline.filter(row=>row.kind === 'fill');
+    for(const row of committed){
+      const h = data[row.i];
+      const slot = state.slots.find(s=>s.start <= row.start && row.end <= s.end);
+      if(!h || (row.hid && row.hid !== h.hid) || !slot || !(row.end > row.start)
+        || (live.isTodayDay && row.end <= now))return null;
+      const duration = (row.end - row.start) / 60000;
+      const placeKey = row.chunkIndex == null ? row.occurrenceKey || row.i : `${row.i}:${row.chunkIndex}`;
+      const fill = {
+        h,i:row.i,priority:effectivePriority(h),scarcity:byIndex.get(row.i)?.scarcity,
+        locationId:row.locationId,occurrenceKey:row.occurrenceKey,chunkIndex:row.chunkIndex,
+        chunkMinutes:h.breakable ? duration : null
+      };
+      const fit = {placeStart:row.start,placeEnd:row.end,slotStart:slot.start,
+        locId:row.locationId,prevLocId:state.prevLocId,edge:{seconds:0},travelMin:0,
+        durMin:duration,placeKey,scheduleOptionId:row.scheduleOptionId};
+      commitPlacement(state,fill,fit);
+    }
+    reconcileCommittedTravel(state);
+    if(!state._committedRoutePlan || state.usedMinutes > state.totalMinutes + 1e-6
+      || state.fills.some(({fit},i)=>fit.placeStart !== committed[i].start || fit.placeEnd !== committed[i].end
+        || fit.locId !== committed[i].locationId))return null;
+    state.slots = live.slots;
+    syncDayAgendaItemsFromFills(state);
+    drafts.push(state);
+  }
+  const moves = repairWeekPlacedHours(candidates,drafts,settings,{deep:true,protectIncumbent:true});
+  return moves > 0 ? drafts : null;
+}
 
 async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   if(typeof replayAgendaClockWeek==='function'){
@@ -2961,13 +3147,14 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   }
   for(const c of candidates)c.scarcity = scarcityScore(c,dayStates);
 
-  const solveStates = reuseFarDays ? dayStates.slice(0,1) : dayStates;
   plannerPerfMark('planner-exact-solve-start');
   const solveStarted = (typeof performance !== 'undefined' && performance.now)
     ? performance.now() : Date.now();
-  const solveSummary = await assignWeekCandidatesOptimized(
-    candidates,solveStates,settings,{...opts,memoFutureBreakableMinutes}
-  );
+  const repaired = opts.refine && !reuseFarDays
+    ? repairIncumbentWeekHours(data,candidates,dayStates,settings,opts.memoDays) : null;
+  const solveStates = repaired || (reuseFarDays ? dayStates.slice(0,1) : dayStates);
+  const solveSummary = repaired ? {ok:true,plannerSolveStatus:'feasible'}
+    : await assignWeekCandidatesOptimized(candidates,solveStates,settings,{...opts,memoFutureBreakableMinutes});
   const solveDurationMs = Math.max(0,((typeof performance !== 'undefined' && performance.now)
     ? performance.now() : Date.now()) - solveStarted);
   plannerPerfMark('planner-exact-solve-end');
@@ -2988,9 +3175,9 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
       ).length,0);
     }
   } : null;
-  placeAdditionalSameDayOccurrences(candidates,solveStates,settings,additionalOpts);
+  if(!repaired)placeAdditionalSameDayOccurrences(candidates,solveStates,settings,additionalOpts);
   annotateAgendaOccurrenceKeys(candidates,solveStates);
-  placeOpportunityItems(data,solveStates,settings,candidates,
+  if(!repaired)placeOpportunityItems(data,solveStates,settings,candidates,
     reuseFarDays ? _plannerWeekDayMemo.days.slice(1) : []);
 
   let totalTravelSeconds = 0;
@@ -3008,7 +3195,12 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
         continue;
       }
     }
-    const state = dayStates[d];
+    const state = repaired ? repaired[d] : dayStates[d];
+    if(repaired){
+      day.agendaItems = state.day.agendaItems;
+      day.plannedAt = state.day.plannedAt;
+      day.totalMinutes = state.totalMinutes;
+    }
     day.timeline = finalizePlacementRows(state);
     day.usedMinutes = state.usedMinutes;
     day.remainingMinutes = Math.max(0,(Number(day.totalMinutes) || 0) - state.usedMinutes);
@@ -3029,6 +3221,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     plannerDiagnostics:{
       solveDurationMs:Math.round(solveDurationMs),
       requestedRefinement:Boolean(opts.refine),
+      ...(repaired ? {incumbentHoursRepair:true} : {}),
       refinePass:Math.max(0,Math.round(Number(opts.refinePass) || 0)),
       daySolves:solveSummary.daySolves || []
     }

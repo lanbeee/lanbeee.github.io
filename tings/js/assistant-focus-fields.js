@@ -71,6 +71,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|for\\s+\\w+\\s+(?:minutes?|hours?)|double (?:it|the duration)|duration|long|twice as long)\\b`,'i'),
   tapStartsSession:/\b(?:start with a tap|tap to start|(?:tap|tapping|touch)[^;]*\b(?:start|ses?sion|timer)|start\w*[^,;]*\b(?:tap|tapping|touch))\b/i,
   reminderDnd:/\bdnd\b|\bdo not disturb\b|\b(?:silenc\w*|mut\w*) (?:my |the )?phone\b|\bphone\b[^,;]*\b(?:quiet|mute)\b/i,
+  reminderSound:/\b(?:notification|reminder|alert) sounds?\b|\b(?:ringtone|chime)\b|\b(?:set|change|use|pick|choose)\b[^,;]{0,48}\b(?:sound|tone)\b|\b(?:sound|tone) (?:to|of)\b|\b(?:calm|warm|deep|gentle)\b[^,;]{0,24}\b(?:sound|tone|chime)\b|^(?:use|pick|choose) (?:calm|warm|deep|gentle|silent)[.!]?$/i,
   breakable:/\b(?:split(?:ting|table)?|breakable|unbreakable|continuous|uninterrupted|chunks?|several sittings|separate pieces|break[^,;]*into smaller sessions)\b/i,
   minChunkMinutes:/\b(?:minimum chunk|shortest session|(?:minimum|smallest) (?:block|time per piece)|minimum block size|pieces shorter than|chunks?\b[^,;]*\b(?:minimum|at least|minutes?|hours?)|(?:pieces|chunks?)\s+minimum|\d+[- ]minute chunks?)\b/i,
   minGapMinutes:new RegExp(`(?<!\\w)(?:(?:${assistantSpokenQuantitySource()})\\s+gap|gap|apart|between (?:two |the )?sessions|spacing|separate (?:any )?(?:two |the )?sessions|rest between (?:blocks|sessions))\\b`,'i'),
@@ -133,6 +134,7 @@ const ASSISTANT_FIELD_HINTS = {
   autoMarkMinutes:'Logged time needed to automatically mark the item complete. Exclude session length, timer stopping and frequency.',
   tapStartsSession:'Whether tapping the item starts a session instead of immediately logging completion.',
   reminderDnd:'Whether Do Not Disturb silences the phone during this item’s session. Not a reminder or a session duration.',
+  reminderSound:'This item’s notification tone: the default, phone default, Calm, Warm, Deep, Gentle, Silent, or a saved sound name. Ringing alarms keep the phone alarm tone. Not whether a reminder is on.',
   trackValue:'Whether each completion records a number or measurement, rather than just a checkmark.',
   allowedWindow:'Required allowed hours, preserving before/after, anchors and offsets. Exclude preferences.',
   preferredWindow:'Preferred hours, not a required restriction.',
@@ -521,6 +523,8 @@ function assistantFieldRelevant(def, text){
   if(!literal&&ASSISTANT_FIELD_SIGNALS.tapStartsSession.test(text)&&['dueTime','appointmentStartMinute','allowedWindow','durationMinutes','reminderStart','timerAutoStopMinutes'].includes(def.id))return false;
   if(!literal&&ASSISTANT_FIELD_SIGNALS.reminderDnd.test(text)&&def.id!=='reminderDnd')return false;
   if(def.id==='reminderDnd'&&!ASSISTANT_FIELD_SIGNALS.reminderDnd.test(text))return false;
+  if(def.id!=='reminderSound'&&String(def.id).startsWith('reminder')&&ASSISTANT_FIELD_SIGNALS.reminderSound.test(text)
+    &&!/\b(?:start|end|due|deadline|leave|arriv|depart|missed|drop|second|before|lead)\b/i.test(text))return false;
   if(def.id==='repeatMode'&&ASSISTANT_FIELD_SIGNALS.conditionTrigger.test(text)&&! /\b(?:use|switch|make|mode|recurrence)\b/i.test(text))return false;
   if(def.id==='frequency'&&ASSISTANT_FIELD_SIGNALS.repeatMode.test(text)&&!assistantParseRhythm(text))return false;
   if(def.id==='weatherRules'&&ASSISTANT_FIELD_SIGNALS.weatherProfile.test(text)
@@ -1206,9 +1210,10 @@ const ASSISTANT_GUIDE_NEAR={
   dueTime:['dueDate','allowedWindow'],
   allowedWindow:['preferredWindow','allowedTimeFixedStart'],
   preferredWindow:['allowedWindow','preferredWeekdays'],
-  reminderStart:['reminderEnd','reminderDnd'],
-  reminderEnd:['reminderStart','reminderDnd'],
-  reminderDnd:['reminderStart','tapStartsSession'],
+  reminderStart:['reminderEnd','reminderSound','reminderDnd'],
+  reminderEnd:['reminderStart','reminderSound','reminderDnd'],
+  reminderSound:['reminderStart','reminderDnd'],
+  reminderDnd:['reminderStart','reminderSound','tapStartsSession'],
   tapStartsSession:['reminderDnd','autoMarkMinutes'],
   places:['locationPrefs','anywhereAllowed'],
   weatherProfile:['weatherRules','showWeather'],
@@ -1283,6 +1288,7 @@ const ASSISTANT_GUIDE_HELP={
   exceptionCancelled:['Skip or restore this occurrence of the event.','Skip this date'],
   exceptionReset:['Remove this date’s overrides and use the series settings.','Use the usual values for this date'],
   reminderDnd:['Silence the phone during this item’s session. Requires Android access.','Stop silencing my phone'],
+  reminderSound:['Tone for this item’s notifications. The default follows Settings. Saved phone sounds can be named too.','Use Warm'],
   reminderDue:['How to be reminded about this task’s deadline.','Set the due-date reminder to notification'],
   reminderDueDays:['Which day to send the deadline alert.','Remind me 1 day before the due date'],
   reminderDueTime:['Local clock time for the deadline alert.','Set the due-date reminder time to 9am'],
@@ -1774,6 +1780,35 @@ function assistantFieldClaimGuidance(state){
   state.spans = assistantFieldExcise(state.request, state.spans, held);
 }
 
+// In a mixed request ("What's the duration, and can you change it to 20
+// minutes?") the read clause is answered from app data, so excise it before
+// extraction: the model extracts from the edit clause only. The whole-request
+// case never reaches here — the pure-question branch answered it already.
+function assistantFieldClaimQuestions(state){
+  if(!state.session || state.session.operation !== 'edit')return;
+  if(typeof assistantFocusQuestionIntent !== 'function')return;
+  const held = [];
+  for(const clause of assistantActionClauses(state.request)){
+    if((state.actionRegions || []).some(region => region.start < clause.end && clause.start < region.end))continue;
+    if((state.unavailableSpans || []).some(span => span.start < clause.end && clause.start < span.end))continue;
+    if(assistantActionCue(clause.text))continue;
+    const intent = assistantFocusQuestionIntent(clause.text, state.session);
+    if(!intent || intent.kind === 'unknown')continue;
+    held.push({...clause, intent});
+  }
+  if(!held.length)return;
+  // Never excise the whole request: if every clause is a question there is no
+  // edit left to extract, so let the pipeline treat the text as it stands.
+  const heldSpans = held.map(clause => [clause.start, clause.end]);
+  const leftover = assistantActionClauses(state.request)
+    .filter(clause => !heldSpans.some(([start, end]) => clause.start >= start - 2 && clause.end <= end + 2))
+    .map(clause => clause.text).join(' ').replace(/[?.,;:]+/g, '').trim();
+  if(!leftover || !/\w/.test(leftover))return;
+  state.questionClauses = held;
+  state.unavailableSpans = (state.unavailableSpans || []).concat(held);
+  state.spans = assistantFieldExcise(state.request, state.spans, held);
+}
+
 function assistantFieldAdoptAction(state, kind, phrase, explicit){
   const needle = String(phrase || '').trim().toLowerCase();
   const start = needle ? state.request.toLowerCase().indexOf(needle) : -1;
@@ -2072,6 +2107,7 @@ function assistantFieldPrepare(state){
   const session=state.session,request=state.request,priorFields=state.priorFields;
   assistantFieldClaimActions(state);
   assistantFieldClaimGuidance(state);
+  assistantFieldClaimQuestions(state);
   // Events have no priority control. Ask about the named unsupported setting
   // before a generic router can reinterpret it as a date or title request.
   if(assistantFocusEffectiveKind(session)==='event'){
@@ -2814,6 +2850,21 @@ async function assistantFocusRunFieldTurn(session,text,opts){
   let state=session._fieldState;
   if(!opts.resume){
     const request=String(text||'').trim();if(!request)return {type:'focus',empty:true};
+    const guide=assistantGuideParse(request,session);
+    const other=assistantFocusOtherTarget(session,request);
+    // Answer before starting an edit revision. A read must leave pending
+    // confirmations, clarifications, and the last editable request intact.
+    if(session.operation==='edit' && !other && !guide?.rest && typeof assistantFocusQuestionIntent === 'function'){
+      const intent=assistantFocusQuestionIntent(request,session);
+      const hasEdit=intent && assistantActionClauses(request)
+        .some(clause=>assistantFocusEditSignal(clause.text)||assistantActionCue(clause.text) && !assistantFocusQuestionIntent(clause.text,session));
+      if(intent && !hasEdit){
+        const answer=assistantFocusQuestionAnswer(intent,session,request);
+        session.answer={text:answer.text,kind:intent.kind};
+        return {type:'focus',session,html:assistantFocusReviewHtml(session)};
+      }
+    }
+    if(typeof assistantFocusLoadSounds === 'function')await assistantFocusLoadSounds();
     session._guideRevision={request,requestCount:session.requests.length,state,
       savedResult:session.savedResult,
       values:Object.fromEntries(ASSISTANT_GUIDE_REVIEW_KEYS.map(key=>[key,assistantFocusClone(session[key])]))};
@@ -2821,16 +2872,16 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     const unfinished=(state?.jobs||[]).filter(j=>!j.id.startsWith('$')&&['queued','running','waiting','retryable_failed'].includes(j.status)).map(j=>({...j,status:'queued',result:null}));
     (state?.jobs||[]).filter(j=>j.status==='running').forEach(j=>{j.status='superseded';});
     session.requests.push(request);session.currentRequest=request;session.originalRequest=session.requests.join('\n');session.requestText=session.originalRequest;
-    const answer=assistantGuideParse(request,session);
-    const clarification=answer?.rest ? session.unresolved.find(row=>!row.notice && row.phrase
-      && (['request','guidance'].includes(row.field)||row.field===answer.id)) : null;
+    session.answer=null;
+    const clarification=guide?.rest ? session.unresolved.find(row=>!row.notice && row.phrase
+      && (['request','guidance'].includes(row.field)||row.field===guide.id)) : null;
     session.unresolved=session.unresolved.filter(row=>row.field!=='request'&&row.field!=='item-action');
     session.itemActions=[];
     session.requestRevision=(session.requestRevision||0)+1;
     session._fieldKindChanging=ASSISTANT_FIELD_SIGNALS.kind.test(request);
     state={request,revision:session.requestRevision,catalog:assistantFieldCatalog(),spans:assistantFieldSpans(request),jobs:unfinished,priorFields,needsCandidates:true};
     Object.defineProperty(state,'session',{value:session});
-    state.guide=assistantGuideParse(request,session);
+    state.guide=guide;
     // "Label: value" after a clarification answers the oldest open phrase.
     state.answers=clarification;
     unfinished.forEach(j=>{j.revision=state.revision;});
@@ -2910,10 +2961,30 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     if((state.actionRegions||[]).length && !(session.itemActions||[]).length)await assistantFieldReadActions(state, extract);
     const acted=(session.itemActions||[]).some(action=>action && (action.ready || action.summary));
     const handled=state.jobs.some(job=>job.request===state.request&&(job.status==='staged'&&job.proposal||job.preserved));
-    if(!handled&&!acted&&assistantFocusAsksQuestion(state.request)){
+    // A mixed request ("What's the duration, and can you change it to 20
+    // minutes?") keeps the staged edit from the pipeline above and answers
+    // the read part from app data. The answer is never itself a change; the
+    // question clause's uncovered-phrase question is retired because it has
+    // been answered, while every edit clause's question stays open.
+    if(typeof assistantFocusQuestionAnswer === 'function' && !session.answer){
+      const claimed=(state.questionClauses || []).slice();
+      if(!claimed.length && typeof assistantFocusMixedQuestion === 'function'){
+        const mixed=assistantFocusMixedQuestion(state.request,session);
+        if(mixed)claimed.push({text:mixed.clause, intent:mixed.intent});
+      }
+      for(const clause of claimed){
+        const result=assistantFocusQuestionAnswer(clause.intent,session,clause.text);
+        if(!(result && result.text))continue;
+        session.answer={text:result.text,kind:clause.intent.kind};
+        session.unresolved=session.unresolved.filter(row => !row.phrase
+          || !(assistantFocusPhraseIn(row.phrase,clause.text) || assistantFocusPhraseIn(clause.text,row.phrase)));
+        break;
+      }
+    }
+    if(!handled&&!acted&&!session.answer&&assistantFocusAsksQuestion(state.request)){
       session.unresolved=session.unresolved.filter(row=>row.field!=='request'&&!(row.phrase&&assistantFocusPhraseIn(state.request,row.phrase)));
       assistantFocusUnresolve(session,{field:'request',family:'request',notice:'question',openNav:'calendar',blocking:false,
-        question:`The assistant can edit this item and log or plan it, but can’t answer questions. Open History to see your logs.`});
+        question:`I mainly help edit this item. You can also ask about its saved settings or open History to see your logs.`});
     }
     if(!handled&&!acted&&!session.unresolved.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should change?'});
     assistantFocusAskAnywhere(session);

@@ -63,11 +63,23 @@ function handleBackupFileChosen(file){
     }
     pendingImportPayload = reader.result;
     const summary = $('backup-import-summary');
-    if(summary){
+    const keepPhone=$('backup-keep-phone-calendar');
+    const today=dayStart(Date.now());
+    const phoneCopies=parsed.habits.filter(h=>isPhoneCalendarSnapshotRow(h,today)).length;
+    keepPhone.checked=false;
+    keepPhone.parentElement.hidden=!phoneCopies;
+    const updateSummary=()=>{
+      if(!summary)return;
       const current = load().length;
-      summary.textContent = `Replace ${current} habit${current === 1 ? '' : 's'} currently on this device with ${parsed.habits.length} from this file? This cannot be undone — export a backup first if you are not sure.`;
-    }
+      const count=parsed.habits.length-(keepPhone.checked ? 0 : phoneCopies);
+      summary.textContent = `Replace ${current} habit${current === 1 ? '' : 's'} currently on this device with ${count} from this file? This cannot be undone — export a backup first if you are not sure.`;
+    };
+    keepPhone.onchange=updateSummary;
+    updateSummary();
     const confirmBox = $('backup-import-confirm');
+    const keepHides=$('backup-keep-calendar-hides');
+    keepHides.checked=false;
+    keepHides.parentElement.hidden=!normalizeCalendarIgnores(parsed.settings?.calendarIgnores).some(r=>r.scope!=='item');
     if(confirmBox)confirmBox.hidden = false;
   };
   reader.onerror = () => {
@@ -80,7 +92,10 @@ function handleBackupFileChosen(file){
 // HANDLER: confirm the staged import and replace local data.
 function confirmBackupImport(){
   if(!pendingImportPayload)return;
-  const result = restoreBackup(pendingImportPayload);
+  const result = restoreBackup(pendingImportPayload,{
+    keepCalendarHides:$('backup-keep-calendar-hides').checked,
+    keepPhoneCalendarCopies:$('backup-keep-phone-calendar').checked
+  });
   pendingImportPayload = null;
   const confirmBox = $('backup-import-confirm');
   if(confirmBox)confirmBox.hidden = true;
@@ -92,6 +107,7 @@ function confirmBackupImport(){
     if(typeof render === 'function')render();
     if(status)status.textContent = `Imported ${result.count} habit${result.count === 1 ? '' : 's'}.`;
     if(typeof showToast === 'function')showToast('backup imported');
+    if(typeof refreshDeviceCalendars==='function')void refreshDeviceCalendars();
   }else if(status){
     status.textContent = result.reason;
   }

@@ -266,6 +266,16 @@ function bulkOpportunityTrigger(record){
   return hasPlace ? 'location' : hasWeather ? 'weather' : null;
 }
 
+function bulkResolveOpportunityTrigger(original,projected){
+  if(!isOpportunityHabit(projected))return true;
+  const inputs = ['locationIds','weatherProfileMode','weatherProfileId','weatherLocationId'];
+  if(inputs.every(field=>bulkSameValue(original[field],projected[field])))return true;
+  const trigger = bulkOpportunityTrigger(projected);
+  if(!trigger)return false;
+  projected.conditionTrigger = trigger;
+  return true;
+}
+
 function bulkDueLabel(record){
   if(record.type !== 'task')return '';
   if(record.dueDate == null)return 'no date';
@@ -321,6 +331,377 @@ function bulkEmojiLabel(record){
   return record.emoji || 'default icon';
 }
 
+// Phone reminders live in device-local storage, not on the habit record.
+// Bulk review stages them here and commits once; a missing stage means the
+// caller is only enumerating fields and must not write.
+let bulkReminderOriginal = null;
+let bulkReminderStage = null;
+
+function bulkLiveReminderPrefs(){
+  return window.TingsNative?.isNative ? nativeReminderPreferences() : {...NATIVE_REMINDER_DEFAULTS,items:{}};
+}
+
+function bulkBeginReminderStage(){
+  bulkReminderOriginal = bulkClone(bulkLiveReminderPrefs());
+  bulkReminderStage = bulkClone(bulkReminderOriginal);
+  if(!bulkReminderStage.items)bulkReminderStage.items = {};
+}
+
+function bulkEndReminderStage(){
+  bulkReminderOriginal = null;
+  bulkReminderStage = null;
+}
+
+function bulkReminderPrefs(phase){
+  if(phase === 'after')return bulkReminderStage || bulkReminderOriginal || bulkLiveReminderPrefs();
+  if(bulkReminderOriginal)return bulkReminderOriginal;
+  return bulkLiveReminderPrefs();
+}
+
+function bulkReminderOwnerKey(record){
+  return `item:${record && record.hid || ''}`;
+}
+
+function bulkReminderChoice(record,phase){
+  const prefs = bulkReminderPrefs(phase);
+  const owner = bulkReminderOwnerKey(record);
+  if(typeof nativeReminderChoices === 'function')return nativeReminderChoices(prefs,owner) || {};
+  return prefs.items[owner] || {};
+}
+
+function bulkReminderModeName(mode){
+  return mode === 'alarm' ? 'alarm' : mode === 'notification' ? 'notification' : 'off';
+}
+
+// Names for the notification-sound picker. The editor replaces this with the
+// phone's live list, including saved custom files, when that list is available.
+var bulkSoundCatalog = [
+  {id:'inherit',name:'Use the default'},
+  {id:'default',name:'Phone default'},
+  {id:'calm',name:'Calm'},
+  {id:'warm',name:'Warm'},
+  {id:'deep',name:'Deep'},
+  {id:'gentle',name:'Gentle'},
+  {id:'silent',name:'Silent'}
+];
+
+function bulkSetSoundCatalog(choices){
+  if(Array.isArray(choices) && choices.length)bulkSoundCatalog = choices;
+}
+
+function bulkSoundLabel(id){
+  if(!id || id === 'inherit')return 'the default';
+  const found = bulkSoundCatalog.find(choice=>choice.id === id);
+  if(found && found.id !== 'inherit')return found.name;
+  return String(id).startsWith('lib:') ? 'Custom sound' : 'the default';
+}
+
+function bulkReminderEdgesFor(record){
+  if(!record || record.type === 'zero')return [];
+  if(typeof isEventItem === 'function' && isEventItem(record))return ['start','startSecond','end'];
+  const edges = ['start','end','travelStart','travelEnd'];
+  if(record.type === 'task' && record.dueDate != null)edges.splice(2,0,'due');
+  if(typeof isOpportunityHabit !== 'function' || !isOpportunityHabit(record))edges.push('missed');
+  return edges;
+}
+
+function bulkReminderEdgeApplies(record,edge){
+  if(edge === 'startLead' || edge === 'secondLead')return Boolean(record) && record.type !== 'zero' && typeof isEventItem === 'function' && isEventItem(record);
+  if(edge === 'dueWhen')return bulkReminderEdgesFor(record).includes('due');
+  if(edge === 'missedLead')return bulkReminderEdgesFor(record).includes('missed');
+  return bulkReminderEdgesFor(record).includes(edge);
+}
+
+function bulkReminderEdgeBlock(record,edge){
+  if(!record || record.type === 'zero')return 'stop items have no phone reminders';
+  if(typeof isEventItem === 'function' && isEventItem(record))return 'events use start and end reminders';
+  if(edge === 'startSecond' || edge === 'startLead' || edge === 'secondLead')return 'events only';
+  if(edge === 'due' || edge === 'dueWhen'){
+    if(record.type !== 'task')return 'tasks only';
+    if(record.dueDate == null)return 'needs a due date';
+  }
+  if((edge === 'missed' || edge === 'missedLead') && typeof isOpportunityHabit === 'function' && isOpportunityHabit(record)){
+    return 'not used when this is planned only if conditions fit';
+  }
+  return 'not available for this item';
+}
+
+function bulkLeadOptions(preset){
+  if(preset === 'event' || preset === 'eventSecond'){
+    return typeof NATIVE_EVENT_REMINDER_LEADS !== 'undefined'
+      ? NATIVE_EVENT_REMINDER_LEADS
+      : [[0,'at the start'],[5,'5 min before'],[10,'10 min before'],[15,'15 min before'],[30,'30 min before'],[60,'1 hour before'],[120,'2 hours before'],[1440,'1 day before'],[2880,'2 days before']];
+  }
+  if(preset === 'travel')return [[0,'when you leave'],[5,'5 min before'],[10,'10 min before'],[15,'15 min before'],[30,'30 min before'],[60,'1 hour before']];
+  if(preset === 'missed')return [[5,'5 min before'],[15,'15 min before']];
+  if(preset === 'dueDays')return [[0,'on the due date'],[1,'1 day before'],[2,'2 days before'],[7,'1 week before']];
+  return [];
+}
+
+function bulkLeadDefault(preset){
+  if(preset === 'eventSecond')return 1440;
+  if(preset === 'missed')return 15;
+  return 0;
+}
+
+function bulkLeadText(preset,value){
+  const found = bulkLeadOptions(preset).find(([minutes])=>minutes === Number(value));
+  return found ? found[1] : 'not set';
+}
+
+function bulkEffectiveLead(choice,field,preset){
+  if(field === 'startLeadMinutes' && typeof nativeMeetingLeadMinutes === 'function')return nativeMeetingLeadMinutes(choice,false);
+  if(field === 'secondStartLeadMinutes' && typeof nativeMeetingLeadMinutes === 'function')return nativeMeetingLeadMinutes(choice,true);
+  if(field === 'travelLeadMinutes' && typeof nativeReminderLeadMinutes === 'function')return nativeReminderLeadMinutes(choice);
+  if(field === 'missedLeadMinutes' && typeof nativeReminderMissedLeadMinutes === 'function')return nativeReminderMissedLeadMinutes(choice);
+  if(field === 'dueDaysBefore' && typeof nativeDueReminderDays === 'function')return nativeDueReminderDays(choice);
+  if(field === 'dueMinute' && typeof nativeDueReminderMinute === 'function')return nativeDueReminderMinute(choice);
+  const fallback = bulkLeadDefault(preset);
+  const options = bulkLeadOptions(preset === 'dueDays' ? 'dueDays' : preset);
+  const n = Number(choice && choice[field]);
+  return options.some(([minutes])=>minutes === n) ? n : fallback;
+}
+
+function bulkWhen(value){
+  const day = typeof parseDateInput === 'function' ? parseDateInput(value && value.date) : null;
+  if(day == null || dateKey(day) !== value.date || timeInputToMinutes(value.time) == null)return null;
+  const timestamp = bulkTaskTime(dayStart(day),value.time);
+  return bulkTaskClock(timestamp) === value.time ? timestamp : null;
+}
+
+function bulkWriteReminder(record,patch,removeKeys){
+  if(!bulkReminderStage || !record)return ['@reminder'];
+  const owner = bulkReminderOwnerKey(record);
+  const choice = {...(bulkReminderStage.items[owner] || {})};
+  const keys = new Set([...(removeKeys || []),...Object.keys(patch || {})]);
+  if(choice.dates){
+    const dates = {...choice.dates};
+    for(const day of Object.keys(dates)){
+      const entry = {...dates[day]};
+      let dirty = false;
+      for(const key of keys){
+        if(Object.prototype.hasOwnProperty.call(entry,key)){delete entry[key];dirty = true;}
+      }
+      if(!dirty)continue;
+      if(Object.keys(entry).length)dates[day] = entry;
+      else delete dates[day];
+    }
+    if(Object.keys(dates).length)choice.dates = dates;
+    else delete choice.dates;
+  }
+  Object.assign(choice,patch || {});
+  for(const key of removeKeys || [])delete choice[key];
+  bulkReminderStage.items[owner] = choice;
+  return ['@reminder'];
+}
+
+function bulkSaveWithReminders(data,prefs){
+  let previous;
+  if(prefs){
+    try{
+      previous = localStorage.getItem(NATIVE_REMINDERS_KEY);
+      localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
+    }catch(_){return false;}
+  }
+  if(data && !save(data)){
+    if(prefs){
+      if(previous == null)localStorage.removeItem(NATIVE_REMINDERS_KEY);
+      else localStorage.setItem(NATIVE_REMINDERS_KEY,previous);
+    }
+    return false;
+  }
+  if(prefs){
+    nativeReminderLastSignature = '';
+    void reconcileNativeReminders();
+    void reconcileNativeQuiet();
+    queueNativeBackgroundSnapshot();
+  }
+  return true;
+}
+
+// Merge the original values back by field, including individual date overrides.
+function bulkUndoReminderFields(current,before,after){
+  const value = {...current};
+  let changed = false;
+  let conflicts = 0;
+  const keys = new Set([...Object.keys(before || {}),...Object.keys(after || {})]);
+  for(const key of keys){
+    if(bulkSameValue(before?.[key],after?.[key]))continue;
+    if(key === 'dates'){
+      const days = new Set([...Object.keys(before?.dates || {}),...Object.keys(after?.dates || {})]);
+      const dates = {...value.dates};
+      for(const day of days){
+        const result = bulkUndoReminderFields(dates[day],before?.dates?.[day],after?.dates?.[day]);
+        conflicts += result.conflicts;
+        if(!result.changed)continue;
+        changed = true;
+        if(Object.keys(result.value).length)dates[day] = result.value;
+        else delete dates[day];
+      }
+      if(Object.keys(dates).length)value.dates = dates;
+      else delete value.dates;
+    }else if(!bulkSameValue(value[key],after?.[key])){
+      conflicts += 1;
+    }else{
+      changed = true;
+      if(before?.[key] === undefined)delete value[key];
+      else value[key] = before[key];
+    }
+  }
+  return {value,changed,conflicts};
+}
+
+function bulkReminderEffect(record,keys,prefs = bulkReminderStage || bulkLiveReminderPrefs()){
+  const owner = bulkReminderOwnerKey(record);
+  const choice = typeof nativeReminderChoices === 'function' ? (nativeReminderChoices(prefs,owner) || {}) : (prefs.items[owner] || {});
+  const effect = {};
+  for(const key of keys){
+    if(['start','startSecond','end','due','travelStart','travelEnd','missed'].includes(key))effect[key] = choice[key] || 'off';
+    else if(key === 'dnd')effect.dnd = prefs.items[owner]?.dnd === true;
+    else if(key === 'startLeadMinutes')effect[key] = bulkEffectiveLead(choice,key,'event');
+    else if(key === 'secondStartLeadMinutes')effect[key] = bulkEffectiveLead(choice,key,'eventSecond');
+    else if(key === 'travelLeadMinutes')effect[key] = bulkEffectiveLead(choice,key,'travel');
+    else if(key === 'missedLeadMinutes')effect[key] = bulkEffectiveLead(choice,key,'missed');
+    else if(key === 'dueDaysBefore')effect[key] = bulkEffectiveLead(choice,key,'dueDays');
+    else if(key === 'dueMinute')effect[key] = bulkEffectiveLead(choice,key,'dueMinute');
+    else if(key === 'sound')effect.sound = (typeof nativeReminderSoundId === 'function' ? nativeReminderSoundId(choice) : '') || null;
+    else effect[key] = choice[key] ?? null;
+  }
+  const overrides = {};
+  for(const [day,patch] of Object.entries(prefs.items[owner]?.dates || {})){
+    if(!patch)continue;
+    const hit = {};
+    for(const key of keys)if(Object.prototype.hasOwnProperty.call(patch,key))hit[key] = patch[key];
+    if(Object.keys(hit).length)overrides[day] = hit;
+  }
+  return {effect,overrides};
+}
+
+function bulkReminderModeOp(id,label,edge,hint){
+  return {
+    id,group:'Reminders',label,hint,nativeOnly:true,store:'reminders',reminderMode:true,
+    choices:[BULK_KEEP,{key:'off',label:'Off'},{key:'notification',label:'Notification'},{key:'alarm',label:'Alarm'}],
+    valueKind:'none',
+    applies:h=>bulkReminderEdgeApplies(h,edge),
+    blockedReason:h=>bulkReminderEdgeBlock(h,edge),
+    reminderKeys:()=>[edge],
+    current:(h,phase)=>bulkReminderModeName(bulkReminderChoice(h,phase)[edge]),
+    plan:()=>({ok:true}),
+    apply:(h,op)=>bulkWriteReminder(h,{[edge]:op === 'alarm' ? 'alarm' : op === 'notification' ? 'notification' : 'off'}),
+    changeLabel:(h,op)=>`${label} → ${bulkReminderModeName(op)}`
+  };
+}
+
+function bulkReminderLeadOp(id,label,field,preset,appliesEdge,hint){
+  return {
+    id,group:'Reminders',label,hint,nativeOnly:true,store:'reminders',
+    choices:bulkKeepSet(),
+    valueKind:'choice',leadPreset:preset,
+    applies:h=>bulkReminderEdgeApplies(h,appliesEdge),
+    blockedReason:h=>bulkReminderEdgeBlock(h,appliesEdge === 'start' ? 'startLead' : appliesEdge === 'startSecond' ? 'secondLead' : appliesEdge === 'missed' ? 'missedLead' : appliesEdge),
+    reminderKeys:()=>[field],
+    current:(h,phase)=>bulkLeadText(preset,bulkEffectiveLead(bulkReminderChoice(h,phase),field,preset)),
+    plan:(h,op,value)=>bulkLeadOptions(preset).some(([minutes])=>minutes === Number(value)) ? {ok:true} : {ok:false,error:'pick a lead time'},
+    apply:(h,op,value)=>bulkWriteReminder(h,{[field]:Number(value)}),
+    changeLabel:(h,op,value)=>`${label} → ${bulkLeadText(preset,value)}`
+  };
+}
+
+function bulkReminderCatalog(){
+  return [
+    {
+      id:'reminderAll',group:'Reminders',label:'Every reminder',nativeOnly:true,store:'reminders',reminderMode:true,
+      hint:'Notification or ringing alarm for every reminder this item can use. Saved on this phone. A different choice on one date is replaced.',
+      choices:[BULK_KEEP,{key:'off',label:'All off'},{key:'notification',label:'All notifications'},{key:'alarm',label:'All alarms'}],
+      valueKind:'none',
+      applies:h=>bulkReminderEdgesFor(h).length > 0,
+      blockedReason:h=>bulkReminderEdgeBlock(h,'start'),
+      reminderKeys:h=>bulkReminderEdgesFor(h),
+      current(h,phase){
+        const edges = bulkReminderEdgesFor(h);
+        const choice = bulkReminderChoice(h,phase);
+        const modes = edges.map(edge=>choice[edge] || 'off');
+        if(!modes.length)return 'none';
+        if(modes.every(mode=>mode === 'off'))return 'all off';
+        if(modes.every(mode=>mode === 'notification'))return 'all notifications';
+        if(modes.every(mode=>mode === 'alarm'))return 'all alarms';
+        return 'mixed';
+      },
+      plan:()=>({ok:true}),
+      apply(h,op){
+        const mode = op === 'alarm' ? 'alarm' : op === 'notification' ? 'notification' : 'off';
+        const patch = {};
+        for(const edge of bulkReminderEdgesFor(h))patch[edge] = mode;
+        return bulkWriteReminder(h,patch);
+      },
+      changeLabel:(h,op)=>`Every reminder → ${op === 'alarm' ? 'all alarms' : op === 'notification' ? 'all notifications' : 'all off'}`
+    },
+    bulkReminderModeOp('reminderStart','When it starts','start','Notification or ringing alarm at the start. Saved on this phone.'),
+    bulkReminderModeOp('reminderEnd','When it ends','end','Notification or ringing alarm at the end. Saved on this phone.'),
+    bulkReminderModeOp('reminderDue','On the due date','due','Notification or ringing alarm for a task deadline. Needs a due date.'),
+    {
+      id:'reminderDueWhen',group:'Reminders',label:'Due-date reminder time',nativeOnly:true,store:'reminders',
+      hint:'Which day and local time the deadline alert uses. Notification or alarm is chosen separately.',
+      choices:bulkKeepSet(),
+      valueKind:'dueReminder',
+      applies:h=>bulkReminderEdgeApplies(h,'due'),
+      blockedReason:h=>bulkReminderEdgeBlock(h,'dueWhen'),
+      reminderKeys:()=>['dueDaysBefore','dueMinute'],
+      current(h,phase){
+        const choice = bulkReminderChoice(h,phase);
+        return `${bulkLeadText('dueDays',bulkEffectiveLead(choice,'dueDaysBefore','dueDays'))} at ${minutesToTimeInput(bulkEffectiveLead(choice,'dueMinute','dueMinute'))}`;
+      },
+      plan(h,op,value){
+        if(![0,1,2,7].includes(Number(value && value.days)))return {ok:false,error:'pick a reminder day'};
+        if(timeInputToMinutes(value && value.time) == null)return {ok:false,error:'pick a reminder time'};
+        return {ok:true};
+      },
+      apply(h,op,value){
+        return bulkWriteReminder(h,{
+          dueDaysBefore:Number(value.days),
+          dueMinute:timeInputToMinutes(value.time)
+        });
+      },
+      changeLabel:(h,op,value)=>`Due-date reminder time → ${bulkLeadText('dueDays',value && value.days)} at ${value && value.time}`
+    },
+    bulkReminderModeOp('reminderSecond','Second reminder','startSecond','A second notification or alarm before an event.'),
+    bulkReminderLeadOp('reminderStartLead','First reminder lead','startLeadMinutes','event','startLead','How early the first event reminder arrives.'),
+    bulkReminderLeadOp('reminderSecondLead','Second reminder lead','secondStartLeadMinutes','eventSecond','secondLead','How early the second event reminder arrives.'),
+    bulkReminderModeOp('reminderTravelStart','When you leave','travelStart','Notification or ringing alarm at departure.'),
+    bulkReminderModeOp('reminderTravelEnd','When you arrive','travelEnd','Notification or ringing alarm at arrival.'),
+    bulkReminderLeadOp('reminderTravelLead','Departure lead','travelLeadMinutes','travel','travelStart','How early the departure reminder arrives.'),
+    bulkReminderModeOp('reminderMissed','If it may not fit','missed','A warning before the item drops off the agenda. Uses exact timing.'),
+    bulkReminderLeadOp('reminderMissedLead','Drop-warning lead','missedLeadMinutes','missed','missed','How early the drop warning arrives.'),
+    {
+      id:'reminderSound',group:'Reminders',label:'Notification sound',nativeOnly:true,store:'reminders',
+      hint:'Tone for this item’s notifications. The default follows Settings. Saved phone sounds and audio files are listed too, and a new one chosen here is used for every selected item. Ringing alarms keep the phone’s alarm tone. Saved on this phone.',
+      choices:bulkKeepSet([{key:'clear',label:'Use the default'}]),
+      valueKind:'sound',
+      valueless:['clear'],
+      applies:h=>Boolean(h) && h.type !== 'zero',
+      blockedReason:h=>!h || h.type === 'zero' ? 'stop items have no phone reminders' : 'not available for this item',
+      reminderKeys:()=>['sound'],
+      current:(h,phase)=>bulkSoundLabel(nativeReminderSoundId(bulkReminderChoice(h,phase))),
+      plan:(h,op,value)=>op === 'clear' || !value || value === 'inherit' || nativeReminderSoundKnown(value) ? {ok:true} : {ok:false,error:'pick a notification sound'},
+      apply:(h,op,value)=>op === 'clear' || !value || value === 'inherit' ? bulkWriteReminder(h,{},['sound']) : bulkWriteReminder(h,{sound:value}),
+      changeLabel:(h,op,value)=>op === 'clear' || !value || value === 'inherit' ? 'Notification sound → the default' : `Notification sound → ${bulkSoundLabel(value)}`
+    },
+    {
+      id:'reminderDnd',group:'Reminders',label:'Silence the phone',nativeOnly:true,requiresQuiet:true,store:'reminders',
+      hint:'Do Not Disturb while this session is in progress. Needs Do Not Disturb access on this phone.',
+      choices:bulkOnOff(),
+      valueKind:'none',
+      applies:h=>Boolean(h) && h.type !== 'zero' && !(typeof isEventItem === 'function' && isEventItem(h)),
+      blockedReason:h=>!h || h.type === 'zero' ? 'stop items have no phone reminders' : 'events keep the phone’s current sound',
+      reminderKeys:()=>['dnd'],
+      current:(h,phase)=>bulkReminderPrefs(phase).items[bulkReminderOwnerKey(h)]?.dnd === true ? 'on' : 'off',
+      plan:()=>({ok:true}),
+      apply:(h,op)=>bulkWriteReminder(h,{dnd:op === 'on'}),
+      changeLabel:(h,op)=>`Silence the phone → ${op === 'on' ? 'on' : 'off'}`
+    }
+  ];
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // The catalog. Each entry:
 //   id            stable op id used in bulk-edit state
@@ -334,6 +715,8 @@ function bulkEmojiLabel(record){
 //   current(h)    current-value display for context
 //   plan(h,op,value,data)  {ok, error?, warning?} per-item validation
 //   apply(h,op,value,data) touched field names (mutates h)
+//   store:'reminders' stages device-local phone reminders instead of record fields
+//   nativeOnly        hidden outside the Android app
 // ─────────────────────────────────────────────────────────────────────────
 const BULK_FIELD_OPS = [
   {
@@ -532,6 +915,43 @@ const BULK_FIELD_OPS = [
     changeLabel:(h,op)=>`Repeat → ${op === 'opportunity' ? 'when conditions fit' : 'regularly'}`
   },
   {
+    id:'conditionTrigger',group:'Repeat and dates',label:'Plan this when',
+    hint:'Weather, or being near a place. Only for a habit that is planned when conditions fit.',
+    choices:[BULK_KEEP,{key:'weather',label:'The weather matches'},{key:'location',label:'Near a place'}],
+    valueKind:'none',
+    applies:h=>isOpportunityHabit(h) && !bulkAppointmentOwned(h),
+    blockedReason:h=>bulkAppointmentOwned(h) ? 'owned by its event schedule' : 'only when this is planned if conditions fit',
+    current:h=>h.conditionTrigger === 'location' ? 'near a place' : 'the weather',
+    plan:(h,op)=>{
+      if(op === 'location' && !habitPrefLocationIds(h).length)return {ok:false,error:'add a place before using distance'};
+      if(op === 'weather' && !weatherHabitHasActiveGuidance(h,sortSettings || loadSortSettings()))return {ok:false,error:'add weather guidance before using weather'};
+      return {ok:true};
+    },
+    apply:(h,op)=>{h.conditionTrigger = op === 'location' ? 'location' : 'weather';return ['conditionTrigger'];},
+    changeLabel:(h,op)=>`Plan this when → ${op === 'location' ? 'near a place' : 'the weather'}`
+  },
+  {
+    id:'conditionRadius',group:'Repeat and dates',label:'How close',
+    hint:'Meters from the place. Used when the trigger is a nearby place.',
+    choices:bulkKeepSet(),
+    valueKind:'number',
+    numberMin:1,numberMax:100000,numberUnit:'m',
+    applies:h=>isOpportunityHabit(h) && h.conditionTrigger === 'location' && !bulkAppointmentOwned(h),
+    blockedReason:h=>{
+      if(bulkAppointmentOwned(h))return 'owned by its event schedule';
+      if(!isOpportunityHabit(h))return 'only when this is planned if conditions fit';
+      return 'only when the trigger is a nearby place';
+    },
+    current:h=>`${typeof opportunityRadius === 'function' ? opportunityRadius(h) : (h.conditionRadiusM || 200)} m`,
+    plan:(h,op,value)=>{
+      const meters = Number(value);
+      if(!Number.isFinite(meters) || meters < 1 || meters > 100000)return {ok:false,error:'distance must be 1–100000 m'};
+      return {ok:true};
+    },
+    apply:(h,op,value)=>{h.conditionRadiusM = Math.round(Math.max(1,Math.min(100000,Number(value))));return ['conditionRadiusM'];},
+    changeLabel:(h,op,value)=>`How close → ${Math.round(Number(value))} m`
+  },
+  {
     id:'dueDate',group:'Repeat and dates',label:'Due date',
     hint:'Tasks only. Clearing the date also clears a fixed start time.',
     choices:bulkKeepSet({key:'clear',label:'Clear'}),
@@ -624,6 +1044,26 @@ const BULK_FIELD_OPS = [
       return ['delayAllowanceDays','hardDue'];
     },
     changeLabel:(h,op,value)=>`Delay allowance → ${clampDelayAllowance(value)} days`
+  },
+  {
+    id:'planBy',group:'Repeat and dates',label:'Plan-by date',
+    hint:'A day this habit should be done by. Not used when it is planned only if conditions fit.',
+    choices:bulkKeepSet({key:'clear',label:'Clear'}),
+    valueKind:'date',
+    valueless:['clear'],
+    applies:h=>(h.type === 'keepup' || h.type === 'reduce') && !isOpportunityHabit(h) && !bulkAppointmentOwned(h),
+    blockedReason:h=>bulkAppointmentOwned(h) ? 'owned by its event schedule' : isOpportunityHabit(h) ? 'not used when this is planned only if conditions fit' : 'habits only',
+    current:h=>h.planByDate == null ? 'no date' : new Date(h.planByDate).toLocaleDateString(undefined,{month:'short',day:'numeric'}),
+    plan:(h,op,value)=>{
+      if(op === 'clear')return {ok:true};
+      if(parseDateInput(value) == null)return {ok:false,error:'pick a date'};
+      return {ok:true};
+    },
+    apply:(h,op,value)=>{
+      h.planByDate = op === 'clear' ? null : dayStart(parseDateInput(value));
+      return ['planByDate'];
+    },
+    changeLabel:(h,op,value)=>op === 'clear' ? 'Clear plan-by date' : `Plan-by date → ${new Date(parseDateInput(value)).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`
   },
   {
     id:'allowedWeekdays',group:'Availability',label:'Allowed weekdays',
@@ -964,15 +1404,24 @@ const BULK_FIELD_OPS = [
   },
   {
     id:'snooze',group:'Visibility',label:'Snooze',
-    hint:'Clearing shows the item again immediately.',
-    choices:[BULK_KEEP,{key:'clear',label:'Show now'}],
-    valueKind:'none',
-    applies:h=>Boolean(h.snoozedUntil),
-    blockedReason:h=>'not snoozed',
-    current:h=>h.snoozedUntil && Date.now() < h.snoozedUntil ? 'hidden for now' : 'shown',
-    plan:()=>({ok:true}),
-    apply:h=>{h.snoozedUntil = null;return ['snoozedUntil'];},
-    changeLabel:()=>'Snooze → show now'
+    hint:'Hide until a date and time, or show a hidden item again.',
+    choices:[BULK_KEEP,{key:'until',label:'Hide until'},{key:'clear',label:'Show now'}],
+    valueKind:'datetime',
+    valueless:['clear'],
+    applies:()=>true,
+    current:h=>h.snoozedUntil && Date.now() < h.snoozedUntil ? new Date(h.snoozedUntil).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'shown',
+    plan:(h,op,value)=>{
+      if(op === 'clear')return {ok:true};
+      const ts = bulkWhen(value);
+      if(ts == null)return {ok:false,error:'pick a date and time'};
+      if(ts <= Date.now())return {ok:false,error:'pick a future time'};
+      return {ok:true};
+    },
+    apply:(h,op,value)=>{
+      h.snoozedUntil = op === 'clear' ? null : bulkWhen(value);
+      return ['snoozedUntil'];
+    },
+    changeLabel:(h,op,value)=>op === 'clear' ? 'Snooze → show now' : `Snooze → hide until ${value && value.date} ${value && value.time}`
   },
   {
     id:'sharedDisplay',group:'Visibility',label:'Shared display',
@@ -997,7 +1446,8 @@ const BULK_FIELD_OPS = [
     plan:()=>({ok:true}),
     apply:(h,op)=>{h.allowSharedDisplayCompletion = op === 'on';return ['allowSharedDisplayCompletion'];},
     changeLabel:(h,op)=>`Shared display completion → ${op === 'on' ? 'on' : 'off'}`
-  }
+  },
+  ...bulkReminderCatalog()
 ];
 
 function bulkOpById(id){
@@ -1010,8 +1460,20 @@ function bulkGroupOrder(){
   return groups;
 }
 
+// Prerequisites run before the settings that read them. Phone reminders run
+// last so a due date or a switch to “when conditions fit” is already applied.
+function bulkApplyOrder(){
+  const late = ['repeatMode','rhythm','planBy','conditionTrigger','conditionRadius'];
+  const reminderIds = BULK_FIELD_OPS.filter(op=>op.store === 'reminders').map(op=>op.id);
+  const skip = new Set(late.concat(reminderIds));
+  return BULK_FIELD_OPS.map(op=>op.id).filter(id=>!skip.has(id)).concat(late).concat(reminderIds);
+}
+
 // Fields each op may touch, for staleness detection between review and apply.
 function bulkOpTouchedFields(opDesc){
+  // Phone reminders are not habit fields. Calling apply() would also write the
+  // review stage if one is open, so field enumeration stops here.
+  if(opDesc.store === 'reminders')return ['@reminder'];
   const probe = bulkClone({hid:'probe',type:'keepup',priority:2,topics:[],locationIds:[],locationPrefs:{},anywhereAllowed:true,weatherProfileMode:'inherit',earlyWindowDays:0,delayAllowanceDays:0,durationMinutes:20});
   const touched = new Set();
   for(const op of opDesc.choices){
@@ -1038,6 +1500,10 @@ function bulkSampleValue(opDesc,op){
     case 'placepref':return {locationId:'x',level:'high'};
     case 'profile':return {mode:'inherit',id:''};
     case 'place':return 'x';
+    case 'choice':return bulkLeadDefault(opDesc.leadPreset);
+    case 'dueReminder':return {days:0,time:'09:00'};
+    case 'datetime':return {date:'2026-01-02',time:'09:00'};
+    case 'sound':return 'calm';
     default:return null;
   }
 }

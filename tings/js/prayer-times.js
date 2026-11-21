@@ -314,10 +314,10 @@ function resolveHabitTimeField(h, fieldName, dayBase, contextLocId, data){
 
 // PURE: display name for a prayer anchor, respecting the user's Islamic/generic
 // name preference. Falls back to the anchor key itself for unknown anchors.
-function prayerDisplayName(anchor){
+function prayerDisplayName(anchor, settings = sortSettings){
   const a = cleanAnchor(anchor);
   if(!a)return '';
-  const labels = sortSettings.prayerIslamicNames ? PRAYER_ANCHOR_LABELS : PRAYER_GENERIC_LABELS;
+  const labels = settings?.prayerIslamicNames ? PRAYER_ANCHOR_LABELS : PRAYER_GENERIC_LABELS;
   return labels[a] || a;
 }
 

@@ -111,18 +111,30 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
   const adoptLegacy=options.adoptLegacy ?? deviceCalendarPreferences().adoptLegacy;
   const owns=h=>isDeviceCalendarTask(h) && (!sourceId ? !h.calendarDeviceId
     : h.calendarDeviceId===sourceId || (!h.calendarDeviceId && adoptLegacy));
-  const now = options.now ?? Date.now(), selected = new Set(ids), seen = new Set(), imported = new Set();
+  const now = options.now ?? Date.now(), selected = new Set(ids), seen = new Map(), imported = new Set();
   const before = JSON.stringify(data), next = data.map(h=>({...h,logs:[...(h.logs || [])]}));
   const byExternal = new Map(next.filter(owns).map(h=>[h.externalId,h]));
-  let added=0,updated=0,removed=0;
+  const restoredRows=adoptLegacy ? Storage.read(RESTORED_DEVICE_CALENDAR_KEY) : null;
+  const restoredIds=new Set(Array.isArray(restoredRows) ? restoredRows : []),restoredByExternal=new Map();
+  for(const h of next){
+    if(!isDeviceCalendarTask(h) || owns(h) || !restoredIds.has(h.hid))continue;
+    if(!restoredByExternal.has(h.externalId))restoredByExternal.set(h.externalId,[]);
+    restoredByExternal.get(h.externalId).push(h);
+  }
+  let added=0,updated=0,removed=0,skippedAllDay=0;
   for(const ev of snapshot.events){
     if(!ev || typeof ev.id !== 'string' || !ev.id.startsWith('device:') || !selected.has(ev.calendarId)
       || !Number.isFinite(ev.start) || !Number.isFinite(ev.end) || ev.end <= ev.start
-      || ev.end <= snapshot.from || ev.start >= snapshot.to || seen.has(ev.id)){
+      || ev.end <= snapshot.from || ev.start >= snapshot.to){
       throw new Error('Calendar refresh contained invalid meetings. Existing meetings were kept.');
     }
-    seen.add(ev.id);
-    if(ev.isAllDay && options.allDayMode !== 'tasks')continue;
+    const signature=JSON.stringify([ev.calendarId,ev.subject,ev.start,ev.end,Boolean(ev.isAllDay),ev.seriesId,ev.joinUrl]);
+    if(seen.has(ev.id)){
+      if(seen.get(ev.id)!==signature)throw new Error('Calendar refresh returned conflicting copies. Existing meetings were kept.');
+      continue;
+    }
+    seen.set(ev.id,signature);
+    if(ev.isAllDay && options.allDayMode !== 'tasks'){skippedAllDay++;continue;}
     imported.add(ev.id);
     const mapped=mapEventToTask(ev,'device');
     Object.assign(mapped,{calendarDeviceId:sourceId || null,calendarId:ev.calendarId,calendarStart:ev.start,calendarEnd:ev.end,
@@ -130,14 +142,16 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
       links:typeof ev.joinUrl==='string' && /^https:\/\//i.test(ev.joinUrl) ? normalizeLinks([{kind:'link',value:ev.joinUrl}]) : [],
       showOnSharedDisplay:false,allowSharedDisplayCompletion:false});
     applyDeviceCalendarStyle(mapped,options.styles);
-    const existing=byExternal.get(ev.id);
+    const restored=(restoredByExternal.get(ev.id) || []).filter(h=>h.calendarId===ev.calendarId &&
+      h.calendarStart===ev.start && h.calendarEnd===ev.end && h.name===mapped.name && h.eventTime===mapped.eventTime);
+    const existing=byExternal.get(ev.id) || (restored.length===1 ? restored[0] : null);
     if(!existing){
       // The foreground and private background mirror must produce the same id.
       mapped.hid=deviceCalendarHabitId(ev.id,sourceId);
       next.push(normalize([mapped])[0]);added++;
     }else{
       const moved=existing.calendarStart !== ev.start || existing.calendarEnd !== ev.end;
-      const changed=moved || existing.name !== mapped.name || existing.eventTime !== mapped.eventTime || JSON.stringify(existing.links)!==JSON.stringify(mapped.links) || existing.calendarSeriesId!==mapped.calendarSeriesId;
+      const changed=moved || existing.name !== mapped.name || existing.eventTime !== mapped.eventTime || JSON.stringify(existing.links)!==JSON.stringify(mapped.links) || existing.calendarSeriesId!==mapped.calendarSeriesId || existing.calendarDeviceId!==mapped.calendarDeviceId;
       const logs=moved && ev.end > now ? [] : existing.logs;
       Object.assign(existing,mapped,{hid:existing.hid,logs,importedAt:changed ? now : existing.importedAt});
       existing.lastLog=latestActualLog(logs);
@@ -156,14 +170,16 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
     if(missing || skippedAllDay){removed++;return false;}
     return true;
   });
-  rebuildCalendarCredits(kept,options.creditHabitId,{preserveBefore:snapshot.from});
+  rebuildCalendarCredits(kept,options.creditHabitId,{settings:options.settings,preserveBefore:snapshot.from});
   const normalized=normalize(kept);
-  return {data:normalized,added,updated,removed,changed:before !== JSON.stringify(normalized)};
+  const byId=new Map(normalized.map(h=>[h.hid,h]));
+  const hidden=normalized.filter(h=>owns(h) && imported.has(h.externalId) && isCalendarIgnored(h,options.settings,byId)).length;
+  return {data:normalized,added,updated,removed,hidden,skippedAllDay,changed:before !== JSON.stringify(normalized)};
 }
 function applyDeviceCalendarSnapshot(snapshot,options={}){
   const settings=loadSortSettings();
   const result=reconcileDeviceCalendarSnapshot(load(),snapshot,{allDayMode:settings.calendarAllDayMode,
-    creditHabitId:settings.calendarCreditHabitId,...options});
+    creditHabitId:settings.calendarCreditHabitId,settings,...options});
   if(result.changed && !save(result.data))throw new Error('Could not save calendar refresh on this device.');
   return result;
 }
@@ -216,7 +232,14 @@ async function refreshDeviceCalendars(){
       if(typeof queueNativeBackgroundSnapshot==='function')queueNativeBackgroundSnapshot();
       deviceCalendarStatus(`${prefs.calendarIds.length} calendar${prefs.calendarIds.length===1?'':'s'} · updated ${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`);
       const changes=document.getElementById('calendar-device-changes');
-      if(changes)changes.textContent=result.added || result.updated || result.removed ? `${result.added} new, ${result.updated} changed, ${result.removed} no longer on the calendar` : '';
+      if(changes){
+        const notes=[];
+        if(result.added || result.updated || result.removed)notes.push(`${result.added} new, ${result.updated} changed, ${result.removed} no longer on the calendar.`);
+        if(result.hidden)notes.push(`${result.hidden} hidden in Tings. See Hidden from Tings below.`);
+        if(result.skippedAllDay)notes.push(`${result.skippedAllDay} all-day events skipped. Use All-day events below to show them as tasks.`);
+        changes.textContent=notes.join(' ');
+      }
+      renderIgnoredCalendarItems();renderCalendarDuplicateReview();
     }catch(error){deviceCalendarStatus(error.message || 'Calendar refresh failed. Existing meetings were kept.');return {error:error.message || 'Calendar refresh failed'};}
     finally{deviceCalendarRefresh=null;}
   })();

@@ -129,25 +129,20 @@ function filterTagChoices(row){
   const expanded = row.classList.contains('is-expanded');
   row.querySelector('.tag-selection-count').textContent = expanded ? `${selected} selected` : String(selected);
   const toggle = row.querySelector('.tag-picker-toggle');
-  toggle.setAttribute('aria-label',`${expanded ? 'Collapse' : 'Search'} ${row.dataset.tagKind}, ${selected} selected`);
+  toggle.setAttribute('aria-label',`${expanded ? 'Collapse' : 'Browse'} ${row.dataset.tagKind}, ${selected} selected`);
   const summary = row.closest('.add-topic-disclosure')?.querySelector('summary');
   if(summary)summary.textContent = selected ? `Topics · ${selected} selected` : 'Topics (optional)';
   const empty = row.querySelector('.tag-search-empty');
   empty.hidden = !expanded || !query || matches > 0;
 }
 
-function setTagPickerExpanded(row,expanded,focus = false){
+function setTagPickerExpanded(row,expanded){
   row.classList.toggle('is-expanded',expanded);
   row.querySelector('.tag-picker-toggle').setAttribute('aria-expanded',String(expanded));
   const input = row.querySelector('.tag-search');
   input.hidden = !expanded;
   if(!expanded)input.value = '';
   filterTagChoices(row);
-  if(expanded && focus){
-    input.focus({preventScroll:true});
-    if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
-    if(typeof keepFocusedInputVisible === 'function')keepFocusedInputVisible();
-  }
 }
 
 function addTagSearch(row,kind,containerId,value = '',expanded = false){
@@ -158,9 +153,9 @@ function addTagSearch(row,kind,containerId,value = '',expanded = false){
   head.className = 'tag-picker-toggle';
   head.setAttribute('aria-expanded',String(expanded));
   head.setAttribute('aria-controls',`${containerId}-${kind}-search`);
-  head.innerHTML = `<i class="ti ti-search" aria-hidden="true"></i><span>${kind}</span><span class="tag-selection-count"></span><span class="tag-picker-action">done</span>`;
+  head.innerHTML = `<i class="ti ti-selector" aria-hidden="true"></i><span>${kind}</span><span class="tag-selection-count"></span><span class="tag-picker-action">done</span>`;
   head.addEventListener('click',()=>{
-    if(!row._sg)setTagPickerExpanded(row,!row.classList.contains('is-expanded'),true);
+    if(!row._sg)setTagPickerExpanded(row,!row.classList.contains('is-expanded'));
   });
   const input = document.createElement('input');
   input.type = 'search';
@@ -178,11 +173,16 @@ function addTagSearch(row,kind,containerId,value = '',expanded = false){
     if(e.key === 'Enter'){
       e.preventDefault();
       input.blur();
-    }else if(e.key === 'Escape' && input.value){
+    }else if(e.key === 'Escape'){
       e.preventDefault();
       e.stopPropagation();
-      input.value = '';
-      filterTagChoices(row);
+      if(input.value){
+        input.value = '';
+        filterTagChoices(row);
+      }else{
+        setTagPickerExpanded(row,false);
+        head.focus();
+      }
     }
   });
   const empty = document.createElement('p');
@@ -225,6 +225,9 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     ? document.activeElement.closest('.tag-row') : null;
   const restoreSearch = focusedSearch && wrap.contains(focusedSearch)
     ? (focusedSearch.classList.contains('tag-row-places') ? '.tag-row-places' : '.tag-row-topics') : null;
+  const activeChip = wrap.contains(document.activeElement) ? document.activeElement : null;
+  const placeFocus = activeChip?.hasAttribute('data-anywhere') ? '[data-anywhere]'
+    : activeChip?.dataset.locationId ? `[data-location-id="${CSS.escape(activeChip.dataset.locationId)}"]` : '';
   const prevTopicOpen = wrap.querySelector('.add-topic-disclosure')?.open || false;
   // The registry and an item's saved topics each have their own size limit.
   // Merging must not truncate saved selections when the registry is full.
@@ -254,16 +257,16 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   const anywhereHtml = locations.length > 0 || wrap.closest('.opportunity-mode')
     ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="Not tied to one place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
     : '';
+  const showPlaceRanks = !isLocationConditionControl(wrap);
   const locHtml = orderedLocations.map(loc=>{
     const on = selectedLocSet.has(loc.id);
     const level = prefs[loc.id] || '';
-    const mark = level === 'high' ? ' ★' : level === 'little' ? ' ☆' : level === 'avoid' ? ' –' : '';
     const title = !on ? 'place'
       : level === 'high' ? 'high preference'
       : level === 'little' ? 'little preference'
       : level === 'avoid' ? 'avoid if possible'
       : 'allowed';
-    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-name="${escapeHtml(loc.name)}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i><span class="location-chip-name">${escapeHtml(loc.name)}${mark}</span></button>`;
+    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-name="${escapeHtml(loc.name)}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i><span class="location-chip-name">${escapeHtml(loc.name)}</span>${on && showPlaceRanks ? `<small class="place-rank">${title}</small>` : ''}</button>`;
   }).join('');
   const topicHtml = orderedTopics.map(topic=>{
     const on = selectedSet.has(topic.toLowerCase());
@@ -332,6 +335,10 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   // (each scrollLeft write forces a layout pass).
   if(!placesExpanded && placeScroll)locRow.scrollLeft = placeScroll;
   if(!topicsExpanded && topicScroll)topicRow.scrollLeft = topicScroll;
+  if(placeFocus){
+    const chip = locRow.querySelector(placeFocus);
+    (chip && !chip.hidden ? chip : locRow.querySelector('.tag-picker-toggle')).focus({preventScroll:true});
+  }
   if(restoreSearch)wrap.querySelector(`${restoreSearch} .tag-search`)?.focus({preventScroll:true});
 }
 
@@ -1309,32 +1316,43 @@ function beginNewTopicInput(containerId){
   }
   const pill = wrap.querySelector('[data-topic-add]');
   if(!pill)return;
-  setTagPickerExpanded(pill.closest('.tag-row'),true);
+  const row = pill.closest('.tag-row');
+  setTagPickerExpanded(row,true);
+  const editor = document.createElement('div');
+  editor.className = 'new-topic-editor';
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'topic-chip topic-chip-input';
   input.maxLength = 32;
-  input.placeholder = 'new topic';
+  input.placeholder = 'Topic name';
+  input.setAttribute('aria-label','Topic name');
+  const initialName = cleanTopic(row.querySelector('.tag-search').value);
+  input.value = initialName;
   input.autocomplete = 'off';
   input.autocorrect = 'off';
   input.spellcheck = false;
   input.enterKeyHint = 'done';
-  pill.replaceWith(input);
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'btn';
+  add.textContent = 'Add topic';
+  add.disabled = !initialName;
+  input.addEventListener('input',()=>{ add.disabled = !cleanTopic(input.value); });
+  editor.append(input,add);
+  pill.replaceWith(editor);
   input.focus({preventScroll:true});
   if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
   if(typeof keepFocusedInputVisible === 'function')keepFocusedInputVisible();
   let settled = false;
   const restorePill = ()=>{
-    if(input.isConnected)input.replaceWith(pill);
+    if(editor.isConnected)editor.replaceWith(pill);
   };
-  const commit = ()=>{
-    if(settled)return;
+  const commit = (returnFocus = false)=>{
+    if(settled || !editor.isConnected)return;
     settled = true;
     const topic = cleanTopic(input.value);
-    if(!topic || !$(containerId)){
-      restorePill();
-      return;
-    }
+    restorePill();
+    if(!topic)return;
     const existing = normalizeTopics(topicOptions());
     if(!existing.some(item=>item.toLowerCase() === topic.toLowerCase())){
       updateSortSetting({topics:normalizeTopics([...existing,topic])},{renderNow:false});
@@ -1346,20 +1364,29 @@ function beginNewTopicInput(containerId){
     renderTopicList();
     if(containerId === 'detail-topic-chips')setDetailDirty();
     render();
+    if(returnFocus)wrap.querySelector('[data-topic-add]')?.focus({preventScroll:true});
   };
-  input.addEventListener('blur',()=>{
-    if(settled)return;
-    setTimeout(commit,0);
+  // Keep the input mounted until click on touch browsers that blur it on press.
+  add.addEventListener('pointerdown',e=>e.preventDefault());
+  add.addEventListener('click',()=>commit(true));
+  editor.addEventListener('focusout',()=>{
+    setTimeout(()=>{
+      if(settled || !editor.isConnected || editor.contains(document.activeElement))return;
+      if(cleanTopic(input.value) !== initialName)commit();
+      else restorePill();
+    },0);
   });
-  input.addEventListener('keydown',e=>{
-    if(e.key === 'Enter'){
+  editor.addEventListener('keydown',e=>{
+    if(e.isComposing)return;
+    if(e.key === 'Enter' && e.target === input){
       e.preventDefault();
-      commit();
+      if(!add.disabled)commit(true);
     }else if(e.key === 'Escape'){
       e.preventDefault();
-      if(settled)return;
+      e.stopPropagation();
       settled = true;
       restorePill();
+      pill.focus({preventScroll:true});
     }
   });
 }

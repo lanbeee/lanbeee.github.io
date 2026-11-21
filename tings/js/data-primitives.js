@@ -636,15 +636,56 @@ function ordinalWeekdaySummary(rules){
 
 function normalizeCalendarIgnores(value){
   return (Array.isArray(value)?value:[]).filter(r=>r && ['occurrence','series','item'].includes(r.scope) && typeof r.id==='string' && r.id.length>0)
-    .map(r=>({scope:r.scope,id:r.id.slice(0,512),name:String(r.name || 'calendar item').slice(0,60)})).slice(0,10000);
+    .map(r=>{
+      const entry={scope:r.scope,id:r.id.slice(0,512),name:String(r.name || 'calendar item').slice(0,60)};
+      if(r.scope==='item' && typeof r.keepHid==='string' && cleanHabitId(r.keepHid))entry.keepHid=cleanHabitId(r.keepHid);
+      return entry;
+    }).slice(0,10000);
 }
 function calendarIgnoreIdentity(h,scope='occurrence'){
   if(scope==='item')return h?.hid ? `item:${h.hid}` : '';
   if(!h?.source || !h.externalId)return '';
   return scope==='series' ? (h.calendarSeriesId || '') : `${h.source}:${h.externalId}`;
 }
-function isCalendarIgnored(h,settings){
+function calendarDuplicateKey(h){
+  if(!h || h.type!=='task' || h.breakable)return '';
+  const timed=Number.isFinite(h.eventTime);
+  if(!timed && !(h.source && h.externalId && Number.isFinite(h.calendarStart) && Number.isFinite(h.calendarEnd)))return '';
+  const name=String(h.name || '').trim().toLowerCase().replace(/\s+/g,' ');
+  if(!name)return '';
+  return timed ? JSON.stringify([name,h.eventTime,h.calendarEnd || h.eventTime+clampDuration(h.durationMinutes)*60000])
+    : JSON.stringify([name,'all-day',h.calendarStart,h.calendarEnd]);
+}
+let calendarIgnoreStoredRows=null,calendarIgnoreStoredIndex=null;
+function calendarIgnoreIndex(){
+  let raw;
+  try{raw=localStorage.getItem(KEY);}catch{return new Map();}
+  if(!calendarIgnoreStoredIndex || raw!==calendarIgnoreStoredRows){
+    let rows;
+    try{rows=JSON.parse(raw);}catch{}
+    calendarIgnoreStoredIndex=new Map((Array.isArray(rows)?rows:[]).filter(Boolean).map(h=>[h.hid,h]));
+    calendarIgnoreStoredRows=raw;
+  }
+  return calendarIgnoreStoredIndex;
+}
+function isCalendarIgnored(h,settings,itemsById){
   if(!h)return false;
   const prefs=settings || (typeof sortSettings!=='undefined' ? sortSettings : null) || Storage.read('tings_app_settings_v2') || {};
-  return (prefs.calendarIgnores || []).some(r=>r.id===calendarIgnoreIdentity(h,r.scope));
+  const ignores=prefs.calendarIgnores || [];
+  const matches=(item,rule)=>rule.id===calendarIgnoreIdentity(item,rule.scope);
+  if(ignores.some(r=>r.scope!=='item' && matches(h,r)))return true;
+  let rule=ignores.find(r=>r.scope==='item' && matches(h,r));
+  if(!rule)return false;
+  const key=calendarDuplicateKey(h);
+  if(!key)return false;
+  const index=itemsById || calendarIgnoreIndex(),seen=new Set([h.hid]);
+  while(rule.keepHid){
+    const kept=index.get(rule.keepHid);
+    if(!kept || seen.has(kept.hid) || calendarDuplicateKey(kept)!==key || ignores.some(r=>r.scope!=='item' && matches(kept,r)))return false;
+    seen.add(kept.hid);
+    rule=ignores.find(r=>r.scope==='item' && matches(kept,r));
+    if(!rule)return true;
+  }
+  // Older duplicate rules had no keeper. Hide only if an unhidden match still exists.
+  return [...index.values()].some(other=>other.hid!==h.hid && calendarDuplicateKey(other)===key && !ignores.some(r=>matches(other,r)));
 }

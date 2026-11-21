@@ -38,7 +38,7 @@ const ASSISTANT_FOCUS_EXTRACT_FIELDS = {
   organization:[['topics','topics'],['pinned','pinned'],['snoozedUntil','snooze'],['sharedDisplay','display'],['links','links']],
   event:[['appointmentRepeat','repeat'],['appointmentStartDate','date'],['appointmentWeekdays','weekdays'],['appointmentUntil','until'],['appointmentStartMinute','time']],
   exception:[['exceptionTime','time'],['exceptionDuration','duration'],['exceptionEmoji','emoji'],['exceptionColor','color'],['exceptionCancelled','cancelled'],['exceptionReset','reset']],
-  reminders:[['reminderDnd','dnd'],['reminderStart','start'],['reminderSecond','second'],['reminderSecondLead','secondLead'],['reminderDue','due'],['reminderDueDays','dueDays'],['reminderDueTime','dueTime'],['reminderEnd','end'],['reminderTravelStart','travelStart'],['reminderTravelEnd','travelEnd'],['reminderMissed','missed'],['reminderTravelLead','travelLead'],['reminderStartLead','startLead'],['reminderMissedLead','missedLead'],['reminderReset','reset']]
+  reminders:[['reminderDnd','dnd'],['reminderSound','sound'],['reminderStart','start'],['reminderSecond','second'],['reminderSecondLead','secondLead'],['reminderDue','due'],['reminderDueDays','dueDays'],['reminderDueTime','dueTime'],['reminderEnd','end'],['reminderTravelStart','travelStart'],['reminderTravelEnd','travelEnd'],['reminderMissed','missed'],['reminderTravelLead','travelLead'],['reminderStartLead','startLead'],['reminderMissedLead','missedLead'],['reminderReset','reset']]
 };
 
 function assistantFocusPackTool(name, description, properties, required){
@@ -367,6 +367,7 @@ function assistantFocusReminderFieldGrounded(fieldId, phrase){
   if(fieldId === 'reminderEnd')return /\b(?:end|finish)\b/.test(text) && !/\btravel\b/.test(text);
   if(fieldId === 'reminderStart')return /\bstart\b/.test(text) && !/\b(?:travel|depart(?:ure)?)\b/.test(text);
   if(fieldId === 'reminderDnd')return /\bdnd\b|\bdo not disturb\b|\bsilenc|\bmute/.test(text);
+  if(fieldId === 'reminderSound')return /\b(?:sound|tone|chime|ringtone|silent|calm|warm|deep|gentle|default)\b/.test(text);
   return true;
 }
 
@@ -658,7 +659,7 @@ const ASSISTANT_FOCUS_GROUP_HINTS = {
   organization:'topics, pinning, snooze, links, or shared display',
   event:'event start date, repeat, weekdays, end date, or start time',
   exception:'one event date cancellation, time, duration, emoji, or reset',
-  reminders:'notification, alarm, reminder mode or lead time'
+  reminders:'notification, alarm, reminder mode, lead time, or notification sound'
 };
 
 const ASSISTANT_FOCUS_GROUP_TOOLS = {

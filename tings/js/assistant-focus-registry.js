@@ -81,6 +81,7 @@ const ASSISTANT_FOCUS_FIELDS = [
   {id:'exceptionReset', label:'Use the usual values', family:'exception', kinds:['event'], persist:'appointment', clear:false, scope:'occurrence'},
 
   {id:'reminderDnd', label:'Do Not Disturb during session', family:'reminders', kinds:['habit','task'], persist:'reminders', clear:false, unless:'zero'},
+  {id:'reminderSound', label:'Notification sound', family:'reminders', kinds:['habit','task','event'], persist:'reminders', clear:true, unless:'zero'},
   {id:'reminderStart', label:'Start reminder', family:'reminders', kinds:['habit','task','event'], persist:'reminders', clear:false},
   {id:'reminderSecond', label:'Second event reminder', family:'reminders', kinds:['event'], persist:'reminders', clear:false},
   {id:'reminderSecondLead', label:'Second event lead', family:'reminders', kinds:['event'], persist:'reminders', clear:false},

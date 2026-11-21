@@ -45,7 +45,7 @@ const SETTINGS_SEARCH_ALIASES = {
   'setting-prayer-method':'prayer calculation convention method university',
   'prayer-madhab-seg':'asr school madhab hanafi shafi prayer standard later',
   'settings-advanced-body':'optimizer packing planner',
-  'settings-assistant-body':'qwen ollama ai chatbot model',
+  'settings-assistant-body':'needle 3 qwen ollama ai chatbot model',
   'assistant-provider-seg':'assistant model source needle ollama lm studio server',
   'assistant-reasoning-seg':'thinking reasoning depth full low off',
   'settings-android-assistant-body':'gemini google hey voice appfunctions shortcuts',

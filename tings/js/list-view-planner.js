@@ -194,23 +194,27 @@ function homeAgendaPlanSignature(week,data = (typeof load === 'function' ? load(
   }).join('\n');
 }
 
-// PURE: quality tuple for accepting a background refinement. Hard recurring
-// P0/pinned rows already visible anywhere in the week may never vanish, and
-// total week work may not shrink. Today's displayed work stays today; an
-// in-progress or imminent row may only be extended,
-// never moved, truncated, or dropped. Today's P0 breakable minutes then
-// outrank today's raw minutes; travel is only a final tiebreak.
+// PURE: quality tuple for accepting a background refinement. Preserve placed
+// critical and pinned occurrences, today's commitments, and total week work.
+// In-progress or imminent rows may only be extended. Flexible occurrences
+// can change days when the new date is eligible and all their work survives.
 function homeAgendaRefinementQuality(week,data,settings){
   const days = week && Array.isArray(week.days) ? week.days : [];
   const required = new Map();
   let p0BreakableMinutes = 0;
+  let weekP0BreakableMinutes = 0;
   let totalFillMinutes = 0;
   let weekTotalFillMinutes = 0;
   let overdueMinutes = 0;
   let travelSeconds = 0;
   const activeRows = [];
   const todayMinutes = new Map();
+  const movableToday = new Set();
+  const fixedOccurrences = new Map();
   const now = Date.now();
+  const todayBase = days[0]?.dayBase ?? dayStart(now);
+  const linkedToday = new Set(plannerOrderConstraintsForDay(todayBase)
+    .flatMap(edge=>[edge.beforeHid,edge.afterHid]));
   for(let dayOffset = 0;dayOffset < days.length;dayOffset += 1){
     const rows = Array.isArray(days[dayOffset].timeline) ? days[dayOffset].timeline : [];
     const occurrenceOrdinals = new Map();
@@ -226,17 +230,28 @@ function homeAgendaRefinementQuality(week,data,settings){
       if(!h)continue;
       const minutes = Math.max(0,(Number(row.end) - Number(row.start)) / 60000);
       weekTotalFillMinutes += minutes;
-      if(dayOffset === 0){
-        totalFillMinutes += minutes;
-        const identity=h.hid || row.i;
-        todayMinutes.set(identity,(todayMinutes.get(identity) || 0)+minutes);
-      }
       const priority = typeof effectivePriority === 'function'
         ? effectivePriority(h) : Math.max(0,Math.min(5,Number(h.priority) || 2));
-      if(dayOffset === 0 && priority === 0 && h.breakable)p0BreakableMinutes += minutes;
-      const pinned = typeof isWeekPinnedToday === 'function'
-        ? isWeekPinnedToday(h,settings || {}) : false;
-      if((priority === 0 && !h.breakable) || pinned || (dayOffset === 0 && !h.breakable)){
+      if(priority === 0 && h.breakable){
+        weekP0BreakableMinutes += minutes;
+        if(dayOffset === 0)p0BreakableMinutes += minutes;
+      }
+      const pinned = plannerPinnedDayBase(h,settings || {},todayBase) != null;
+      if(!h.breakable){
+        if(!fixedOccurrences.has(row.i))fixedOccurrences.set(row.i,[]);
+        fixedOccurrences.get(row.i).push({dayBase:days[dayOffset].dayBase ?? dayStart(row.start),minutes,
+          optionId:row.scheduleOptionId || null});
+      }
+      if(dayOffset === 0){
+        totalFillMinutes += minutes;
+        todayMinutes.set(row.i,(todayMinutes.get(row.i) || 0)+minutes);
+        if(priority > 0 && !pinned && !linkedToday.has(h.hid) && !isOpportunityHabit(h)
+          && !rhythmFillsEveryEligibleDay(h) && isMovableWeekCandidate({h},todayBase)){
+          movableToday.add(row.i);
+        }
+      }
+      if((priority === 0 && !h.breakable) || pinned
+        || (dayOffset === 0 && !h.breakable && !movableToday.has(row.i))){
         const ordinal = (occurrenceOrdinals.get(row.i) || 0) + 1;
         occurrenceOrdinals.set(row.i,ordinal);
         const occurrence = row.occurrenceKey || `${row.i}:occurrence-${ordinal}`;
@@ -245,7 +260,7 @@ function homeAgendaRefinementQuality(week,data,settings){
       }
       const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
       if(dayOffset === 0 && urgency >= 100)overdueMinutes += minutes;
-      if(dayOffset === 0 && Number(row.start) <= now + 5*60000 && Number(row.end) > now){
+      if(dayOffset === 0 && Number(row.start) <= now + AGENDA_REFINEMENT_IMMINENT_MS && Number(row.end) > now){
         activeRows.push({
           i:row.i,
           start:Math.round(Number(row.start) / 60000),
@@ -256,8 +271,8 @@ function homeAgendaRefinementQuality(week,data,settings){
     }
   }
   return {
-    required,p0BreakableMinutes,totalFillMinutes,weekTotalFillMinutes,
-    overdueMinutes,travelSeconds,activeRows,todayMinutes
+    required,p0BreakableMinutes,weekP0BreakableMinutes,totalFillMinutes,weekTotalFillMinutes,
+    overdueMinutes,travelSeconds,activeRows,todayMinutes,movableToday,fixedOccurrences,todayBase
   };
 }
 
@@ -282,8 +297,24 @@ function homeAgendaRefinementIsBetter(baseline,candidate,data,settings){
   for(const [idx,minutes] of before.required){
     if((after.required.get(idx) || 0) + 0.01 < minutes)return false;
   }
-  for(const [hid,minutes] of before.todayMinutes){
-    if((after.todayMinutes.get(hid) || 0)+0.01<minutes)return false;
+  for(const [idx,minutes] of before.todayMinutes){
+    if(!before.movableToday.has(idx) && (after.todayMinutes.get(idx) || 0)+0.01<minutes)return false;
+  }
+  for(const idx of before.movableToday){
+    const prior = before.fixedOccurrences.get(idx);
+    const replacements = after.fixedOccurrences.get(idx) || [];
+    if(replacements.length < prior.length)return false;
+    const h = data[idx];
+    for(let ordinal = 0;ordinal < prior.length;ordinal += 1){
+      const original = prior[ordinal], next = replacements[ordinal];
+      if(next.minutes + 0.01 < original.minutes)return false;
+      if(original.optionId && habitScheduleOptionSameDayMode(
+        h.scheduleOptions?.find(option=>option.id === original.optionId)
+      ) === 'separate' && original.optionId !== next.optionId)return false;
+      if(original.dayBase !== before.todayBase || next.dayBase === original.dayBase)continue;
+      if(next.dayBase < original.dayBase || !candidateOccurrenceAllowsDay({h},next.dayBase)
+        || !weekFillEligibleOnDay(h,settings || {},next.dayBase,new Date(next.dayBase).getDay(),null))return false;
+    }
   }
   if(after.weekTotalFillMinutes + 0.01 < before.weekTotalFillMinutes)return false;
   if(Math.abs(after.p0BreakableMinutes - before.p0BreakableMinutes) > 0.01){
@@ -294,6 +325,9 @@ function homeAgendaRefinementIsBetter(baseline,candidate,data,settings){
   }
   if(Math.abs(after.overdueMinutes - before.overdueMinutes) > 0.01){
     return after.overdueMinutes > before.overdueMinutes;
+  }
+  if(Math.abs(after.weekP0BreakableMinutes - before.weekP0BreakableMinutes) > 0.01){
+    return after.weekP0BreakableMinutes > before.weekP0BreakableMinutes;
   }
   if(Math.abs(after.travelSeconds - before.travelSeconds) > 0.5){
     return after.travelSeconds < before.travelSeconds;
@@ -403,9 +437,26 @@ function homeAgendaRefinementBudgetMs(week,pass = 0){
   return Math.max(floor,Math.min(cap,Math.round(untilBoundary)));
 }
 
-function resetHomeAgendaRefinementProgress(dirtyKey){
-  if(_optimizerHomeRefinementTrackedDirty === dirtyKey)return;
-  _optimizerHomeRefinementTrackedDirty = dirtyKey;
+function resetHomeAgendaRefinementProgress(dirtyKey,{before,after,data} = {}){
+  const revision = `${dateKey(Date.now())}\n${dirtyKey}`;
+  // Clock refreshes normally keep their search budget. Losing P0 hours is a
+  // new search problem, even when there was no data or location revision.
+  if(_optimizerHomeRefinementTrackedDirty === revision){
+    if(!before || !after)return;
+    const p0Minutes = week=>{
+      const byHabit = new Map();
+      for(const row of week.days?.[0]?.timeline || []){
+        const habit = data[row.i];
+        if(row.kind === 'fill' && habit?.breakable && effectivePriority(habit) === 0){
+          byHabit.set(row.i,(byHabit.get(row.i) || 0) + (row.end - row.start) / 60000);
+        }
+      }
+      return byHabit;
+    };
+    const next = p0Minutes(after);
+    if(![...p0Minutes(before)].some(([idx,minutes])=>(next.get(idx) || 0) + 0.01 < minutes))return;
+  }
+  _optimizerHomeRefinementTrackedDirty = revision;
   _optimizerHomeRefinementPass = 0;
   _optimizerHomeRefinementDoneKey = '';
   _optimizerHomeProvenDayKeys = new Set();
@@ -519,15 +570,20 @@ function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
     const refineSettings = {...settings};
     const livePlannerLocationId = typeof liveLocationId === 'function' ? liveLocationId() : null;
     if(livePlannerLocationId)refineSettings._plannerLiveLocationId = livePlannerLocationId;
+    const coord = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+    if(coord)refineSettings._plannerCurrentCoord = {lat:coord.lat,lng:coord.lng};
+    const incumbent = _homeRenderedWeek || baselineWeek;
     void buildWeekAgendaOffMain(data,refineSettings,7,'exact',{
       dirtyKey,
       day0Only:false,
       refine:true,
       refinePass:_optimizerHomeRefinementPass,
       refineBudgetMs:budgetMs,
+      memoDays:_optimizerHomeRefinementPass === 0 && _optimizerHomeReadyDirtyKey === dirtyKey
+        ? memoDaysFromWeek(incumbent) : [],
       provenDayKeys:[..._optimizerHomeProvenDayKeys],
       priorPlacements:typeof agendaPriorPlacementsFromWeek === 'function'
-        ? agendaPriorPlacementsFromWeek(baselineWeek || _homeRenderedWeek)
+        ? agendaPriorPlacementsFromWeek(incumbent)
         : []
     }).then(async week=>{
       if(token !== _optimizerHomeRefinementToken)return;
@@ -562,6 +618,7 @@ function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
       // Only absorb proofs from a week we actually keep. A rejected pass that
       // proved day 0 while heuristic-packing later days would otherwise freeze
       // the incumbent's day 0 and never apply the better packing.
+      if(better && week.plannerDiagnostics?.incumbentHoursRepair)_optimizerHomeProvenDayKeys.clear();
       if(better || samePlan)absorbHomeAgendaProvenDayKeys(week);
       if(!better){
         finishHomeAgendaUpdate();
@@ -842,9 +899,9 @@ function optimizerHomeStateKey(data){
   return homePlannerStateKey(data);
 }
 
-// v6 refreshes agendas for conditional repetitions and their repeat limits.
-const HOME_AGENDA_CACHE_VERSION = 6;
-const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v6';
+// v8 replans cached weeks with incumbent-aware refinement.
+const HOME_AGENDA_CACHE_VERSION = 8;
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v8';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
 // A usable unplanned list is better than making a slow phone look frozen.
 // The worker keeps running and replaces this fallback with the planned week.
@@ -1150,6 +1207,8 @@ try{
   localStorage.removeItem('tings_home_agenda_cache_v3');
   localStorage.removeItem('tings_home_agenda_cache_v4');
   localStorage.removeItem('tings_home_agenda_cache_v5');
+  localStorage.removeItem('tings_home_agenda_cache_v6');
+  localStorage.removeItem('tings_home_agenda_cache_v7');
 }catch(_){}
 
 function showHomeAgendaLoading(){
@@ -1623,6 +1682,9 @@ function queueOptimizedHomeRender(data,opts){
       }
       return;
     }
+    if(exactMode)resetHomeAgendaRefinementProgress(dirtyKey,{
+      before:_optimizerHomeReadyWeek || _homeRenderedWeek,after:week,data:liveData
+    });
     _optimizerHomeReadyWeek = week;
     if(_homeAgendaUpdateStarted == null
       && homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
@@ -1801,12 +1863,16 @@ function tickHomeAgendaWhileOpen(){
     ? consumeAgendaDropForecast(_homeRenderedWeek,forecastData,homePlannerDirtyKey(forecastData)) : null;
   if(projected && !_optimizerHomeRequestKey){
     cancelHomeAgendaRefinement('using five-minute lookahead');
+    resetHomeAgendaRefinementProgress(homePlannerDirtyKey(forecastData),{
+      before:_homeRenderedWeek,after:projected,data:forecastData
+    });
     render({__fromOptimizer:true,__fromBackgroundRefresh:true,__optimizedWeek:projected});
     _homeRenderedWeek=projected;
     adoptHomeAgendaReadyState(projected,load(),true);
     saveHomeAgendaCache(load(),projected);
     _homeListFingerprint=homeListFingerprint();
     if(typeof queueNativeReminders==='function')queueNativeReminders();
+    maybeScheduleHomeAgendaRefinement(projected);
     return true;
   }
   const pendingForecast=typeof reusableAgendaDropForecast==='function'

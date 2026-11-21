@@ -11,6 +11,8 @@ let bulkReview = null; // computed review {perItem, opLines, errors, warnings, c
 let bulkReviewConfirmed = false; // re-inspection gate after staleness
 let bulkStaleNotice = false;
 let bulkSettingsQuery = '';
+let bulkSoundPicker = null;
+let bulkSoundCatalogRequest = 0;
 
 const BULK_PRIORITY_WORDS = ['critical','high','normal','flexible','low','someday'];
 
@@ -263,9 +265,17 @@ function bulkEnsurePending(opDesc){
 function bulkDefaultValue(opDesc,op,records){
   switch(opDesc.valueKind){
     case 'topics':case 'places':case 'monthdays':case 'ordinal':return [];
-    case 'number':return bulkDefaultNumber(opDesc);
+    case 'number':{
+      if(opDesc.id !== 'conditionRadius')return bulkDefaultNumber(opDesc);
+      const radii = new Set(records.filter(h=>opDesc.applies(h)).map(opportunityRadius));
+      return radii.size === 1 ? [...radii][0] : null;
+    }
     case 'priority':return DEFAULT_PRIORITY;
     case 'date':{
+      if(opDesc.id === 'planBy'){
+        const dates = new Set(records.filter(h=>opDesc.applies(h)).map(h=>dateInputValue(h.planByDate)));
+        return dates.size === 1 ? [...dates][0] : '';
+      }
       const common = records.map(h=>h.dueDate).filter(v=>v != null);
       if(common.length && new Set(common.map(dateKey)).size === 1)return dateKey(common[0]);
       return '';
@@ -290,6 +300,17 @@ function bulkDefaultValue(opDesc,op,records){
     case 'color':return '';
     case 'profile':return {mode:'inherit',id:''};
     case 'place':return '';
+    case 'choice':return bulkLeadDefault(opDesc.leadPreset);
+    case 'dueReminder':return {days:0,time:'09:00'};
+    case 'sound':{
+      const ids = new Set(records.filter(h=>opDesc.applies(h)).map(h=>nativeReminderSoundId(bulkReminderChoice(h)) || 'inherit'));
+      return ids.size === 1 ? [...ids][0] : 'inherit';
+    }
+    case 'datetime':{
+      const when = new Date();
+      when.setDate(when.getDate() + 1);
+      return {date:dateKey(when.getTime()),time:'09:00'};
+    }
     case 'placepref':{
       const first = records.find(h=>Array.isArray(h.locationIds) && h.locationIds.length);
       return {locationId:first ? first.locationIds[0] : '',level:'high'};
@@ -377,22 +398,80 @@ function bulkValueControlHtml(opDesc,pending,data){
         <select class="mini-select" aria-label="preference" data-bulk-pref-part="level"><option value="high"${value && value.level === 'high' ? ' selected' : ''}>prefer</option><option value="little"${value && value.level === 'little' ? ' selected' : ''}>slightly prefer</option><option value="avoid"${value && value.level === 'avoid' ? ' selected' : ''}>avoid</option></select>
       </div>`;
       }
+    case 'choice':{
+      const options = bulkLeadOptions(opDesc.leadPreset);
+      return `<select class="mini-select" aria-label="${escapeHtml(opDesc.label)}" data-bulk-field="${id}" data-bulk-kind="choice">${options.map(([key,label])=>`<option value="${key}"${String(value) === String(key) ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>`;
+    }
+    case 'sound':{
+      const api = window.TingsNative?.sounds;
+      const disabled = bulkSoundPicker ? ' disabled' : '';
+      const pickers = [
+        typeof api?.addPick === 'function' ? `<button type="button" class="mini-text-btn" data-bulk-sound-pick="phone"${disabled}>Choose phone sound</button>` : '',
+        typeof api?.addFile === 'function' ? `<button type="button" class="mini-text-btn" data-bulk-sound-pick="file"${disabled}>Choose audio file</button>` : ''
+      ].join('');
+      const selected = String(value || 'inherit');
+      // The phone catalog arrives after the row paints. Keep a saved custom
+      // tone selected instead of falling back to the first option.
+      const choices = bulkSoundCatalog.some(choice=>choice.id === selected)
+        ? bulkSoundCatalog
+        : bulkSoundCatalog.concat([{id:selected,name:bulkSoundLabel(selected)}]);
+      return `<select class="mini-select" aria-label="notification sound" data-bulk-field="${id}" data-bulk-kind="sound">${choices.map(choice=>`<option value="${escapeHtml(choice.id)}"${selected === choice.id ? ' selected' : ''}>${escapeHtml(choice.name)}</option>`).join('')}</select>${pickers ? `<div class="settings-actions">${pickers}</div>` : ''}`;
+    }
+    case 'dueReminder':{
+      const days = value && value.days != null ? String(value.days) : '0';
+      const time = value?.time ?? '09:00';
+      return `<div class="bulk-window" data-bulk-kind="dueReminder" data-bulk-field="${id}">
+        <select class="mini-select" aria-label="due date reminder day" data-bulk-field="${id}" data-bulk-due-part="days">${bulkLeadOptions('dueDays').map(([key,label])=>`<option value="${key}"${days === String(key) ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>
+        <input type="time" class="plan-time-input" aria-label="due date reminder time" data-bulk-field="${id}" data-bulk-due-part="time" value="${escapeHtml(time)}" />
+      </div>`;
+    }
+    case 'datetime':
+      return `<div class="bulk-window" data-bulk-kind="datetime" data-bulk-field="${id}">
+        <input type="date" class="plan-date-input" aria-label="snooze date" data-bulk-field="${id}" data-bulk-when-part="date" value="${escapeHtml(value && value.date || '')}" />
+        <input type="time" class="plan-time-input" aria-label="snooze time" data-bulk-field="${id}" data-bulk-when-part="time" value="${escapeHtml(value && value.time || '')}" />
+      </div>`;
     default:return '';
   }
 }
 
+function bulkOpVisible(op){
+  if(!op)return false;
+  if(op.nativeOnly && !window.TingsNative?.isNative)return false;
+  if(op.requiresQuiet && !window.TingsNative?.quiet)return false;
+  return true;
+}
+
+function bulkOpNeedsValue(opDesc,op){
+  if(!opDesc || op === 'keep' || opDesc.valueKind === 'none')return false;
+  return !(Array.isArray(opDesc.valueless) && opDesc.valueless.includes(op));
+}
+
+// Project earlier operations so “applies to” matches the review, including a
+// due date or condition trigger chosen in the same batch.
+function bulkProjectRecord(record,prior,data){
+  const probe = bulkClone(record);
+  for(const step of prior){
+    const desc = bulkOpById(step.id);
+    if(!desc || desc.store === 'reminders')continue;
+    if(bulkOpUnavailable(probe,desc,data,step.value))continue;
+    if(desc.plan(probe,step.op,step.value,data).error)continue;
+    try{desc.apply(probe,step.op,step.value,data);}catch(_){}
+  }
+  return probe;
+}
+
 function bulkAppliesLine(opDesc,pending,records,data){
   if(pending.op === 'keep')return '';
-  const prerequisiteId = {eventTime:'dueDate',placePref:'places'}[pending.id];
-  const prerequisite = bulkPending.find(part=>part.id === prerequisiteId && part.op !== 'keep');
-  const candidates = prerequisite ? records.map(record=>{
-    const desc = bulkOpById(prerequisite.id);
-    if(bulkOpUnavailable(record,desc,data,prerequisite.value)
-      || desc.plan(record,prerequisite.op,prerequisite.value,data).error)return record;
-    const probe = bulkClone(record);
-    desc.apply(probe,prerequisite.op,prerequisite.value,data);
+  const order = bulkApplyOrder();
+  const prior = order.slice(0,Math.max(0,order.indexOf(pending.id)))
+    .map(id=>bulkPending.find(step=>step.id === id))
+    .filter(step=>step && step.op !== 'keep');
+  const autoRadius = pending.id === 'conditionRadius' && !prior.some(step=>step.id === 'conditionTrigger');
+  const candidates = records.map(record=>{
+    const probe = bulkProjectRecord(record,prior,data);
+    if(autoRadius)bulkResolveOpportunityTrigger(record,probe);
     return probe;
-  }) : records;
+  });
   const {ok,excluded} = bulkApplicability(opDesc,candidates,data,pending.value);
   const bits = [`Applies to ${ok} of ${records.length}`];
   for(const [reason,count] of Object.entries(excluded))bits.push(`${reason}: ${count}`);
@@ -409,11 +488,13 @@ function renderBulkEditStep(){
   const query = bulkSettingsQuery.trim().toLowerCase();
   const groups = bulkGroupOrder();
   const commonOps = BULK_FIELD_OPS.filter(op=>op.common);
-  const matchesQuery = op=>!query || `${op.label} ${op.hint || ''} ${op.group}`.toLowerCase().includes(query);
+  const matchesQuery = op=>!query || `${op.label} ${op.hint || ''} ${op.group} ${(op.choices || []).map(choice=>choice.label).join(' ')}`.toLowerCase().includes(query);
+  const shown = op=>bulkOpVisible(op) && matchesQuery(op);
   const row = op=>{
     const pending = bulkPending.find(p=>p.id === op.id) || {id:op.id,op:'keep',value:null};
     const common = bulkCommonValue(op,records,data);
     const applies = bulkAppliesLine(op,pending,records,data);
+    const needsValue = bulkOpNeedsValue(op,pending.op);
     return `<div class="bulk-op-row" data-bulk-op-row="${op.id}">
       <div class="bulk-op-head">
         <span class="bulk-op-label"><strong>${escapeHtml(op.label)}</strong><small>${escapeHtml(op.hint || '')}</small></span>
@@ -422,20 +503,51 @@ function renderBulkEditStep(){
         </select>
       </div>
       <p class="bulk-op-context">now: ${escapeHtml(common || '—')}</p>
-      <div class="bulk-op-value"${pending.op === 'keep' ? ' hidden' : ''}>${bulkValueControlHtml(op,pending,data)}</div>
+      <div class="bulk-op-value"${needsValue ? '' : ' hidden'}>${needsValue ? bulkValueControlHtml(op,pending,data) : ''}</div>
       <p class="bulk-op-applies" data-bulk-applies="${op.id}"${applies ? '' : ' hidden'}>${escapeHtml(applies)}</p>
     </div>`;
   };
-  const section = (title,ops,open)=>`<details class="bulk-group"${open ? ' open' : ''}><summary>${escapeHtml(title)}</summary>${ops.filter(matchesQuery).map(row).join('')}</details>`;
+  const section = (title,ops,open)=>`<details class="bulk-group"${open ? ' open' : ''}><summary>${escapeHtml(title)}</summary>${ops.filter(shown).map(row).join('')}</details>`;
   const parts = [];
-  if(commonOps.some(matchesQuery))parts.push(`<div class="bulk-group-common">${commonOps.filter(matchesQuery).map(row).join('')}</div>`);
+  if(commonOps.some(shown))parts.push(`<div class="bulk-group-common">${commonOps.filter(shown).map(row).join('')}</div>`);
   for(const group of groups){
     const ops = BULK_FIELD_OPS.filter(op=>op.group === group && !op.common);
-    if(!ops.some(matchesQuery))continue;
+    if(!ops.some(shown))continue;
     parts.push(section(group,ops,query !== '' || expanded.has(group)));
   }
   host.innerHTML = parts.join('') || '<p class="field-hint">No settings match.</p>';
   syncBulkReviewAction();
+  void bulkRefreshSoundCatalog(host);
+}
+
+async function bulkRefreshSoundCatalog(host,savedState){
+  const api = window.TingsNative?.sounds;
+  if(!host?.querySelector('[data-bulk-kind="sound"]'))return;
+  const request = ++bulkSoundCatalogRequest;
+  let state;
+  try{state = savedState || await api?.status?.();}
+  catch{return;}
+  if(request !== bulkSoundCatalogRequest || !host.isConnected || !state)return;
+  const choices = [{id:'inherit',name:state.effectiveName ? `Use the default (${state.effectiveName})` : 'Use the default'}];
+  for(const choice of state.choices || []){
+    if(nativeReminderItemSoundChoice(choice) && !choices.some(existing=>existing.id === choice.id))choices.push({id:choice.id,name:choice.name || choice.id});
+  }
+  const select = host.querySelector('[data-bulk-kind="sound"]');
+  const pending = bulkPending.find(step=>step.id === 'reminderSound');
+  const wanted = pending && pending.op !== 'keep' && pending.value != null && pending.value !== ''
+    ? String(pending.value) : (select ? select.value : '');
+  if(wanted && !choices.some(choice=>choice.id === wanted)){
+    choices.push({id:wanted,name:String(wanted).startsWith('lib:') ? 'Custom sound' : wanted});
+  }
+  bulkSetSoundCatalog(choices);
+  if(!select)return;
+  select.replaceChildren(...choices.map(choice=>{
+    const option = document.createElement('option');
+    option.value = choice.id;
+    option.textContent = choice.name;
+    return option;
+  }));
+  if(choices.some(choice=>choice.id === wanted))select.value = wanted;
 }
 
 function bulkPendingFor(id){
@@ -454,14 +566,15 @@ function syncBulkReviewAction(){
   if(button.textContent !== label)button.textContent = label;
 }
 
-function bulkRefreshApplies(id){
+function bulkRefreshApplies(){
   syncBulkReviewAction();
+  const host = $('bulk-edit-rows');
+  if(!host)return;
   const data = load();
   const records = bulkSelectedRecords(data);
-  const dependentId = {dueDate:'eventTime',places:'placePref'}[id];
   for(const pending of bulkPending){
-    if(pending.id !== id && pending.id !== dependentId)continue;
-    const line = $('bulk-edit-rows').querySelector(`[data-bulk-applies="${pending.id}"]`);
+    if(pending.op === 'keep')continue;
+    const line = host.querySelector(`[data-bulk-applies="${pending.id}"]`);
     if(!line)continue;
     const text = bulkAppliesLine(bulkOpById(pending.id),pending,records,data);
     line.hidden = !text;
@@ -515,6 +628,20 @@ function bulkReadControlValue(opDesc,host){
       }
     case 'place':
       return host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="place"]`)?.value || '';
+    case 'choice':
+      return Number(host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="choice"]`)?.value);
+    case 'sound':
+      return host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="sound"]`)?.value || 'inherit';
+    case 'dueReminder':
+      return {
+        days:Number(host.querySelector('[data-bulk-due-part="days"]')?.value),
+        time:host.querySelector('[data-bulk-due-part="time"]')?.value || ''
+      };
+    case 'datetime':
+      return {
+        date:host.querySelector('[data-bulk-when-part="date"]')?.value || '',
+        time:host.querySelector('[data-bulk-when-part="time"]')?.value || ''
+      };
     case 'placepref':
       return {
         locationId:host.querySelector(`[data-bulk-pref-part="locationId"]`)?.value || '',
@@ -528,23 +655,37 @@ function bulkReadControlValue(opDesc,host){
 // Step 3: review.
 // ─────────────────────────────────────────────────────────────────────────
 function bulkComputeReview(data = load()){
+  bulkBeginReminderStage();
+  try{
+    return bulkComputeReviewNow(data);
+  }finally{
+    bulkEndReminderStage();
+  }
+}
+
+function bulkComputeReviewNow(data){
   const records = bulkSelectedRecords(data);
   // Apply prerequisites before settings that depend on them, regardless of
-  // the order in which the user picked the operations.
-  const repeatOps = ['repeatMode','rhythm'];
-  const order = BULK_FIELD_OPS.map(desc=>desc.id).filter(id=>!repeatOps.includes(id)).concat(repeatOps);
-  const active = order.map(id=>bulkPending.find(pending=>pending.id === id)).filter(pending=>pending && pending.op !== 'keep');
+  // the order in which the user picked the operations. Reminders run last.
+  const order = bulkApplyOrder();
+  const active = order.map(id=>bulkPending.find(pending=>pending.id === id))
+    .filter(pending=>pending && pending.op !== 'keep' && bulkOpVisible(bulkOpById(pending.id)));
   const stats = new Map(active.map(pending=>[pending.id,{applied:0,unchanged:0,excluded:{},label:bulkOpById(pending.id).label}]));
   const projected = new Map();
   const perItem = [];
   const errors = [];
   const warnings = [];
+  const reminderModes = new Map();
+  const explicitTrigger = active.some(pending=>pending.id === 'conditionTrigger');
   for(const record of records){
     const probe = bulkClone(record);
     const changes = [];
+    const requestedModes = new Set();
+    let recordTouched = false;
     for(const pending of active){
       const desc = bulkOpById(pending.id);
       const stat = stats.get(pending.id);
+      if(pending.id === 'conditionRadius' && !explicitTrigger)bulkResolveOpportunityTrigger(record,probe);
       const blocked = bulkOpUnavailable(probe,desc,data,pending.value);
       if(blocked){
         stat.excluded[blocked] = (stat.excluded[blocked] || 0) + 1;
@@ -557,6 +698,33 @@ function bulkComputeReview(data = load()){
       }
       const before = desc.current(record);
       const label = desc.changeLabel?.(probe,pending.op,pending.value) || desc.label;
+      if(desc.store === 'reminders'){
+        const owner = `item:${probe.hid}`;
+        const snapshot = bulkReminderStage.items[owner] === undefined ? null : bulkClone(bulkReminderStage.items[owner]);
+        const keys = desc.reminderKeys(probe);
+        const enabling = desc.reminderMode && pending.op !== 'off';
+        if(desc.reminderMode){
+          for(const key of keys){
+            if(enabling)requestedModes.add(key);
+            else requestedModes.delete(key);
+          }
+        }
+        const beforeEffect = bulkReminderEffect(probe,keys);
+        desc.apply(probe,pending.op,pending.value,data);
+        if(bulkSameValue(beforeEffect,bulkReminderEffect(probe,keys))){
+          if(snapshot == null)delete bulkReminderStage.items[owner];
+          else bulkReminderStage.items[owner] = snapshot;
+          if(!enabling || bulkReminderOriginal.enabled){
+            stat.unchanged += 1;
+            continue;
+          }
+        }
+        for(const warning of opWarnings)warnings.push({name:record.name,message:`${desc.label}: ${warning}`});
+        stat.applied += 1;
+        stat.label = label;
+        changes.push({id:pending.id,label:desc.label,before,replacedDates:Object.keys(beforeEffect.overrides).length});
+        continue;
+      }
       const previous = {...probe};
       const touched = desc.apply(probe,pending.op,pending.value,data);
       if(!touched.some(field=>!bulkSameValue(previous[field],probe[field]))){
@@ -566,28 +734,51 @@ function bulkComputeReview(data = load()){
       for(const warning of opWarnings)warnings.push({name:record.name,message:`${desc.label}: ${warning}`});
       stat.applied += 1;
       stat.label = label;
+      recordTouched = true;
       changes.push({id:pending.id,label:desc.label,before});
     }
-    if(isOpportunityHabit(probe) && changes.some(change=>['places','weatherProfile','weatherLocation'].includes(change.id))){
-      const trigger = bulkOpportunityTrigger(probe);
-      if(trigger)probe.conditionTrigger = trigger;
-      else errors.push({name:record.name,message:'When conditions fit needs a place or weather guidance as its trigger'});
+    const modes = {};
+    for(const key of requestedModes){
+      const after = bulkReminderEffect(probe,[key]);
+      if(!bulkReminderOriginal.enabled || !bulkSameValue(bulkReminderEffect(probe,[key],bulkReminderOriginal),after)){
+        modes[key] = after.effect[key];
+      }
     }
-    if(changes.length){
-      projected.set(record.hid,probe);
-      perItem.push({hid:record.hid,name:record.name,changes});
+    if(Object.keys(modes).length)reminderModes.set(record.hid,modes);
+    if(!explicitTrigger && !bulkResolveOpportunityTrigger(record,probe)){
+      errors.push({name:record.name,message:'When conditions fit needs a place or weather guidance as its trigger'});
     }
+    if(recordTouched)projected.set(record.hid,probe);
+    if(changes.length)perItem.push({hid:record.hid,name:record.name,changes});
   }
   // Use the same normalization that save() uses. Undo needs the exact stored
   // values, including dependent fields such as an item's preferred place.
   const next = projected.size ? normalize(data.map(h=>projected.get(h.hid) || h)) : data;
+  if(reminderModes.size)bulkReminderStage.enabled = true;
+  const reminderDiffs = new Map();
+  for(const record of records){
+    const owner = `item:${record.hid}`;
+    const before = Object.prototype.hasOwnProperty.call(bulkReminderOriginal.items,owner) ? bulkClone(bulkReminderOriginal.items[owner]) : null;
+    const after = Object.prototype.hasOwnProperty.call(bulkReminderStage.items,owner) ? bulkClone(bulkReminderStage.items[owner]) : null;
+    const modes = reminderModes.get(record.hid);
+    if(!bulkSameValue(before,after) || modes)reminderDiffs.set(record.hid,{before,after,modes});
+  }
+  const reminderEnabled = bulkReminderOriginal.enabled !== bulkReminderStage.enabled
+    ? {before:bulkReminderOriginal.enabled === true,after:bulkReminderStage.enabled === true}
+    : null;
   const undoEntries = [];
+  const touchedIds = new Set([...projected.keys(),...reminderDiffs.keys()]);
   data.forEach((record,index)=>{
-    if(!projected.has(record.hid))return;
-    const after = next[index];
-    const changes = Object.keys(record).filter(field=>!bulkSameValue(record[field],after[field]))
-      .map(field=>({field,before:record[field],after:after[field]}));
-    if(changes.length)undoEntries.push({hid:record.hid,changes});
+    if(!touchedIds.has(record.hid))return;
+    const saved = next[index];
+    const changes = projected.has(record.hid)
+      ? Object.keys(record).filter(field=>!bulkSameValue(record[field],saved[field])).map(field=>({field,before:record[field],after:saved[field]}))
+      : [];
+    const reminders = reminderDiffs.get(record.hid) || null;
+    if(!changes.length && !reminders)return;
+    const entry = {hid:record.hid,changes};
+    if(reminders)entry.reminders = reminders;
+    undoEntries.push(entry);
   });
   const changedIds = new Set(undoEntries.map(entry=>entry.hid));
   const savedById = new Map(next.filter(h=>changedIds.has(h.hid)).map(h=>[h.hid,h]));
@@ -598,12 +789,19 @@ function bulkComputeReview(data = load()){
     for(const [reason,count] of Object.entries(excluded))line += `; ${count} ${reason}`;
     return line;
   });
+  if(reminderEnabled)opLines.push('Enable phone reminders on this device');
   const changedItems = perItem.filter(item=>changedIds.has(item.hid));
   for(const item of changedItems){
-    for(const change of item.changes)change.after = bulkOpById(change.id).current(savedById.get(item.hid));
+    const source = savedById.get(item.hid) || data.find(h=>h.hid === item.hid);
+    for(const change of item.changes){
+      const desc = bulkOpById(change.id);
+      change.after = desc.store === 'reminders' ? desc.current(source,'after') : desc.current(source);
+    }
   }
   return {perItem:changedItems,opLines,errors,warnings,
-    changing:undoEntries.length,selected:records.length,next,undoEntries};
+    changing:undoEntries.length,selected:records.length,next,undoEntries,
+    reminderAfter:bulkClone(bulkReminderStage),reminderEnabled,
+    reminderWrite:undoEntries.some(entry=>entry.reminders) || Boolean(reminderEnabled)};
 }
 
 function renderBulkReview(review = bulkComputeReview()){
@@ -620,7 +818,12 @@ function renderBulkReview(review = bulkComputeReview()){
   }
   const items = $('bulk-review-items');
   if(items){
-    items.innerHTML = review.perItem.map(item=>`<details class="bulk-review-item"><summary>${escapeHtml(item.name)} · ${item.changes.length} change${item.changes.length === 1 ? '' : 's'}</summary><ul>${item.changes.map(change=>`<li><strong>${escapeHtml(change.label)}</strong>: ${escapeHtml(String(change.before))} → ${escapeHtml(String(change.after))}</li>`).join('')}</ul></details>`).join('');
+    const changeHtml = change=>{
+      const dates = change.replacedDates;
+      const note = dates ? ` · replaces overrides on ${dates} date${dates === 1 ? '' : 's'}` : '';
+      return `<li><strong>${escapeHtml(change.label)}</strong>: ${escapeHtml(String(change.before))} → ${escapeHtml(String(change.after))}${note}</li>`;
+    };
+    items.innerHTML = review.perItem.map(item=>`<details class="bulk-review-item"><summary>${escapeHtml(item.name)} · ${item.changes.length} change${item.changes.length === 1 ? '' : 's'}</summary><ul>${item.changes.map(changeHtml).join('')}</ul></details>`).join('');
   }
   const problems = $('bulk-review-problems');
   if(problems){
@@ -648,45 +851,128 @@ function renderBulkReview(review = bulkComputeReview()){
 function bulkBeginReview(){
   setBulkStep('review');
   for(const pending of bulkPending){
-    if(pending.op === 'keep')continue;
+    const desc = bulkOpById(pending.id);
+    if(!bulkOpNeedsValue(desc,pending.op))continue;
     const host = $('bulk-edit-rows').querySelector(`[data-bulk-op-row="${pending.id}"]`);
-    if(host)pending.value = bulkReadControlValue(bulkOpById(pending.id),host);
+    if(host)pending.value = bulkReadControlValue(desc,host);
   }
   bulkStaleNotice = false;
   bulkReviewConfirmed = true;
   renderBulkReview();
 }
 
-function bulkApplyChanges(){
-  if(bulkStep !== 'review' || !bulkReview || !bulkReviewConfirmed || bulkReview.errors.length || !bulkReview.changing)return;
-  const data = load();
-  const review = bulkComputeReview(data);
-  if(review.selected !== bulkReview.selected || !bulkSameValue(review.undoEntries,bulkReview.undoEntries)
-    || !bulkSameValue(review.errors,bulkReview.errors) || !bulkSameValue(review.warnings,bulkReview.warnings)){
-    bulkStaleNotice = true;
-    bulkReviewConfirmed = false;
-    renderBulkReview(review);
-    return;
+function bulkReminderNeeds(review){
+  const needs = {display:false,exact:false,dnd:false};
+  for(const entry of review.undoEntries || []){
+    if(!entry.reminders)continue;
+    for(const [edge,mode] of Object.entries(entry.reminders.modes || {})){
+      if(mode === 'notification' || mode === 'alarm')needs.display = true;
+      if(mode === 'alarm')needs.exact = true;
+      if(edge === 'missed' && mode && mode !== 'off')needs.exact = true;
+    }
+    if(entry.reminders.after?.dnd === true && entry.reminders.before?.dnd !== true)needs.dnd = true;
   }
-  if(!save(review.next)){
-    showToast('could not save — try again');
-    return;
+  return needs;
+}
+
+async function bulkEnsureReminderPermission(needs){
+  const native = window.TingsNative;
+  if(!native?.isNative)return {ok:false,error:'Phone reminders are available in the Android app. Nothing was saved.'};
+  if(needs.dnd){
+    const quiet = native.quiet;
+    if(!quiet || typeof quiet.status !== 'function')return {ok:false,error:'Do Not Disturb is not available on this device. Nothing was saved.'};
+    if(!(await quiet.status())?.granted){
+      if(typeof quiet.openSettings === 'function')await quiet.openSettings();
+      return {ok:false,error:'Allow Do Not Disturb access in the phone settings. Nothing was saved.'};
+    }
   }
-  // The normal reminder pass reschedules from the newly saved data.
-  for(const entry of review.undoEntries){
-    if(!entry.changes.some(({field})=>['dueDate','eventTime','delayAllowanceDays','snoozedUntil'].includes(field)))continue;
-    const before = data.find(h=>h.hid === entry.hid);
-    if(before?.type === 'task' && typeof cancelPush === 'function' && typeof reminderSignature === 'function')cancelPush(reminderSignature(before));
+  const api = native.notifications;
+  if((needs.display || needs.exact) && !api)return {ok:false,error:'Phone reminders are available in the Android app. Nothing was saved.'};
+  if(needs.display){
+    let permission = typeof api.permissions === 'function' ? await api.permissions() : null;
+    if(permission?.display !== 'granted' && typeof api.requestPermissions === 'function')permission = await api.requestPermissions();
+    if(!permission || permission.display !== 'granted')return {ok:false,error:'Notifications were not allowed. Nothing was saved.'};
   }
-  const usesWeather = review.next.some(h=>bulkSelected.has(h.hid) && (h.weatherProfileMode !== 'none' || h.showWeather));
-  showActionToast(`Updated ${review.changing} item${review.changing === 1 ? '' : 's'}`,{type:'bulk-edit',changes:review.undoEntries,openAction:false,undoLabel:'undo'});
-  // Work is committed — close without the discard guard.
-  bulkSelected = new Set();
-  bulkPending = [];
-  bulkReview = null;
-  closeBulkEditSheet();
-  refreshOpenViews();
-  if(usesWeather && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
+  if(needs.exact){
+    let exact = typeof api.exactAlarmPermission === 'function' ? await api.exactAlarmPermission() : {};
+    if(exact?.exact_alarm !== 'granted' && typeof api.requestExactAlarmPermission === 'function')exact = await api.requestExactAlarmPermission();
+    if(!exact || exact.exact_alarm !== 'granted')return {ok:false,error:'Exact timing access was not allowed. Nothing was saved.'};
+  }
+  return {ok:true};
+}
+
+let bulkApplying = false;
+function bulkReviewMatches(left,right){
+  return ['selected','undoEntries','errors','warnings','reminderEnabled','opLines','perItem']
+    .every(key=>bulkSameValue(left[key],right[key]));
+}
+
+function bulkShowUpdatedReview(review){
+  bulkStaleNotice = true;
+  bulkReviewConfirmed = false;
+  renderBulkReview(review);
+}
+
+async function bulkApplyChanges(){
+  if(bulkApplying || bulkStep !== 'review' || !bulkReview || !bulkReviewConfirmed || bulkReview.errors.length || !bulkReview.changing)return;
+  bulkApplying = true;
+  const applyButton = $('bulk-apply');
+  if(applyButton)applyButton.disabled = true;
+  try{
+    const shown = bulkReview;
+    let data = load();
+    let review = bulkComputeReview(data);
+    if(!bulkReviewMatches(review,shown)){
+      bulkShowUpdatedReview(review);
+      return;
+    }
+    if(review.reminderWrite){
+      let permission;
+      try{permission = await bulkEnsureReminderPermission(bulkReminderNeeds(review));}
+      catch(error){permission = {ok:false,error:error.message || 'Could not check reminder permission. Nothing was saved.'};}
+      if(bulkStep !== 'review' || bulkReview !== shown){
+        if(bulkStep === 'review' && bulkReview)renderBulkReview(bulkReview);
+        return;
+      }
+      if(!permission.ok){
+        showToast(permission.error,6000);
+        renderBulkReview();
+        return;
+      }
+      data = load();
+      review = bulkComputeReview(data);
+      if(!bulkReviewMatches(review,shown)){
+        bulkShowUpdatedReview(review);
+        return;
+      }
+    }
+    const recordsDirty = review.undoEntries.some(entry=>(entry.changes || []).length);
+    if(!bulkSaveWithReminders(recordsDirty ? review.next : null,review.reminderWrite ? review.reminderAfter : null)){
+      showToast('could not save — try again');
+      renderBulkReview();
+      return;
+    }
+    // The normal reminder pass reschedules from the newly saved data.
+    for(const entry of review.undoEntries){
+      if(!entry.changes.some(({field})=>['dueDate','eventTime','delayAllowanceDays'].includes(field)))continue;
+      const before = data.find(h=>h.hid === entry.hid);
+      if(before?.type === 'task' && typeof cancelPush === 'function' && typeof reminderSignature === 'function')cancelPush(reminderSignature(before));
+    }
+    const usesWeather = review.undoEntries.some(entry=>(entry.changes || []).some(change=>['weatherProfileMode','weatherProfileId','weatherLocationId','showWeather','showWeatherAtLocation'].includes(change.field)));
+    const snoozeChanged = review.undoEntries.some(entry=>entry.changes.some(change=>change.field === 'snoozedUntil'));
+    const reminderEnabled = review.reminderEnabled && {...review.reminderEnabled,appliedItems:review.reminderAfter.items};
+    showActionToast(`Updated ${review.changing} item${review.changing === 1 ? '' : 's'}`,{type:'bulk-edit',changes:review.undoEntries,reminderEnabled,openAction:false,undoLabel:'undo'});
+    // Work is committed — close without the discard guard.
+    bulkSelected = new Set();
+    bulkPending = [];
+    bulkReview = null;
+    closeBulkEditSheet();
+    refreshOpenViews();
+    if(snoozeChanged)renderHomePresentationOnly();
+    if(usesWeather && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
+  }finally{
+    bulkApplying = false;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -796,7 +1082,7 @@ $('bulk-edit-rows')?.addEventListener('change',e=>{
     const pending = bulkPendingFor(id);
     pending.op = opSelect.value;
     if(pending.op === 'keep')pending.value = null;
-    else if(opDesc.valueKind !== 'none' && pending.value == null)pending.value = bulkDefaultValue(opDesc,pending.op,bulkSelectedRecords());
+    else if(bulkOpNeedsValue(opDesc,pending.op) && pending.value == null)pending.value = bulkDefaultValue(opDesc,pending.op,bulkSelectedRecords());
     // Structural change (new controls) — repaint the whole step.
     renderBulkEditStep();
     return;
@@ -809,7 +1095,7 @@ $('bulk-edit-rows')?.addEventListener('change',e=>{
   const pending = bulkPendingFor(id);
   const host = field.closest('.bulk-op-row');
   pending.value = bulkReadControlValue(opDesc,host);
-  bulkRefreshApplies(id);
+  bulkRefreshApplies();
 });
 $('bulk-edit-rows')?.addEventListener('click',e=>{
   const chip = e.target.closest('[data-bulk-chip]');
@@ -823,7 +1109,7 @@ $('bulk-edit-rows')?.addEventListener('click',e=>{
     if(opDesc && host){
       const pending = bulkPendingFor(id);
       pending.value = bulkReadControlValue(opDesc,host);
-      bulkRefreshApplies(id);
+      bulkRefreshApplies();
     }
     return;
   }
@@ -838,7 +1124,7 @@ $('bulk-edit-rows')?.addEventListener('click',e=>{
     if(opDesc && host){
       const pending = bulkPendingFor(id);
       pending.value = bulkReadControlValue(opDesc,host);
-      bulkRefreshApplies(id);
+      bulkRefreshApplies();
     }
     return;
   }
@@ -853,6 +1139,32 @@ $('bulk-edit-rows')?.addEventListener('click',e=>{
     if(opDesc && Array.isArray(pending.value))pending.value = [...pending.value,topic];
     if(input)input.value = '';
     renderBulkEditStep();
+    return;
+  }
+  const soundPick = e.target.closest('[data-bulk-sound-pick]');
+  if(soundPick){
+    const api = window.TingsNative?.sounds;
+    const action = soundPick.dataset.bulkSoundPick === 'file' ? api?.addFile : api?.addPick;
+    if(typeof action !== 'function' || bulkSoundPicker)return;
+    const pending = bulkPending.find(step=>step.id === 'reminderSound');
+    if(pending?.op !== 'set')return;
+    const draft = bulkPending;
+    const previous = pending.value;
+    bulkSoundPicker = pending;
+    const setPickerDisabled = disabled=>$('bulk-edit-rows').querySelectorAll('[data-bulk-sound-pick]').forEach(button=>button.disabled = disabled);
+    setPickerDisabled(true);
+    void (async()=>{
+      try{
+        if(typeof api.stopPreview === 'function')await api.stopPreview();
+        const saved = await action();
+        if(!saved?.savedId || !nativeReminderSoundKnown(saved.savedId))return;
+        if(bulkPending === draft && bulkStep === 'change' && pending.op === 'set' && pending.value === previous){
+          pending.value = saved.savedId;
+        }
+        await bulkRefreshSoundCatalog($('bulk-edit-rows'),saved);
+      }catch(error){showToast(error.message || 'Could not change notification sound.',5000);}
+      finally{bulkSoundPicker = null;setPickerDisabled(false);}
+    })();
     return;
   }
   const addOrdinal = e.target.closest('[data-bulk-add-ordinal]');

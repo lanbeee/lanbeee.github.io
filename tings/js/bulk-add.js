@@ -44,6 +44,8 @@ function updateBulkBatchChrome(){
     status.hidden = !bulkBatchMode || count === 0;
     status.textContent = `${count} item${count === 1 ? '' : 's'} in batch · review`;
   }
+  const exit = $('add-batch-exit');
+  if(exit)exit.hidden = !(bulkBatchMode && count === 0);
   const hint = $('add-batch-hint');
   if(hint)hint.hidden = !bulkBatchMode;
   const bar = $('add-batch-bar');
@@ -69,7 +71,12 @@ function bulkSummaryFor(record){
 function bulkQueueCurrent(){
   if(!bulkBatchMode)return false;
   const name = $('ting-message').value.trim();
-  if(!name){$('ting-message').focus();return false;}
+  if(!name){
+    $('ting-message').scrollIntoView({block:'nearest'});
+    $('ting-message').focus({preventScroll:true});
+    if(typeof showToast === 'function')showToast('Give it a name first.');
+    return false;
+  }
   if(name.length > 60){
     $('ting-message').focus();
     if(typeof showToast === 'function')showToast('Names stop at 60 characters.');
@@ -335,6 +342,12 @@ function bulkHandleCancelAdd(){
 // Wiring.
 // ─────────────────────────────────────────────────────────────────────────
 $('add-batch-entry')?.addEventListener('click',openBulkBatchFlow);
+$('add-batch-exit')?.addEventListener('click',()=>{
+  if(!bulkBatchMode || bulkBatchItems.length)return;
+  bulkBatchMode = false;
+  bulkUnfinishedChoice = null;
+  updateBulkBatchChrome();
+});
 $('do-batch-next')?.addEventListener('click',()=>{bulkQueueCurrent();});
 $('add-batch-status')?.addEventListener('click',openBulkBatchReview);
 $('add-batch-confirm-yes')?.addEventListener('click',()=>{

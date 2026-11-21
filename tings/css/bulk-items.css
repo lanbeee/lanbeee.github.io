@@ -5,8 +5,22 @@
 #do-batch-next{display:none;}
 #add-sheet.bulk-add-mode #do-save,
 #add-sheet.bulk-add-mode #add-batch-entry{display:none;}
-#add-sheet.bulk-add-mode #do-batch-next{display:flex;}
+/* display:block, not flex: a flex button left-aligns its label because the
+   centered look comes from the UA's text-align:center on default buttons. */
+#add-sheet.bulk-add-mode #do-batch-next{display:block;}
 #add-sheet.bulk-add-mode .add-batch-bar{display:block;}
+
+.add-sheet-head .add-batch-entry,
+.add-sheet-head .add-batch-exit{
+  background:none;border:0;padding:6px 2px;min-height:44px;
+  font-size:12px;font-weight:500;color:var(--text3);
+  margin-left:auto;
+}
+.add-sheet-head .add-batch-entry:hover,
+.add-sheet-head .add-batch-entry:active,
+.add-sheet-head .add-batch-exit:hover,
+.add-sheet-head .add-batch-exit:active{color:var(--text2);}
+.add-sheet-head .add-batch-exit[hidden]{display:none;}
 
 .add-batch-bar{
   display:none;
@@ -28,6 +42,7 @@
 
 /* Bulk controls are part of the full interface. An in-progress batch can finish. */
 body.minimal-mode #add-batch-entry,
+body.minimal-mode #add-batch-exit,
 body.minimal-mode [data-open-bulk-edit]{display:none !important;}
 .bulk-edit-trigger{margin-left:auto;}
 

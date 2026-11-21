@@ -188,7 +188,7 @@ function syncAddConditionsLayout(optional){
 
 // Describe the entered frequency in words; the stored interval stays internal.
 function syncAddRhythmUi(){
-  const optional = selectedType === 'keepup' && $('ting-repeat-mode').value === 'opportunity';
+  const optional = !addAppointmentMode && selectedType === 'keepup' && $('ting-repeat-mode').value === 'opportunity';
   if(optional)$('ting-times').value = 1;
   $('ting-times').closest('label').hidden = optional;
   $('target-slider-row').querySelector('.rhythm-in').hidden = optional;
@@ -527,7 +527,12 @@ function readAddRecord(){
 
 $('do-save').addEventListener('click',()=>{
   const name = $('ting-message').value.trim();
-  if(!name){$('ting-message').focus();return;}
+  if(!name){
+    $('ting-message').scrollIntoView({block:'nearest'});
+    $('ting-message').focus({preventScroll:true});
+    if(typeof showToast === 'function')showToast('Give it a name first.');
+    return;
+  }
   if(name.length > 60){
     $('ting-message').focus();
     if(typeof showToast === 'function')showToast('Names stop at 60 characters.');
@@ -548,7 +553,7 @@ $('do-save').addEventListener('click',()=>{
   if(save(data)){
     cancelAdd();
     render();
-    openDetailSchedule(data.length - 1);
+    openDetail(data.length - 1);
     if((record.weatherProfileMode !== 'none' || record.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
   }
 });
@@ -577,9 +582,11 @@ $('ting-message').addEventListener('keydown',e=>{
 function syncTaskDueUi(){
   const dueInput = $('ting-due-date');
   const timeInput = $('ting-due-time');
+  const clearTimeBtn = $('ting-due-time-clear');
   const hasDate = Boolean(dueInput.value);
   if(!hasDate)timeInput.value = '';
   timeInput.disabled = !hasDate;
+  if(clearTimeBtn)clearTimeBtn.hidden = !timeInput.value;
   const hint = $('task-due-hint');
   hint.textContent = !hasDate
     ? 'Stays in your list until you choose a date or finish it. Choose a date to set a start time.'
@@ -598,6 +605,11 @@ function syncTaskDueUi(){
 
 $('ting-due-date').addEventListener('input',syncTaskDueUi);
 $('ting-due-time')?.addEventListener('input',syncTaskDueUi);
+$('ting-due-time-clear')?.addEventListener('click',()=>{
+  $('ting-due-time').value = '';
+  syncTaskDueUi();
+  if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
+});
 syncTaskDueUi();
 
 // PURE: clamp rhythm value to valid range
@@ -1052,6 +1064,7 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
     // Preserve every other chip choice made before opening the map picker.
     if(typeof openLocationPicker === 'function'){
       openLocationPicker({
+        name:e.target.closest('.tag-row').querySelector('.tag-search').value.trim().slice(0,48),
         onCreated:id=>{
           const wrap = 'ting-tag-chips';
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
@@ -1082,6 +1095,7 @@ $('detail-place-chips')?.addEventListener('click',e=>{
     // Open the place picker; on save, auto-select the new place on this habit.
     if(typeof openLocationPicker === 'function'){
       openLocationPicker({
+        name:e.target.closest('.tag-row').querySelector('.tag-search').value.trim().slice(0,48),
         onCreated:id=>{
           const wrap = 'detail-place-chips';
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];

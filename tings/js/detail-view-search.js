@@ -224,7 +224,7 @@ function detailSearchEntries(){
     return parts.join(' ');
   };
   // Reminder edges are div.native-reminder-row; the DND control is a label.
-  inner.querySelectorAll('.habit-option-row, .schedule-link-editor, .link-row, #detail-native-reminders label, #detail-native-reminders .native-reminder-row').forEach(row=>{
+  inner.querySelectorAll('.habit-option-row, .schedule-link-editor, .link-row, #detail-native-reminders label, #detail-native-reminders .native-reminder-row, #detail-native-reminders .native-reminder-sound').forEach(row=>{
     // Hidden template and editor rows stay out of the index; conditional
     // catalog fields above deliberately remain searchable for their
     // prerequisite guidance.
@@ -238,7 +238,9 @@ function detailSearchEntries(){
       const edgeTitle = typeof NATIVE_REMINDER_EDGES !== 'undefined'
         ? NATIVE_REMINDER_EDGES.find(([key])=>key === edge)?.[1] : '';
       label = edgeTitle && edgeTitle !== face ? `${edgeTitle} (${face})` : (edgeTitle || face);
-      aliases = 'phone reminder notification ringing alarm';
+      aliases = row.matches('.native-reminder-sound')
+        ? 'notification sound tone chime ringtone audio custom phone sound'
+        : 'phone reminder notification ringing alarm';
       if(edge === 'missed')aliases += ' before missed drop cutoff warning estimate';
       if(row.querySelector('[data-reminder-lead]'))aliases += ' travel departure lead time minutes';
     }else if(row.matches('.schedule-link-editor')){
@@ -277,7 +279,6 @@ function syncDetailSearchAssistant(h){
   const label = enabled ? 'Find or change a setting' : 'Find a setting';
   $('detail-search-input').placeholder = label;
   $('detail-search-input').setAttribute('aria-label',label);
-  $('detail-search-toggle').querySelector('span').textContent = enabled ? 'find or change' : 'find in details';
   $('detail-search-ask').hidden = !enabled || !$('detail-search-input').value.trim();
   $('detail-search-ask-label').textContent = 'Ask assistant';
 }
@@ -344,7 +345,7 @@ function renderDetailSearch(){
   $('detail-search-status').textContent = !tokens.length
     ? (assistant ? 'Find a setting or describe a change.' : 'Browse settings, or search by name.')
     : ranked.length ? `${ranked.length} ${ranked.length === 1 ? 'match' : 'matches'}`
-    : assistant ? ''
+    : assistant ? 'No matching settings. Try another word or ask the assistant.'
     : 'No matching settings. Try “duration”, “weather”, “reminder” or “days”.';
   $('detail-search-clear').hidden = !$('detail-search-input').value;
 }
@@ -382,7 +383,7 @@ function setDetailSearchOpen(open,focus = true){
     if(focus)$('detail-search-input').focus({preventScroll:true});
   }else if(focus){
     $('detail-search-input').blur();
-    $('detail-search-toggle').focus({preventScroll:true});
+    toggle.focus({preventScroll:true});
   }
   if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
 }

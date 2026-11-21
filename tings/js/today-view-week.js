@@ -2542,20 +2542,6 @@ function rescueDailyBreakableGapFits(candidates,dayStates,settings){
   return gained;
 }
 
-// PURE: total committed fill+travel minutes across the week (hours-first score).
-function weekPlacedMinutes(dayStates){
-  if(!Array.isArray(dayStates))return 0;
-  let total = 0;
-  for(const state of dayStates){
-    if(!state || !Array.isArray(state.fills))continue;
-    for(const entry of state.fills){
-      total += Number(entry && entry.fit && entry.fit.durMin) || 0;
-      total += Number(entry && entry.fit && entry.fit.travelMin) || 0;
-    }
-  }
-  return total;
-}
-
 // PURE: soft tiebreak — lower travel seconds across fills is better.
 function weekTravelSecondsFromStates(dayStates){
   if(!Array.isArray(dayStates))return 0;
@@ -3203,22 +3189,26 @@ function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings,dayStates 
   return true;
 }
 
-// Repair passes must use the latest real or planned occurrence, rather than
-// treating a linked partner as permission to create another cadence cycle.
-function candidateOccurrenceFitsOnDay(c,state,dayStates){
-  if(!c || !state || !isDateEligibleForHabit(c.h,state.dayBase))return false;
-  if(c.eligible && !c.eligible.has(state.dayBase))return false;
-  const h = c.h;
-  if(h.type === 'task')return candidateOccurrenceAllowsDay(c,state.dayBase);
-  let reference = h.lastLog, offset = 0;
+function candidatePriorOccurrence(c,dayBase,dayStates){
+  let reference = c.h.lastLog, offset = 0;
   for(const prior of dayStates || []){
-    if(prior.dayBase >= state.dayBase)continue;
+    if(prior.dayBase >= dayBase)continue;
     const present = prior.fills.some(entry=>entry.fill.i === c.i)
       || prior.rows.some(row=>row.kind === 'scheduled' && row.i === c.i);
     if(present && (reference == null || prior.dayBase > dayStart(reference))){
       reference = prior.dayBase;offset += 1;
     }
   }
+  return {reference,offset};
+}
+
+// Repair passes use the latest real or planned occurrence to enforce cadence.
+function candidateOccurrenceFitsOnDay(c,state,dayStates){
+  if(!c || !state || !isDateEligibleForHabit(c.h,state.dayBase))return false;
+  if(c.eligible && !c.eligible.has(state.dayBase))return false;
+  const h = c.h;
+  if(h.type === 'task')return candidateOccurrenceAllowsDay(c,state.dayBase);
+  const {reference,offset} = candidatePriorOccurrence(c,state.dayBase,dayStates);
   if(!candidateOccurrenceAllowsDay(c,state.dayBase,offset ? reference : undefined,offset))return false;
   if(reference == null || habitPlanByDate(h) != null)return true;
   if(rhythmEligibleOnDay(h,reference,state.dayBase,state.weekday,offset))return true;
@@ -3368,364 +3358,178 @@ function dropSubjectsWithFailedSameDayPartners(state,candidates,byHid,settings){
   if(rebuilt)applyPlacementState(state,rebuilt);
 }
 
-// Week-holistic repair: when a daily breakable (e.g. Work) is short and a
-// can-wait movable sits in its window, peel that movable to another eligible
-// day and refill Work. Accept only if week placed minutes do not drop (hours
-// first); soft travel is a tiebreak. Bounded attempts — mirrors
-// rebalanceScarcePlacements.
-function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
-  if(!Array.isArray(candidates) || !Array.isArray(dayStates) || !dayStates.length)return 0;
-  const MAX_ATTEMPTS = 16;
-  let attempts = 0;
-  let moves = 0;
+const AGENDA_REFINEMENT_IMMINENT_MS = 5 * 60000;
+
+// Protect daily work by reopening one short reservation and a bounded set of
+// flexible blockers. Keep the rest of the incumbent at its established clocks
+// and venues. Commit only when every displaced occurrence has a legal home.
+function repairWeekPlacedHours(candidates,dayStates,settings,{deep = false,protectIncumbent = false} = {}){
+  if(!dayStates.length)return 0;
   const byIndex = new Map(candidates.map(c=>[c.i,c]));
-
-  // The deep pass exists specifically for contiguity valleys. Search its
-  // bounded 2/3-item neighborhood before accepting a superficially improving
-  // one-item move; afterward the ordinary pass can still clean up any simple
-  // deficits left behind.
-  if(options && options.deep){
-    moves += repairBreakableContiguityNeighborhood(candidates,dayStates,settings,options);
-  }
-
-  const shortBreakableOn = (state)=>{
-    const reservations = dailyBreakableReservations(state,candidates);
-    for(const r of reservations){
-      if(r.deficit <= 0)continue;
-      const c = byIndex.get(r.i);
-      if(c)return {c,r};
-    }
-    return null;
-  };
-
-  const isDeferrableFrom = (c,fromState)=>{
-    if(!isMovableWeekCandidate(c,fromState.dayBase))return false;
-    const dur = clampDuration(c.h.durationMinutes);
-    for(const other of dayStates){
-      if(other === fromState)continue;
-      if(c.eligible && !c.eligible.has(other.dayBase))continue;
-      if(!candidateMatchesPinnedDay(c,other))continue;
-      if(!candidateOccurrenceFitsOnDay(c,other,dayStates.filter(day=>day !== fromState)))continue;
-      if(other.placed.has(c.i))continue;
-      const cap = movableCapacityForDay(other,candidates);
-      if(!Number.isFinite(cap) || cap >= dur)return true;
-      // Even if other day has a breakable, tryPlace may still fit outside its window.
-      if(typeof tryPlaceOnDay === 'function'){
-        const probe = clonePlacementState(other);
-        const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-        if(tryPlaceOnDay(probe,fill,{allowNetwork:false,settings}))return true;
-      }
-    }
-    return false;
-  };
-
-  while(attempts < MAX_ATTEMPTS){
-    let short = null;
-    for(const state of dayStates){
-      const hit = shortBreakableOn(state);
-      if(hit){ short = {state,...hit}; break; }
-    }
-    if(!short)break;
-
-    const windows = breakableReservationWindows(short.r);
-    const victims = short.state.fills.filter(entry=>{
-      if(!entry || !entry.fill || !entry.fit)return false;
-      const c = byIndex.get(entry.fill.i);
-      if(!c || !isDeferrableFrom(c,short.state))return false;
-      if(!windows.some(win=>
-        entry.fit.placeEnd > win.start && entry.fit.placeStart < win.end))return false;
-      return true;
-    });
-    // Prefer longer victims first — more likely to unlock a Work chunk.
-    victims.sort((a,b)=>(Number(b.fit.durMin) || 0) - (Number(a.fit.durMin) || 0));
-
-    let improved = false;
-    for(const victim of victims){
-      if(attempts >= MAX_ATTEMPTS)break;
-      const vc = byIndex.get(victim.fill.i);
-      if(!vc)continue;
-      for(const other of dayStates){
-        if(attempts >= MAX_ATTEMPTS)break;
-        if(other === short.state)continue;
-        if(vc.eligible && !vc.eligible.has(other.dayBase))continue;
-        if(!candidateMatchesPinnedDay(vc,other))continue;
-        if(!candidateOccurrenceFitsOnDay(vc,other,dayStates.filter(day=>day !== short.state)))continue;
-        if(other.placed.has(vc.i))continue;
-        attempts += 1;
-
-        const beforeMinutes = weekPlacedMinutes(dayStates);
-        const beforeTravel = weekTravelSecondsFromStates(dayStates);
-        const beforeDeficit = short.r.deficit;
-
-        const keepFills = short.state.fills
-          .filter(f=>f !== victim)
-          .map(f=>({...f.fill}));
-        // Collapse breakable chunks for the same habit into one fill seed so
-        // placeBreakableSessions can re-split cleanly.
-        const collapsed = [];
-        const seenBreak = new Set();
-        for(const f of keepFills){
-          if(f.h && f.h.breakable && f.h.type !== 'task'){
-            if(seenBreak.has(f.i))continue;
-            seenBreak.add(f.i);
-            collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity});
-          }else if(f.h && f.h.breakable){
-            collapsed.push({...f});
-          }else{
-            // Re-run location choice from the habit constraints. Adding an
-            // `undefined` locationId property here used to mean "force none"
-            // and silently removed Grocery/Home travel during hours repair.
-            collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity});
-          }
-        }
-
-        const sourceClean = rebuildDayFromFills(short.state,collapsed,candidates,{settings,allowNetwork:true});
-        if(!sourceClean)continue;
-
-        // Ensure the short breakable is represented so it can reclaim gaps.
-        if(!collapsed.some(f=>f.i === short.c.i)){
-          const bf = {h:short.c.h,i:short.c.i,priority:short.c.priority,scarcity:short.c.scarcity};
-          placeBreakableSessions(sourceClean,bf,{
-            settings,allowNetwork:true,
-            weights:typeof resolveAgendaScoreWeights === 'function'
-              ? resolveAgendaScoreWeights(settings) : null
-          });
-          syncDayAgendaItemsFromFills(sourceClean);
-        }else{
-          // Already re-placed via rebuild; try to fill any remaining deficit.
-          const left = breakableMinutesLeft(short.c.h,short.c.i,sourceClean);
-          if(left > 0){
-            placeBreakableSessions(sourceClean,{
-              h:short.c.h,i:short.c.i,priority:short.c.priority,scarcity:short.c.scarcity
-            },{settings,allowNetwork:true});
-            syncDayAgendaItemsFromFills(sourceClean);
-          }
-        }
-
-        const targetClean = clonePlacementState(other);
-        // Transfer exactly this fragment, never a fresh lifetime-sized task.
-        const movableFill = {...victim.fill,h:vc.h,i:vc.i,priority:vc.priority,scarcity:vc.scarcity};
-        if(vc.h.breakable){
-          let chunkIndex = 0;
-          while(targetClean.placed.has(`${vc.i}:${chunkIndex}`))chunkIndex += 1;
-          movableFill.chunkMinutes = victim.fit.durMin;
-          movableFill.chunkIndex = chunkIndex;
-          movableFill.placeKey = `${vc.i}:${chunkIndex}`;
-        }
-        const movedFit = tryPlaceOnDay(targetClean,movableFill,{
-          settings,allowNetwork:true,
-          weights:typeof resolveAgendaScoreWeights === 'function'
-            ? resolveAgendaScoreWeights(settings) : null
-        });
-        if(!movedFit)continue;
-        commitPlacement(targetClean,movableFill,movedFit);
-        targetClean.day = {...other.day,agendaItems:[]};
-        syncDayAgendaItemsFromFills(targetClean);
-
-        // Score hypothetical week with source/target replaced.
-        const hypo = dayStates.map(st=>{
-          if(st === short.state)return sourceClean;
-          if(st === other)return targetClean;
-          return st;
-        });
-        if(!candidateWeekOccurrencesFit(vc,hypo))continue;
-        const afterMinutes = weekPlacedMinutes(hypo);
-        const afterTravel = weekTravelSecondsFromStates(hypo);
-        const afterRes = dailyBreakableReservations(sourceClean,candidates)
-          .find(r=>r.i === short.c.i);
-        const afterDeficit = afterRes ? afterRes.deficit : 0;
-
-        // Hours-first: reject any move that lowers week placed minutes.
-        if(afterMinutes < beforeMinutes)continue;
-        // Prefer moves that reduce this day's Work deficit.
-        if(afterDeficit > beforeDeficit && afterMinutes === beforeMinutes)continue;
-        if(afterMinutes === beforeMinutes && afterDeficit === beforeDeficit
-          && afterTravel > beforeTravel)continue;
-
-        applyPlacementState(short.state,sourceClean);
-        applyPlacementState(other,targetClean);
-        moves += 1;
-        improved = true;
-        break;
-      }
-      if(improved)break;
-    }
-    if(!improved)break;
-  }
-  return moves;
-}
-
-// HYBRID: jointly relocate a small set of flexible blockers so a daily
-// breakable can reclaim contiguous chunks. This is deliberately a bounded
-// neighborhood repair rather than an item-name rule or an unbounded power set.
-// Persistent order-link participants are never victims: their coupled timing
-// must be handled by the link invariant machinery.
-function repairBreakableContiguityNeighborhood(candidates,dayStates,settings,options = {}){
-  if(!Array.isArray(candidates) || !Array.isArray(dayStates) || !dayStates.length)return 0;
-  const byIndex = new Map(candidates.map(c=>[c.i,c]));
-  const maxTrials = Math.max(1,Math.min(64,Number(options.maxContiguityTrials) || 28));
-  const maxVictims = Math.max(2,Math.min(3,Number(options.maxContiguityVictims) || 3));
-  let trials = 0;
+  const scoreOpts = {settings,allowNetwork:false,weights:resolveAgendaScoreWeights(settings)};
+  const doing = getDoingNow();
+  const now = Date.now();
+  const lockBefore = now + AGENDA_REFINEMENT_IMMINENT_MS;
+  let sourceTrials = deep ? 44 : 16;
+  let targetTrials = deep ? 72 : 32;
   let moves = 0;
 
-  const deficitFor = (state,idx)=>{
-    const hit = dailyBreakableReservations(state,candidates).find(r=>r.i === idx);
-    return hit ? hit.deficit : 0;
-  };
-  const linkedHidsFor = state=>{
-    const out = new Set();
-    const edges = typeof plannerOrderConstraintsForDay === 'function'
-      ? plannerOrderConstraintsForDay(state.dayBase) : [];
-    for(const edge of edges || []){
-      if(edge && edge.beforeHid)out.add(edge.beforeHid);
-      if(edge && edge.afterHid)out.add(edge.afterHid);
+  const linkedByDay = new Map(dayStates.map(state=>[
+    state.dayBase,new Set(plannerOrderConstraintsForDay(state.dayBase)
+      .flatMap(edge=>[edge.beforeHid,edge.afterHid]))
+  ]));
+  const locked = (entry,state)=>(state.isTodayDay
+    && ((doing && doing.hid === entry.fill.h.hid) || entry.fit.placeStart < now
+      || (protectIncumbent && entry.fit.placeStart <= lockBefore)))
+    || weatherLockedPlacement(entry.fill,state,settings);
+
+  const reconcile = (trial,prior,retained)=>{
+    reconcileCommittedTravel(trial);
+    if(!trial._committedRoutePlan || trial.usedMinutes > trial.totalMinutes + 1e-6)return false;
+    // A failed route can push a fit before a later successful reconciliation.
+    // Check the incumbent's original clocks even when the final route exists.
+    if(!retained.every(entry=>trial.fills.some(other=>
+      other.fill.i === entry.fill.i && other.fit.placeStart === entry.fit.placeStart
+      && other.fit.placeEnd === entry.fit.placeEnd && other.fit.locId === entry.fit.locId)))return false;
+    const violations = persistentLinkViolationsForState(trial);
+    if(violations.size){
+      const baseline = persistentLinkViolationsForState(prior);
+      if([...violations].some(([hid,reason])=>baseline.get(hid) !== reason))return false;
     }
-    return out;
+    syncDayAgendaItemsFromFills(trial);
+    return true;
   };
-  const collapsedKeepFills = (state,removed)=>{
-    const out = [];
-    const seenBreak = new Set();
-    for(const entry of state.fills || []){
-      const fill = entry && entry.fill;
-      if(!fill || !fill.h || removed.has(fill.i))continue;
-      if(fill.h.breakable){
-        if(seenBreak.has(fill.i))continue;
-        seenBreak.add(fill.i);
-        out.push({h:fill.h,i:fill.i,priority:fill.priority,scarcity:fill.scarcity});
-      }else{
-        out.push({h:fill.h,i:fill.i,priority:fill.priority,scarcity:fill.scarcity});
-      }
+
+  const copyWithVenues = state=>{
+    const trial = cloneFastGraphState(state);
+    for(const entry of trial.fills)entry.fill.locationId = entry.fit.locId;
+    return trial;
+  };
+
+  const reopen = (source,work,victims)=>{
+    const removed = new Set(victims.map(c=>c.i));
+    const reopenWork = !linkedByDay.get(source.dayBase).has(work.h.hid)
+      && !source.fills.some(entry=>entry.fill.i === work.i && locked(entry,source));
+    if(reopenWork)removed.add(work.i);
+    const retained = source.fills.filter(entry=>!removed.has(entry.fill.i));
+    const trial = copyWithVenues(source);
+    for(const entry of trial.fills){
+      if(!removed.has(entry.fill.i))continue;
+      trial.placed.delete(entry.fill.i);
+      trial.placed.delete(entry.fill.placeKey);
+      trial.placed.delete(entry.fit.placeKey);
+      trial.placed.delete(entry.fill.occurrenceKey);
     }
-    return out;
+    trial.fills = trial.fills.filter(entry=>!removed.has(entry.fill.i));
+    trial.rows = trial.rows.filter(row=>row.kind !== 'fill' || !removed.has(row.i));
+    // A manually timed start remains a scheduled row with its own chunk key.
+    for(const row of trial.rows){
+      if(row.breakableStart)trial.placed.add(`${row.i}:0`);
+    }
+    reconcileCommittedTravel(trial);
+    if(!trial._committedRoutePlan)return null;
+    placeBreakableSessions(trial,{
+      h:work.h,i:work.i,priority:work.priority,scarcity:work.scarcity
+    },scoreOpts);
+    return reconcile(trial,source,retained) ? trial : null;
   };
-  const combinations = (items,size)=>{
-    const out = [];
-    const walk = (at,pick)=>{
-      if(out.length >= maxTrials)return;
-      if(pick.length === size){ out.push(pick.slice()); return; }
-      for(let i = at;i < items.length;i += 1){
-        pick.push(items[i]);
-        walk(i + 1,pick);
-        pick.pop();
-        if(out.length >= maxTrials)return;
+
+  const relocate = (source,trial,victims)=>{
+    const replacements = new Map([[source,trial]]);
+    const destinations = [source,...dayStates.filter(state=>state.dayBase > source.dayBase),
+      ...dayStates.filter(state=>state.dayBase < source.dayBase)];
+    const walk = index=>{
+      const currentWeek = dayStates.map(state=>replacements.get(state) || state);
+      if(index === victims.length){
+        if(!victims.every(c=>candidateWeekOccurrencesFit(c,currentWeek)))return false;
+        // Moving a due errand must not strand an early occurrence that was
+        // allowed onto this day specifically to share that trip.
+        const kept = replacements.get(source);
+        return kept.fills.every(({fill})=>{
+          const candidate = byIndex.get(fill.i);
+          return clusterFlexPartnerPlacedForDay(candidate,kept)
+            || !clusterFlexPartnerPlacedForDay(candidate,source);
+        });
       }
-    };
-    walk(0,[]);
-    return out;
-  };
-  const placeVictims = (victims,sourceIndex,sourceClean)=>{
-    const working = new Map([[sourceIndex,sourceClean]]);
-    const scoreOpts = state=>({
-      settings:state.settings || settings,
-      weights:typeof resolveAgendaScoreWeights === 'function'
-        ? resolveAgendaScoreWeights(state.settings || settings) : null,
-      allowNetwork:true,
-      candidates
-    });
-    const walk = pos=>{
-      if(pos >= victims.length)return working;
-      const victim = victims[pos];
-      const c = victim.c;
-      // Prefer retaining the item today outside the now-protected Work chunks;
-      // otherwise use its earliest eligible future day.
-      const targetIndexes = [sourceIndex];
-      for(let i = 0;i < dayStates.length;i += 1){
-        if(i !== sourceIndex)targetIndexes.push(i);
-      }
-      for(const targetIndex of targetIndexes){
-        const targetBase = working.get(targetIndex) || dayStates[targetIndex];
-        if(!targetBase)continue;
-        if(c.eligible && !c.eligible.has(targetBase.dayBase))continue;
-        if(!candidateMatchesPinnedDay(c,targetBase))continue;
-        if(!candidateOccurrenceFitsOnDay(c,targetBase,dayStates.map((day,i)=>working.get(i) || day)))continue;
-        if(targetBase.placed && targetBase.placed.has(c.i))continue;
-        const trial = clonePlacementState(targetBase);
-        trial.day = {...targetBase.day,agendaItems:[]};
+      const c = victims[index];
+      for(const original of destinations){
+        if(targetTrials <= 0)return false;
+        if(linkedByDay.get(original.dayBase).has(c.h.hid))continue;
+        const base = replacements.get(original) || original;
+        if(base.placed.has(c.i) || base.fills.some(entry=>entry.fill.i === c.i)
+          || !candidateMatchesPinnedDay(c,base)
+          || !candidateOccurrenceFitsOnDay(c,base,currentWeek)
+          || !clusterFlexPartnerPlacedForDay(c,base))continue;
+        targetTrials -= 1;
+        const next = copyWithVenues(base);
         const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-        const fit = tryPlaceOnDay(trial,fill,scoreOpts(trial));
+        const fit = tryPlaceOnDay(next,fill,scoreOpts);
         if(!fit)continue;
-        commitPlacement(trial,fill,fit);
-        syncDayAgendaItemsFromFills(trial);
-        working.set(targetIndex,trial);
-        const solved = walk(pos + 1);
-        if(solved)return solved;
-        if(targetBase === dayStates[targetIndex])working.delete(targetIndex);
-        else working.set(targetIndex,targetBase);
+        commitPlacement(next,fill,fit);
+        if(!reconcile(next,original,base.fills))continue;
+        replacements.set(original,next);
+        if(walk(index + 1))return true;
+        if(base === original)replacements.delete(original);
+        else replacements.set(original,base);
       }
-      return null;
+      return false;
     };
-    return walk(0);
+    return walk(0) ? replacements : null;
   };
 
-  while(trials < maxTrials){
-    let improved = false;
-    for(let sourceIndex = 0;sourceIndex < dayStates.length && !improved;sourceIndex += 1){
-      const state = dayStates[sourceIndex];
-      const reservations = dailyBreakableReservations(state,candidates)
-        .filter(r=>r.deficit > 0 && byIndex.has(r.i));
-      for(const reservation of reservations){
-        const short = byIndex.get(reservation.i);
-        if(!short)continue;
-        const linked = linkedHidsFor(state);
-        const windows = breakableReservationWindows(reservation);
-        const victims = (state.fills || []).map(entry=>{
-          const c = entry && entry.fill ? byIndex.get(entry.fill.i) : null;
-          return {entry,c};
-        }).filter(({entry,c})=>{
-          if(!entry || !entry.fit || !c || !c.h || c.i === short.i)return false;
-          if(!isMovableWeekCandidate(c,state.dayBase) || c.pinned || c.h.breakable)return false;
-          if(c.h.hid && linked.has(c.h.hid))return false;
-          if(typeof mustPlaceCriticalOccurrence === 'function'
-            && mustPlaceCriticalOccurrence(c))return false;
-          return windows.some(win=>entry.fit.placeEnd > win.start && entry.fit.placeStart < win.end);
-        }).sort((a,b)=>{
-          const pri = (Number(b.c.priority) || 0) - (Number(a.c.priority) || 0);
-          if(pri)return pri;
-          return (Number(b.entry.fit.durMin) || 0) - (Number(a.entry.fit.durMin) || 0);
-        }).slice(0,8);
-        if(victims.length < 2)continue;
-
-        const beforeMinutes = weekPlacedMinutes(dayStates);
-        const beforeTravel = weekTravelSecondsFromStates(dayStates);
-        const beforeDeficit = reservation.deficit;
-        for(let size = 2;size <= Math.min(maxVictims,victims.length) && !improved;size += 1){
-          for(const combo of combinations(victims,size)){
-            if(trials++ >= maxTrials)break;
-            const removed = new Set(combo.map(v=>v.c.i));
-            const sourceClean = rebuildDayFromFills(
-              state,
-              collapsedKeepFills(state,removed),
-              candidates,
-              {settings,allowNetwork:true}
-            );
-            if(!sourceClean)continue;
-            const reclaimedDeficit = deficitFor(sourceClean,short.i);
-            if(reclaimedDeficit >= beforeDeficit)continue;
-            const placed = placeVictims(combo,sourceIndex,sourceClean);
-            if(!placed)continue;
-            const hypothetical = dayStates.map((original,index)=>placed.get(index) || original);
-            const afterMinutes = weekPlacedMinutes(hypothetical);
-            const afterTravel = weekTravelSecondsFromStates(hypothetical);
-            const finalSource = placed.get(sourceIndex) || sourceClean;
-            if(!combo.every(victim=>candidateWeekOccurrencesFit(victim.c,hypothetical)))continue;
-            const afterDeficit = deficitFor(finalSource,short.i);
-            if(afterDeficit >= beforeDeficit)continue;
-            if(afterMinutes < beforeMinutes)continue;
-            if(afterMinutes === beforeMinutes && afterDeficit === beforeDeficit
-              && afterTravel > beforeTravel)continue;
-            for(const [index,replacement] of placed){
-              applyPlacementState(dayStates[index],replacement);
-              syncDayAgendaItemsFromFills(dayStates[index]);
-            }
-            moves += combo.length;
-            improved = true;
-            break;
-          }
+  while(sourceTrials > 0 && targetTrials > 0){
+    const shortfalls = dayStates.flatMap(state=>dailyBreakableReservations(state,candidates)
+      .map(reservation=>({state,reservation})))
+      .sort((a,b)=>a.reservation.priority - b.reservation.priority || a.state.dayBase - b.state.dayBase);
+    let improvement = null;
+    for(const {state,reservation} of shortfalls){
+      if(sourceTrials <= 0 || targetTrials <= 0)break;
+      const work = byIndex.get(reservation.i);
+      const linked = linkedByDay.get(state.dayBase);
+      const windows = breakableReservationWindows(reservation);
+      const counts = new Map();
+      for(const {fill} of state.fills)counts.set(fill.i,(counts.get(fill.i) || 0) + 1);
+      const blockers = state.fills.filter(entry=>{
+        const c = byIndex.get(entry.fill.i);
+        if(!c || c.priority < work.priority || counts.get(c.i) !== 1
+          || (protectIncumbent && c.priority === 0)
+          || linked.has(c.h.hid) || locked(entry,state) || mustPlaceCriticalOccurrence(c))return false;
+        if(c.h.type !== 'task' && rhythmFillsEveryEligibleDay(c.h))return false;
+        if(!windows.some(win=>entry.fit.placeEnd > win.start
+          && inboundOccupiedStart(entry.fit,state.startClock) < win.end))return false;
+        const {reference,offset} = c.h.type === 'task' ? {} : candidatePriorOccurrence(c,state.dayBase,dayStates);
+        return isMovableWeekCandidate(c,state.dayBase,offset ? reference : undefined,offset);
+      }).sort((a,b)=>b.fit.durMin + b.fit.travelMin - a.fit.durMin - a.fit.travelMin
+        || b.fill.priority - a.fill.priority || a.fill.i - b.fill.i).slice(0,8)
+        .map(entry=>byIndex.get(entry.fill.i));
+      const before = placedBreakableMinutes(state,work.i);
+      let recovered = 0;
+      const probe = victims=>{
+        if(sourceTrials <= 0 || targetTrials <= 0 || recovered >= reservation.deficit)return;
+        sourceTrials -= 1;
+        const trial = reopen(state,work,victims);
+        if(!trial)return;
+        const gain = placedBreakableMinutes(trial,work.i) - before;
+        if(gain <= recovered)return;
+        const replacements = relocate(state,trial,victims);
+        if(!replacements)return;
+        recovered = gain;
+        improvement = {replacements,count:victims.length};
+      };
+      const search = (size,start,picked)=>{
+        if(sourceTrials <= 0 || targetTrials <= 0 || recovered >= reservation.deficit)return;
+        if(picked.length === size){ probe(picked);return; }
+        for(let i = start;i <= blockers.length - size + picked.length;i += 1){
+          search(size,i + 1,[...picked,blockers[i]]);
         }
-        if(improved)break;
-      }
+      };
+      const maxVictims = Math.min(blockers.length,deep ? 3 : 2);
+      for(let size = 1;size <= maxVictims;size += 1)search(size,0,[]);
+      if(improvement)break;
     }
-    if(!improved)break;
+    if(!improvement)break;
+    for(const [original,trial] of improvement.replacements)applyPlacementState(original,trial);
+    moves += improvement.count;
   }
   return moves;
 }

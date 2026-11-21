@@ -131,7 +131,7 @@ function nativeSaveReminderPatch(prefs,owner,patch,dayKey){
 async function nativeResetReminderDate(owner,dayKey,{travelOnly=false}={}){
   const prefs=nativeReminderPreferences(),choice={...prefs.items[owner]},dates={...choice.dates};
   const patch={...dates[dayKey]};
-  for(const edge of travelOnly ? ['travelStart','travelEnd','travelLeadMinutes'] : [...NATIVE_REMINDER_EDGES.map(([edge])=>edge),'startLeadMinutes','secondStartLeadMinutes','dueDaysBefore','dueMinute','travelLeadMinutes','missedLeadMinutes'])delete patch[edge];
+  for(const edge of travelOnly ? ['travelStart','travelEnd','travelLeadMinutes'] : [...NATIVE_REMINDER_EDGES.map(([edge])=>edge),'startLeadMinutes','secondStartLeadMinutes','dueDaysBefore','dueMinute','travelLeadMinutes','missedLeadMinutes','sound'])delete patch[edge];
   if(Object.keys(patch).length)dates[dayKey]=patch;else delete dates[dayKey];
   prefs.items[owner]={...choice,dates};localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
   nativeReminderLastSignature='';await reconcileNativeReminders();
@@ -196,6 +196,140 @@ function nativeReminderFace(edge,meeting){
   if(meeting && edge==='start')return 'first reminder';
   if(meeting && edge==='startSecond')return 'second reminder';
   return {start:'when it starts',end:'when it ends',due:'on the due date',travelStart:'when you leave',travelEnd:'when you arrive',missed:'if it may not fit'}[edge] || edge;
+}
+const nativeItemSoundRefreshers = new WeakMap();
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden)document.querySelectorAll('.native-reminder-sound').forEach(host=>nativeItemSoundRefreshers.get(host)?.());
+});
+function nativeItemSoundControl(owner,dayKey){
+  const api=window.TingsNative?.sounds;
+  if(!window.TingsNative?.isNative || !api || typeof api.status!=='function')return null;
+  const host=document.createElement('div');host.className='native-reminder-sound';
+  const title=document.createElement('span');title.className='native-reminder-name';title.textContent='notification sound';
+  const select=document.createElement('select');select.className='mini-select';select.dataset.reminderSound=owner;
+  select.setAttribute('aria-label','notification sound');select.disabled=true;
+  const hint=document.createElement('p');hint.className='field-hint native-reminder-note';
+  const sources = ['a built-in tone'];
+  if(typeof api.addPick==='function')sources.push('a phone sound');
+  if(typeof api.addFile==='function')sources.push('an audio file');
+  hint.textContent=`${dayKey ? 'For this date.' : 'For this item.'} Use the default or choose ${sources.join(', ')}. Ringing alarms keep the phone’s alarm tone.`;
+  const actions=document.createElement('div');actions.className='native-sound-actions';
+  const preview=document.createElement('button');preview.type='button';preview.className='btn';preview.textContent='Preview';preview.disabled=true;
+  const stop=document.createElement('button');stop.type='button';stop.className='btn';stop.textContent='Stop preview';
+  const links=document.createElement('div');links.className='settings-actions';
+  const phone=document.createElement('button');phone.type='button';phone.className='mini-text-btn';phone.textContent='Choose phone sound';
+  const file=document.createElement('button');file.type='button';file.className='mini-text-btn';file.textContent='Choose audio file';
+  const android=document.createElement('button');android.type='button';android.className='mini-text-btn';android.textContent='Android sound settings';
+  let busy=false,revision=0;
+  const draft=()=>{
+    if(!host.closest('#detail-sheet') || typeof detailUnsavedReminders==='undefined')return null;
+    const pending=detailUnsavedReminders;
+    const staged=pending?.hid && `item:${pending.hid}`===owner ? pending.session : null;
+    const stagedDate=staged?.eventScope==='occurrence' ? staged.occurrenceDate : null;
+    return (dayKey || null)===stagedDate ? staged : null;
+  };
+  const savedId=()=>{
+    const pending=draft()?.changes.find(change=>change.field==='reminderSound');
+    if(pending)return pending.op==='clear' ? '' : pending.value;
+    const choice=nativeReminderPreferences().items[owner];
+    return nativeReminderSoundId(dayKey ? choice?.dates?.[dayKey] : choice);
+  };
+  const defaultId=()=>{
+    const prefs = nativeReminderPreferences();
+    const choice = {...prefs.items[owner]};
+    if(!dayKey)delete choice.sound;
+    prefs.items[owner] = choice;
+    const inherited = nativeReminderSoundId(nativeReminderChoices(prefs,owner));
+    return inherited || (/^item:sample-prayer-(fajr|dhuhr|asr|maghrib|isha)$/.test(owner) ? 'warm' : '');
+  };
+  const effectiveId=()=>savedId() || defaultId() || undefined;
+  async function persist(id){
+    const staged=draft();
+    if(staged){
+      staged.changes=staged.changes.filter(change=>change.field!=='reminderSound');
+      staged.changes.push({field:'reminderSound',op:id ? 'set' : 'clear',value:id || null});
+      return;
+    }
+    const prefs=nativeReminderPreferences();
+    const choice={...(prefs.items[owner] || {})};
+    if(dayKey){
+      const dates={...choice.dates};
+      const entry={...dates[dayKey]};
+      if(id)entry.sound=id;else delete entry.sound;
+      if(Object.keys(entry).length)dates[dayKey]=entry;else delete dates[dayKey];
+      if(Object.keys(dates).length)choice.dates=dates;else delete choice.dates;
+    }else if(id)choice.sound=id;else delete choice.sound;
+    prefs.items[owner]=choice;
+    localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
+    nativeReminderLastSignature='';
+    await reconcileNativeReminders();
+    showToast('notification sound saved',2800);
+  }
+  function paint(state){
+    const current=savedId();
+    const inherited=defaultId();
+    const defaultName=(state.choices || []).find(choice=>choice.id===inherited)?.name || state.effectiveName;
+    const options=[{id:'',name:defaultName ? `Use the default (${defaultName})` : 'Use the default'}];
+    for(const choice of state.choices || [])if(nativeReminderItemSoundChoice(choice))options.push(choice);
+    if(current && !options.some(option=>option.id===current))options.push({id:current,name:'Saved sound'});
+    select.replaceChildren(...options.map(choice=>{
+      const option=document.createElement('option');option.value=choice.id;option.textContent=choice.name || choice.id;return option;
+    }));
+    select.value=current;select.disabled=busy;
+    const effective=current || inherited;
+    preview.disabled=busy || (effective ? effective==='silent' : state.silent)
+      || (window.TingsNative.platform==='ios' && (effective || state.selected)==='default');
+  }
+  async function refresh(){
+    if(busy || !host.isConnected)return;
+    const request=++revision;
+    try{
+      const state=await api.status();
+      if(host.isConnected && !busy && request===revision)paint(state);
+    }catch{
+      if(request===revision){select.disabled=true;preview.disabled=true;}
+    }
+  }
+  async function change(action){
+    if(busy)return;
+    const sheet=host.closest('.sheet-wrap.open');
+    const previous=savedId();
+    busy=true;revision++;
+    [select,preview,phone,file,android].forEach(control=>control.disabled=true);
+    try{
+      if(typeof api.stopPreview==='function')await api.stopPreview();
+      const next=await action();
+      if(next != null && host.isConnected && (!sheet || sheet.classList.contains('open')) && savedId()===previous)await persist(next);
+    }catch(error){select.value=savedId();showToast(error.message || 'Could not change notification sound.',5000);}
+    finally{
+      busy=false;[phone,file,android].forEach(control=>control.disabled=false);
+      await refresh();
+    }
+  }
+  select.addEventListener('change',()=>{
+    const next=select.value;
+    void change(()=>next);
+  });
+  if(typeof api.addPick==='function'){phone.addEventListener('click',()=>void change(async()=>(await api.addPick())?.savedId));links.append(phone);}
+  if(typeof api.addFile==='function'){file.addEventListener('click',()=>void change(async()=>(await api.addFile())?.savedId));links.append(file);}
+  if(typeof api.openSettings==='function'){
+    android.addEventListener('click',async()=>{
+      try{if(typeof api.stopPreview==='function')await api.stopPreview();await api.openSettings(effectiveId());}
+      catch(error){showToast(error.message);}
+    });
+    links.append(android);
+  }
+  preview.addEventListener('click',async()=>{
+    try{await api.preview(effectiveId());}
+    catch(error){showToast(error.message);}
+  });
+  stop.addEventListener('click',()=>{if(typeof api.stopPreview==='function')void api.stopPreview().catch(()=>{});});
+  actions.append(preview,stop);
+  host.append(title,select,actions,hint);
+  if(links.childElementCount)host.append(links);
+  nativeItemSoundRefreshers.set(host,refresh);
+  queueMicrotask(()=>void refresh());
+  return host;
 }
 function nativeSyncReminderControl(select){
   const row=select?.closest?.('.native-reminder-row');if(!row)return;
@@ -371,7 +505,10 @@ function nativeItemReminderControls(owner,name,opts = {}){
     list.append(more);
   }
   const hint = document.createElement('p');hint.className = 'field-hint native-reminder-note';hint.textContent = 'Saved on this phone.';
-  box.append(list,hint);
+  const sound = opts.travelOnly ? null : nativeItemSoundControl(owner,opts.dayKey);
+  box.append(list);
+  if(sound)box.append(sound);
+  box.append(hint);
   box.querySelectorAll('select[data-reminder-edge]').forEach(nativeSyncReminderControl);
   return box;
 }
@@ -424,6 +561,11 @@ function nativeClearItemReminders(owner){
   if(!owner)return;
   const prefs = nativeReminderPreferences();
   const blank = {travelLeadMinutes:0,dnd:prefs.items[owner]?.dnd===true};
+  const sound = nativeReminderSoundId(prefs.items[owner]);
+  if(sound)blank.sound = sound;
+  const dates = Object.fromEntries(Object.entries(prefs.items[owner]?.dates || {})
+    .filter(([,choice])=>nativeReminderSoundId(choice)).map(([day,choice])=>[day,{sound:choice.sound}]));
+  if(Object.keys(dates).length)blank.dates = dates;
   for(const [edge] of NATIVE_REMINDER_EDGES)blank[edge] = 'off';
   prefs.items[owner] = blank;
   localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
@@ -448,6 +590,23 @@ function nativeReminderLeadMinutes(choices){
   return [0,5,10,15,30,60].includes(minutes) ? minutes : 0;
 }
 function nativeReminderMissedLeadMinutes(choices){return Number(choices?.missedLeadMinutes)===5 ? 5 : 15;}
+const NATIVE_SOUND_IDS = ['default','calm','warm','deep','gentle','silent','calendar','custom'];
+function nativeReminderSoundKnown(id){
+  return NATIVE_SOUND_IDS.includes(id) || /^lib:[A-Za-z0-9]{4,64}$/.test(String(id || ''));
+}
+function nativeReminderItemSoundChoice(choice){
+  // The legacy custom slot changes whenever Settings imports a new default.
+  return choice?.id !== 'custom' && nativeReminderSoundKnown(choice?.id);
+}
+function nativeReminderSoundId(choices){
+  const id = choices && typeof choices.sound === 'string' ? choices.sound : '';
+  return nativeReminderSoundKnown(id) ? id : '';
+}
+function nativeReminderWithSound(event,choices){
+  const sound = nativeReminderSoundId(choices);
+  if(sound && event.delivery !== 'alarm')event.sound = sound;
+  return event;
+}
 // A simple window check, never placement or a planner build on the UI thread.
 function nativeReminderAllowedWarningAt(h,row,day,settings,now){
   const option=normalizeHabitScheduleOptions(h.scheduleOptions).find(o=>o.id===row.scheduleOptionId);
@@ -529,10 +688,10 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
     const at=daysBefore===0 && dateKey(now)===dayKey ? Math.max(desiredAt,now+2000) : desiredAt;
     if(at<=now || at>now+7*86400000)continue;
     const key=`${owner}:Due:${dayKey}`;
-    events.set(key,{key,at,agendaAt:desiredAt,owner,dayKey,title:h.name || 'Task',
+    events.set(key,nativeReminderWithSound({key,at,agendaAt:desiredAt,owner,dayKey,title:h.name || 'Task',
       body:`Due ${new Date(h.dueDate).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}`,
       reminderEdge:'due',delivery:choices.due,upNext:false,notificationGroup:key,
-      expiresAt:Math.max(at,desiredAt)+15*60000});
+      expiresAt:Math.max(at,desiredAt)+15*60000},choices));
   }
   if(!week || !Array.isArray(week.days))return [...events.values()].sort((a,b)=>a.at-b.at || a.key.localeCompare(b.key));
   const todayBase=dayStart(now),forecast=week.dropForecast;
@@ -634,6 +793,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
             notificationGroup:`${owner}:${reminderDayKey}:missed`,
             ...(!h.breakable && completion ? {completion} : {}),
             body:risk ? `May drop by ${clock}` : `May drop around ${clock}`};
+          nativeReminderWithSound(event,choices);
           // Split work has one remaining-opportunity alarm, using the latest
           // available provisional start if no shared estimate exists.
           events.set(key,event);
@@ -655,11 +815,11 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
         const key = `${owner}:${kind}:${identity}:${edge}`;
         const movableStart=edge==='Start' && (kind==='travel' ? !row.reminderFixedStart && destinationHabit && !(destinationHabit.type==='task' && !destinationHabit.breakable && Number.isFinite(destinationHabit.eventTime)) : h && !(h.type==='task' && !h.breakable && Number.isFinite(h.eventTime)) && row.hard!==true && row.kind!=='scheduled');
         const clock=new Date(agendaAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
-        events.set(key,{key,at,agendaAt,title,owner,
+        events.set(key,nativeReminderWithSound({key,at,agendaAt,title,owner,
           upNext:Boolean(movableStart),upNextBody:`Up next · ${clock}`,notificationGroup:`${owner}:${reminderDayKey}:${kind === 'travel' ? 'travel'+edge : edge.toLowerCase()}`,
           expiresAt:isStart && kind!=='travel' ? Math.max(at,Number(row.end))+15*60000 : agendaAt+15*60000,
           dayKey:reminderDayKey,...(completion ? {completion} : {}),reminderEdge,delivery:mode,
-          body:isEventItem(h) && isStart && lead>0 ? `Starts · ${new Date(agendaAt).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})} · ${clock}` : `${kind === 'travel' ? isStart ? 'Leave' : 'Arrive' : isStart ? 'Start' : 'End'} · ${clock}`});
+          body:isEventItem(h) && isStart && lead>0 ? `Starts · ${new Date(agendaAt).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})} · ${clock}` : `${kind === 'travel' ? isStart ? 'Leave' : 'Arrive' : isStart ? 'Start' : 'End'} · ${clock}`},choices));
       }
     }
   }
@@ -683,10 +843,10 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       if(Number.isFinite(row.warnedDropAt) && row.warnedDropAt<=now+60000)continue;
       const missedAt=now+15*60000;
       const key=`${owner}:Slipped:${dateKey(today)}`;
-      events.set(key,{key,at:now+2000,agendaAt:missedAt,title:h.name || 'Ting',body:'Slipped · still time',owner,
+      events.set(key,nativeReminderWithSound({key,at:now+2000,agendaAt:missedAt,title:h.name || 'Ting',body:'Slipped · still time',owner,
         dayKey:dateKey(today),reminderEdge:'missed',delivery:choices.missed,upNext:false,slipped:true,expiresAt:missedAt,
         notificationGroup:`${owner}:${dateKey(today)}:missedDrop`,
-        ...(!h.breakable ? {completion:{hid,dayKey:dateKey(today),minutes:0}} : {})});
+        ...(!h.breakable ? {completion:{hid,dayKey:dateKey(today),minutes:0}} : {})},choices));
     }
   }
   // The future normal result also prepares ordinary edges beyond its clock.
@@ -742,7 +902,7 @@ function scheduleNativeAgendaForecast(week,data,settings,prefs,revision){
 }
 function nativeBackgroundSnapshot(){
   const storage = {};
-  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,MISSED_HIDDEN_KEY,WEATHER_CACHE_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
+  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,MISSED_HIDDEN_KEY,WEATHER_CACHE_KEY,RESTORED_DEVICE_CALENDAR_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
     const value = localStorage.getItem(key);if(value != null)storage[key] = value;
   }
   // Last-refresh display text is not a planner input.
@@ -1054,7 +1214,7 @@ function nativeNotificationSoundControls(){
   const label=document.createElement('label');label.className='settings-sublabel';label.htmlFor='native-notification-sound';label.textContent='default notification sound';
   const select=document.createElement('select');select.id=label.htmlFor;select.disabled=true;
   const hint=document.createElement('p');hint.className='field-hint';
-  hint.textContent='Calm is the default for habit, task, busy-time and travel notifications. The five prayer samples use Warm, even if renamed. Preview uses notification volume. Ringing alarms use your phone’s alarm tone.';
+  hint.textContent='Calm is the default for habit, task, busy-time and travel notifications. The five prayer samples use Warm until you pick a sound on that item. Preview uses notification volume. Ringing alarms use your phone’s alarm tone.';
   const status=document.createElement('p');status.className='field-hint';status.setAttribute('role','status');
   const actions=document.createElement('div');actions.className='settings-actions';
   const preview=document.createElement('button');preview.type='button';preview.className='btn';preview.textContent='Preview';preview.disabled=true;
@@ -1065,12 +1225,12 @@ function nativeNotificationSoundControls(){
   let current='',busy=false;
   function paint(state){
     current=state.selected;
-    select.replaceChildren(...state.choices.map(choice=>{
+    select.replaceChildren(...state.choices.filter(choice=>!choice.itemOnly).map(choice=>{
       const option=document.createElement('option');option.value=choice.id;
       option.textContent=choice.name+(choice.description ? ` · ${choice.description}` : '');return option;
     }));
     select.value=current;select.disabled=busy;
-    preview.disabled=busy || state.silent;
+    preview.disabled=busy || state.silent || (window.TingsNative.platform==='ios' && state.selected==='default');
     status.textContent=`Current sound: ${state.effectiveName}.${state.enabled ? '' : ' Notifications are off in Android settings.'}`;
   }
   async function refresh(){

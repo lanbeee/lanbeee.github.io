@@ -1,12 +1,24 @@
 // Event controls over the existing item/agenda model.
 let addAppointmentMode=false;
+function appointmentWeekdayForIso(iso){
+  const ts = iso ? new Date(`${iso}T12:00:00`).getTime() : NaN;
+  return Number.isFinite(ts) ? new Date(ts).getDay() : new Date().getDay();
+}
+function setAppointmentWeekdayChips(host,weekdays){
+  const list = Array.isArray(weekdays) && weekdays.length ? weekdays : [new Date().getDay()];
+  host?.querySelectorAll('[data-appointment-day]').forEach(el=>{
+    const on = list.includes(Number(el.dataset.appointmentDay));
+    el.classList.toggle('on',on);
+    el.setAttribute('aria-pressed',String(on));
+  });
+}
 function appointmentFields(prefix,a={repeat:'once',startDate:todayIso(),weekdays:[new Date().getDay()],startMinute:540,until:''}){
-  return `<label class="planning-field">repeats<select id="${prefix}-repeat" class="settings-select"><option value="once"${a.repeat==='once'?' selected':''}>once</option><option value="weekly"${a.repeat==='weekly'?' selected':''}>every week</option><option value="monthly"${a.repeat==='monthly'?' selected':''}>every month</option></select></label>
+  return `<label class="planning-field">Repeats<select id="${prefix}-repeat" class="settings-select"><option value="once"${a.repeat==='once'?' selected':''}>once</option><option value="weekly"${a.repeat==='weekly'?' selected':''}>every week</option><option value="monthly"${a.repeat==='monthly'?' selected':''}>every month</option></select></label>
     <div id="${prefix}-monthly">${ordinalWeekdayEditor(a.ordinalWeekdays)}</div>
-    <label class="planning-field">starts<input type="date" id="${prefix}-date" class="plan-date-input" value="${a.startDate}" required></label>
-    <div id="${prefix}-weekly"><span class="settings-sublabel">on these days</span><div class="schedule-chip-row" role="group" aria-label="Repeat weekdays">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((name,d)=>`<button type="button" class="schedule-chip${a.weekdays.includes(d)?' on':''}" data-appointment-day="${d}" aria-pressed="${a.weekdays.includes(d)}">${name}</button>`).join('')}</div>
-    <label class="planning-field">until<input type="date" id="${prefix}-until" class="plan-date-input" value="${a.until}" min="${a.startDate}"></label></div>
-    <label class="planning-field">starts at<input type="time" id="${prefix}-time" class="plan-time-input" value="${minutesToTimeInput(a.startMinute)}" required></label>`;
+    <label class="planning-field">Starts<input type="date" id="${prefix}-date" class="plan-date-input" value="${a.startDate}" required></label>
+    <div id="${prefix}-weekly"><span class="settings-sublabel">On these days</span><div class="schedule-chip-row" role="group" aria-label="Repeat weekdays">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((name,d)=>`<button type="button" class="schedule-chip${a.weekdays.includes(d)?' on':''}" data-appointment-day="${d}" aria-pressed="${a.weekdays.includes(d)}">${name}</button>`).join('')}</div>
+    <label class="planning-field">Until<input type="date" id="${prefix}-until" class="plan-date-input" value="${a.until}" min="${a.startDate}"></label></div>
+    <label class="planning-field">Starts at<input type="time" id="${prefix}-time" class="plan-time-input" value="${minutesToTimeInput(a.startMinute)}" required></label>`;
 }
 function wireAppointmentFields(host,prefix){
   const sync=()=>{
@@ -16,10 +28,56 @@ function wireAppointmentFields(host,prefix){
     $(`${prefix}-weekly`).querySelector('.settings-sublabel')?.toggleAttribute('hidden',repeat==='monthly');
     $(`${prefix}-weekly`).querySelector('.schedule-chip-row')?.toggleAttribute('hidden',repeat==='monthly');
   };
-  host.addEventListener('click',e=>{const day=e.target.closest('[data-appointment-day]');if(day){const on=day.getAttribute('aria-pressed')!=='true';day.setAttribute('aria-pressed',String(on));day.classList.toggle('on',on);host.dispatchEvent(new Event('change',{bubbles:true}));}});
+  host.addEventListener('click',e=>{const day=e.target.closest('[data-appointment-day]');if(day){const on=day.getAttribute('aria-pressed')!=='true';day.setAttribute('aria-pressed',String(on));day.classList.toggle('on',on);host.dataset.weekdaysEdited='1';host.dispatchEvent(new Event('change',{bubbles:true}));}});
   $(`${prefix}-repeat`).addEventListener('change',sync);
-  $(`${prefix}-date`).addEventListener('change',()=>{$(`${prefix}-until`).min=$(`${prefix}-date`).value;});
+  $(`${prefix}-date`).addEventListener('change',()=>{
+    const value=$(`${prefix}-date`).value;
+    $(`${prefix}-until`).min=value;
+    if(prefix==='add-appt' && host.dataset.weekdaysEdited!=='1' && value){
+      setAppointmentWeekdayChips(host,[appointmentWeekdayForIso(value)]);
+    }
+  });
   sync();
+}
+function readAddAppointmentDraft(){
+  const host=$('add-appointment-fields');
+  if(!host || !host.children.length)return null;
+  return {
+    repeat:$('add-appt-repeat').value,
+    startDate:$('add-appt-date').value,
+    startTime:$('add-appt-time').value,
+    until:$('add-appt-until').value,
+    weekdays:[...$('add-appt-weekly').querySelectorAll('[data-appointment-day][aria-pressed="true"]')].map(el=>Number(el.dataset.appointmentDay)),
+    weekdaysEdited:host.dataset.weekdaysEdited==='1',
+    ordinalWeekdays:readOrdinalWeekdays($('add-appt-monthly'))
+  };
+}
+function applyAddAppointmentDraft(draft){
+  const host=$('add-appointment-fields');
+  if(!host)return;
+  const startDate = draft?.startDate || todayIso();
+  const startTime = draft?.startTime || minutesToTimeInput(540);
+  const startMinute = timeInputToMinutes(startTime) ?? 540;
+  const repeat = draft?.repeat || 'once';
+  const until = draft?.until || '';
+  const weekdaysEdited = Boolean(draft?.weekdaysEdited);
+  const weekdays = weekdaysEdited && Array.isArray(draft?.weekdays) && draft.weekdays.length
+    ? draft.weekdays : [appointmentWeekdayForIso(startDate)];
+  const ordinalWeekdays = Array.isArray(draft?.ordinalWeekdays) ? draft.ordinalWeekdays : [];
+  if(!host.children.length){
+    host.innerHTML=appointmentFields('add-appt',{repeat,startDate,weekdays,startMinute,until,ordinalWeekdays})+eventHelpHtml('add-event-help');
+    host.dataset.weekdaysEdited = weekdaysEdited ? '1' : '';
+    wireAppointmentFields(host,'add-appt');
+    return;
+  }
+  $('add-appt-repeat').value = repeat;
+  $('add-appt-date').value = startDate;
+  $('add-appt-time').value = startTime;
+  $('add-appt-until').value = until;
+  $('add-appt-until').min = startDate;
+  host.dataset.weekdaysEdited = weekdaysEdited ? '1' : '';
+  setAppointmentWeekdayChips(host,weekdays);
+  $('add-appt-repeat').dispatchEvent(new Event('change'));
 }
 function readAppointmentFields(prefix,exceptions={}){
   return normalizeAppointment({repeat:$(`${prefix}-repeat`).value,startDate:$(`${prefix}-date`).value,
@@ -30,7 +88,7 @@ function readAppointmentFields(prefix,exceptions={}){
 }
 function validateAppointmentFields(prefix){
   const fields=[$(`${prefix}-date`),$(`${prefix}-time`)];
-  if($(`${prefix}-repeat`).value==='weekly')fields.push($(`${prefix}-until`));
+  if($(`${prefix}-repeat`).value!=='once')fields.push($(`${prefix}-until`));
   for(const field of fields)if(!field.checkValidity()){field.reportValidity();return false;}
   if(prefix==='add-appt' && !$('ting-duration').checkValidity()){$('ting-duration').reportValidity();return false;}
   if(!readAppointmentFields(prefix)){showToast('Choose a date, time, and when it repeats.');return false;}
@@ -38,7 +96,8 @@ function validateAppointmentFields(prefix){
 }
 function resetAppointmentShortcut(){
   addAppointmentMode=false;
-  $('add-appointment-fields').replaceChildren();
+  const host=$('add-appointment-fields');
+  if(host){host.replaceChildren();delete host.dataset.weekdaysEdited;}
   syncAppointmentShortcut();
 }
 function syncAppointmentShortcut(){
@@ -52,7 +111,7 @@ function syncAppointmentShortcut(){
   if(!host.children.length){host.innerHTML=appointmentFields('add-appt')+eventHelpHtml('add-event-help');wireAppointmentFields(host,'add-appt');}
   $('add-title').textContent='new event';$('do-save').textContent='add event';
   document.querySelector('label[for="ting-message"]').textContent='What’s it called?';
-  $('ting-message').placeholder='e.g. Biology class';$('add-duration-label').textContent='how long';
+  $('ting-message').placeholder='e.g. Biology class';$('add-duration-label').textContent='How long';
   $('add-frequency').hidden=true;$('task-due-row').hidden=true;$('add-conditions').hidden=true;
   $('add-minimal-effort').hidden=false;
 }
