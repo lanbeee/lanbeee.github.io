@@ -1080,7 +1080,7 @@ function renderDetailSummaryGuides(){
   const base = !$('detail-ask').hidden && !input.disabled && detailSummaryCanSend()
     && typeof assistantGuideSuggestions === 'function';
   const existing = detailSummary.session && assistantFocusAlive(detailSummary.session) ? detailSummary.session : null;
-  const canRevise = Boolean(base && existing && assistantGuideCanRevise(existing));
+  const canRevise = Boolean(base && existing && !existing.answer && assistantGuideCanRevise(existing));
   // Chips and help only while composing or when Needle needs a pick; an idle
   // tray keeps just Edit last request so it never covers the proposal.
   const noticeOnly = existing?.unresolved?.length && !detailSummaryNeedsPick(existing) && !draft.trim();

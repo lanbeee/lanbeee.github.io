@@ -2073,6 +2073,7 @@ function assistantFocusEmbedKicker(session){
   if(session._focusInFlight)return 'Reading';
   if(session.changes.length)return 'Proposed change';
   if((session.itemActions || []).some(action => action.ready))return 'Confirm';
+  if(session.answer && session.answer.text)return 'Question';
   const first = session.unresolved[0];
   if(first && first.notice)return first.notice === 'other' ? 'Different item' : 'Question';
   if(first)return 'One more detail';
@@ -2144,7 +2145,7 @@ function assistantFocusReviewHtml(session, opts){
     : session.changes.length || session.unresolved.length);
   const actions = readyForActions ? `<div class="btn-row">${save}${edit}</div>` : '';
   const empty = opts.embedded && !session._focusInFlight && !session.changes.length && !session.unresolved.length
-    && !(session.itemActions || []).length && !pending
+    && !(session.itemActions || []).length && !pending && !(session.answer && session.answer.text)
     ? '<p class="focus-note">Nothing to change yet. Name the setting and the new value, like “make it 30 minutes”.</p>' : '';
   const head = opts.embedded
     ? `<div class="focus-review-head"><p class="focus-kicker">${assistantFocusEmbedKicker(session)}</p></div>`
@@ -2152,9 +2153,13 @@ function assistantFocusReviewHtml(session, opts){
         <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>
         <p class="assistant-preview-name">${assistantFocusFieldHtml('name', model.title, 'focus-name', session)}</p>
       </div>`;
+  // A question's answer. Built from app data, so it reads like the app:
+  // saved value first, staged value flagged separately when one is waiting.
+  const answer = session.answer && session.answer.text && !session._focusInFlight
+    ? `<div class="focus-answer"><p>${assistantFocusEscape(session.answer.text)}</p></div>` : '';
   return `<div class="focus-review" data-focus-review>
       ${head}
-      ${essentials}${changes}${pending}${itemActions}${question}${notes}${empty}
+      ${answer}${essentials}${changes}${pending}${itemActions}${question}${notes}${empty}
       <p class="focus-status" data-focus-status role="status">${assistantFocusEscape(session.correctionError || '')}</p>
       ${actions}
     </div>`;

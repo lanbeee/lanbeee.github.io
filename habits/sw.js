@@ -1,4 +1,4 @@
-const CACHE = 'tings-v991';
+const CACHE = 'tings-v997';
 const MAPS_CACHE = 'tings-maps-v3';
 // Map tiles accumulate forever in a cache-first cache; this is the ceiling
 // where the oldest tiles get dropped (bounded, insertion-order eviction).
@@ -179,6 +179,7 @@ const PRECACHE = [
   './js/assistant-needle.js',
   './js/assistant-focus-registry.js',
   './js/assistant-focus.js',
+  './js/assistant-focus-answers.js',
   './js/assistant-focus-needle.js',
   './js/assistant-focus-fields.js',
   './js/assistant-workflow.js',

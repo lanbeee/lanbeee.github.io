@@ -166,6 +166,8 @@ body[data-pane-count="3"] .assistant-sheet{
 .focus-field:active:not(:disabled){filter:brightness(.92);}
 .focus-field:disabled{cursor:default;opacity:.6;}
 .focus-note{margin:0;color:var(--text3);font-size:12px;line-height:1.35;}
+.focus-answer{margin:2px 0 4px;}
+.focus-answer p{margin:0;color:var(--text);font-size:13.5px;line-height:1.4;overflow-wrap:anywhere;}
 .focus-progress{display:flex;flex-direction:column;gap:6px;}
 .focus-meter{height:4px;border-radius:999px;background:var(--bg3);overflow:hidden;}
 .focus-meter > span{display:block;height:100%;border-radius:inherit;background:var(--teal-icon);}

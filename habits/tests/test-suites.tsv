@@ -245,3 +245,4 @@ bulk-edit-planner-test.js	planner	page-both
 planner-projection-offmain-test.js	planner	once
 place-details-test.js	integrations	once
 glpk-seed-pack-test.js	planner	page-both
+assistant-questions-test.js	assistant	once

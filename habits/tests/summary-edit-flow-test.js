@@ -118,9 +118,9 @@ const live = Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PA
     assert.equal(await page.evaluate(()=>load().find(h=>h.hid==='read').durationMinutes),60);
     await page.evaluate(()=>detailSummaryReset(detailSummary.hid));
     await ask('how many times did I go this month?');
-    assert.match(await page.locator(active).innerText(),/can’t answer questions/);
-    await page.locator(`${active} [data-focus-open-nav="calendar"]`).click();
-    await page.waitForFunction(()=>detailCurrentNav()==='calendar');
+    assert.match(await page.locator(`${active} .focus-answer`).innerText(),/No completions this month/);
+    assert.equal(await page.locator(`${active} [data-focus-save]`).count(),0);
+    assert.deepEqual(await page.evaluate(()=>load().find(h=>h.hid==='read').logs),[]);
     await open('task');
     await ask('push it to next Friday');
     assert.deepEqual(await page.evaluate(()=>detailSummary.session.changes.map(c=>c.field)),['dueDate'],'a single due date cannot restrict repeating weekdays');
