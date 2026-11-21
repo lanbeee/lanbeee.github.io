@@ -290,7 +290,7 @@ function removeLocation(index){
   updateSortSetting({locations,travel},{renderNow:false});
   const {data,changed} = reconcileLocations(load(),{...sortSettings,locations,travel});
   if(changed)save(data);
-  if(homeLocationFilter === removed.id || overviewLocationFilter === removed.id)setSharedFilter('location','all');
+  if(filterHasKey(homeLocationFilter, removed.id) || filterHasKey(overviewLocationFilter, removed.id))removeSharedFilter('location', removed.id);
   renderLocationControls();
   refreshOpenViews();
 }

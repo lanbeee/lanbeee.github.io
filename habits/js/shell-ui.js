@@ -1288,11 +1288,19 @@ function closeSheet(id){
   if (paneTierActive() && id === 'overview-sheet') {
     return;
   }
+  if(id === 'home-filter-sheet' && typeof setFilterSheetQuery === 'function' && filterSheetQuery('home-filter')){
+    setFilterSheetQuery('home-filter', '');
+    if(typeof renderHomeTagFilter === 'function')renderHomeTagFilter(load());
+  }
+  if(id === 'calendar-filter-sheet' && typeof setFilterSheetQuery === 'function' && filterSheetQuery('calendar-filter')){
+    setFilterSheetQuery('calendar-filter', '');
+    if(typeof renderOverview === 'function')renderOverview();
+  }
   $(id).classList.remove('open');
   $(id).style.zIndex = '';
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
-  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet')updateKeyboardLift();
+  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet')updateKeyboardLift();
 }
 
 // HYBRID: opens a day drill-down item in detail without leaving the day sheet
@@ -1314,7 +1322,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'week-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'week-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -1351,7 +1359,7 @@ function syncDetailIOSPageLock(detailOpen,modalOpen){
 // RENDER: toggles full-page chrome and locks every modal's background scroll.
 function updateFullPageState(){
   syncBrowserBack();
-  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','week-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','week-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet','home-filter-sheet','calendar-filter-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);

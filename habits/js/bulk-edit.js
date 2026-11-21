@@ -5,7 +5,7 @@
 
 let bulkStep = 'pick'; // pick | change | review
 let bulkSelected = new Set(); // hids — stable identities, not indexes
-let bulkFilters = {search:'',type:'all',topic:'all',location:'all',priority:'all',snoozed:false,completed:false};
+let bulkFilters = {search:'',when:'all',type:'all',topic:'all',location:'all',priority:'all',duration:'all',trait:'all',snoozed:false,completed:false};
 let bulkPending = []; // [{id, op, value}] — op 'keep' is never applied
 let bulkReview = null; // computed review {perItem, opLines, errors, warnings, changing}
 let bulkReviewConfirmed = false; // re-inspection gate after staleness
@@ -38,9 +38,17 @@ function openBulkEditPicker(copyHome){
   bulkReviewConfirmed = false;
   bulkStaleNotice = false;
   bulkSettingsQuery = '';
-  bulkFilters = {search:copyHome ? (searchQuery || '') : '',type:copyHome ? homeTypeFilter : 'all',
-    topic:copyHome ? homeTopicFilter : 'all',location:copyHome ? homeLocationFilter : 'all',
-    priority:copyHome ? homePriorityFilter : 'all',snoozed:false,completed:false};
+  bulkFilters = {
+    search:copyHome ? (searchQuery || '') : '',
+    when:copyHome ? cloneFilterValue(homeWhenFilter) : 'all',
+    type:copyHome ? cloneFilterValue(homeTypeFilter) : 'all',
+    topic:copyHome ? cloneFilterValue(homeTopicFilter) : 'all',
+    location:copyHome ? cloneFilterValue(homeLocationFilter) : 'all',
+    priority:copyHome ? cloneFilterValue(homePriorityFilter) : 'all',
+    duration:copyHome ? cloneFilterValue(homeDurationFilter) : 'all',
+    trait:copyHome ? cloneFilterValue(homeTraitFilter) : 'all',
+    snoozed:false,completed:false
+  };
   setBulkStep('pick');
   renderBulkPicker();
   renderBulkEditStep();
@@ -122,29 +130,36 @@ function bulkPickerMatches(h){
     const haystack = `${h.name || ''} ${(h.topics || []).join(' ')}`.toLowerCase();
     if(!haystack.includes(query))return false;
   }
+  if(!matchesWhenFilter(h,bulkFilters.when))return false;
   if(!matchesTypeFilter(h,bulkFilters.type))return false;
-  if(bulkFilters.priority !== 'all' && !matchesPriorityFilter(h,bulkFilters.priority))return false;
-  if(bulkFilters.topic !== 'all'){
-    const topics = (h.topics || []).map(topic=>topic.toLowerCase());
-    if(!topics.includes(String(bulkFilters.topic).toLowerCase()))return false;
-  }
-  if(bulkFilters.location !== 'all'){
-    const ids = Array.isArray(h.locationIds) ? h.locationIds : [];
-    if(!ids.includes(bulkFilters.location) && h.anywhereAllowed !== true)return false;
-  }
+  if(!matchesPriorityFilter(h,bulkFilters.priority))return false;
+  if(!matchesTopicFilter(h,bulkFilters.topic))return false;
+  if(!matchesHomeLocation(h,bulkFilters.location))return false;
+  if(!matchesDurationFilter(h,bulkFilters.duration))return false;
+  if(!matchesTraitFilter(h,bulkFilters.trait))return false;
   return true;
 }
 
 function bulkPickerChoices(){
   const data = load();
   const topics = new Map();
-  for(const h of data)for(const topic of h.topics || [])topics.set(topic,(topics.get(topic) || 0) + 1);
-  const locations = typeof locationOptions === 'function' ? locationOptions() : [];
+  let hasNoTopic = false;
+  let hasAnywhere = false;
+  const registry = typeof locationOptions === 'function' ? locationOptions() : [];
+  for(const h of data){
+    const list = normalizeTopics(h.topics);
+    if(!list.length)hasNoTopic = true;
+    for(const topic of list)topics.set(topic,(topics.get(topic) || 0) + 1);
+    const ids = normalizeLocationIds(h.locationIds,registry);
+    if(!ids.length || h.anywhereAllowed)hasAnywhere = true;
+  }
   return {
     types:FILTER_TYPE_CHOICES,
     priorities:FILTER_PRIORITY_CHOICES,
     topics:[...topics.keys()].sort((a,b)=>a.localeCompare(b)),
-    locations
+    hasNoTopic,
+    locations:registry,
+    hasAnywhere
   };
 }
 
@@ -153,17 +168,20 @@ function bulkRenderFilterChips(){
   if(!host)return;
   const choices = bulkPickerChoices();
   const group = (kind,title,options,current)=>{
+    const ci = kind === 'topic';
     const chips = options.map(([key,label])=>{
-      const on = current === key;
+      const on = filterHasKey(current, key, {caseInsensitive:ci});
       return `<button type="button" class="home-filter-option bulk-filter-chip${on ? ' on' : ''}" data-bulk-filter="${kind}" data-bulk-filter-value="${escapeHtml(key)}" aria-pressed="${on}"><span><b>${escapeHtml(label)}</b></span></button>`;
     }).join('');
     return `<div class="bulk-filter-group"><span class="settings-sublabel">${title}</span><div class="bulk-filter-chip-row">${chips}</div></div>`;
   };
+  const topicOpts = [['all','all'],...choices.topics.map(topic=>[topic,topic]),...(choices.hasNoTopic ? [['__none__','no topic']] : [])];
+  const locOpts = [['all','all'],...choices.locations.map(loc=>[loc.id,loc.name]),...(choices.hasAnywhere ? [['__none__','anywhere']] : [])];
   host.innerHTML = [
     group('type','type',[['all','all'],...choices.types.map(choice=>[choice.key,choice.label])],bulkFilters.type),
     group('priority','priority',[['all','all'],...choices.priorities.map(choice=>[choice.key,choice.label])],bulkFilters.priority),
-    group('topic','topic',[['all','all'],...choices.topics.map(topic=>[topic,topic])],bulkFilters.topic),
-    group('location','place',[['all','all'],...choices.locations.map(loc=>[loc.id,loc.name])],bulkFilters.location)
+    group('topic','topic',topicOpts,bulkFilters.topic),
+    group('location','place',locOpts,bulkFilters.location)
   ].join('');
 }
 
@@ -207,7 +225,7 @@ function renderBulkPicker(){
   const empty = $('bulk-empty');
   if(empty)empty.hidden = Boolean(shown.length || locked.length);
   $('bulk-result-count').textContent = ` · ${shown.length} result${shown.length === 1 ? '' : 's'}${locked.length ? ` · ${locked.length} managed by calendar` : ''}`;
-  const filterCount = ['type','priority','topic','location'].filter(key=>bulkFilters[key] !== 'all').length
+  const filterCount = countActiveFilters(bulkFilters)
     + Number(bulkFilters.snoozed) + Number(bulkFilters.completed);
   $('bulk-filter-summary').textContent = filterCount ? `Filter items · ${filterCount} active` : 'Filter items';
   // Counts: selection is retained across filter changes; report what the
@@ -1016,10 +1034,9 @@ $('bulk-filter-groups')?.addEventListener('click',e=>{
   if(!chip)return;
   const kind = chip.dataset.bulkFilter;
   const value = chip.dataset.bulkFilterValue;
-  if(kind === 'type')bulkFilters.type = value;
-  else if(kind === 'priority')bulkFilters.priority = value;
-  else if(kind === 'topic')bulkFilters.topic = value;
-  else if(kind === 'location')bulkFilters.location = value;
+  if(['type','priority','topic','location','when','duration','trait'].includes(kind)){
+    bulkFilters[kind] = toggleFilterValue(bulkFilters[kind], value, {caseInsensitive:kind === 'topic'});
+  }
   renderBulkPicker();
 });
 $('bulk-show-snoozed')?.addEventListener('click',e=>{

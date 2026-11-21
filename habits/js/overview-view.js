@@ -36,16 +36,18 @@ function matchesOverviewTopic(h,topic){
 }
 
 function overviewLocationChoices(data){
-  const choices = homeLocationChoices(data);
+  const choices = locationFilterChoices(data, {treatAnywhere:false});
   return choices.some(choice=>choice.key !== 'all' && choice.key !== '__none__') ? choices : [];
 }
 
 function settleCalendarFilterChoices(library){
-  if(overviewTopicFilter !== 'all' && !overviewTopicChoices(library).some(choice=>choice.key === overviewTopicFilter)){
-    setSharedFilter('topic','all');
+  const nextTopic = pruneFilterValue(overviewTopicFilter, overviewTopicChoices(library), {caseInsensitive:true});
+  if(!filterValuesEqual(nextTopic, overviewTopicFilter)){
+    setSharedFilter('topic', nextTopic);
   }
-  if(overviewLocationFilter !== 'all' && !overviewLocationChoices(library).some(choice=>choice.key === overviewLocationFilter)){
-    setSharedFilter('location','all');
+  const nextLoc = pruneFilterValue(overviewLocationFilter, overviewLocationChoices(library));
+  if(!filterValuesEqual(nextLoc, overviewLocationFilter)){
+    setSharedFilter('location', nextLoc);
   }
 }
 
@@ -53,8 +55,8 @@ function matchesOverviewLocation(h,id){
   return matchesLocationFilter(h,id);
 }
 
-// PURE: habit passes the calendar filters. Place and topic stay single-choice;
-// when, type, and priority use the same groups as home.
+// PURE: habit passes the calendar filters. All filter groups share multi-select
+// OR-within-group, AND-across-group semantics with Home.
 function matchesOverviewFilters(h){
   return !isCalendarIgnored(h) && matchesFilterSelection(h, overviewFilterSelection());
 }
@@ -70,24 +72,22 @@ const OVERVIEW_RANGES = [
   {key:'all',label:'all time'}
 ];
 
-// HYBRID: compact view switcher + active filter summary. The full place/topic
-// library lives in a dedicated sheet so the calendar header never becomes a
-// long horizontal rail.
+// HYBRID: compact view switcher + active filter summary. The full filter
+// library lives in a dedicated full-page sheet so the calendar header stays clean.
 function renderOverviewFilters(data,library){
   const wrap = $('overview-filter');
   if(!wrap)return;
-  const groups = $('calendar-filter-groups');
-  const summary = $('calendar-filter-summary');
   if(!OVERVIEW_RANGES.some(r=>r.key === overviewRangeFilter))overviewRangeFilter = 'recent';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   // The shared selection can refer to items excluded from the calendar.
   // Keep those choices available while computing counts from calendar items.
-  const topicChoices = minimal ? [] : orderFilterChoices(overviewTopicChoices(library), overviewTopicFilter);
-  const locChoices = minimal ? [] : orderFilterChoices(overviewLocationChoices(library), overviewLocationFilter);
+  const topicChoices = minimal ? [] : orderFilterChoices(overviewTopicChoices(library));
+  const locChoices = minimal ? [] : orderFilterChoices(overviewLocationChoices(library));
   const selection = overviewFilterSelection();
   syncOverviewFilterSelection(selection);
-  const view = minimal ? {groupsHtml:'', chipsHtml:'', activeCount:0} : libraryFilterView({
-    prefix:'calendar-filter', attrPrefix:'overview', items:data, selection, topicChoices, locationChoices:locChoices
+  const view = minimal ? {groupsHtml:'', chipsHtml:'', sheetChipsHtml:'', activeCount:0, matchedCount:0, totalCount:0, hasAnyGroup:false} : libraryFilterView({
+    prefix:'calendar-filter', attrPrefix:'overview', items:data, selection, topicChoices, locationChoices:locChoices,
+    searchQuery:filterSheetQuery('calendar-filter')
   });
   const activeCount = view.activeCount;
   const rangeHtml = OVERVIEW_RANGES.map(r=>`
@@ -96,7 +96,7 @@ function renderOverviewFilters(data,library){
   wrap.hidden = false;
   wrap.innerHTML = `
     <div class="overview-range-seg" role="group" aria-label="calendar period">${rangeHtml}</div>
-    ${!minimal && view.groupsHtml ? `<div class="overview-filter-summary-row">
+    ${!minimal && view.hasAnyGroup ? `<div class="overview-filter-summary-row">
       <div class="overview-active-filters" aria-label="active calendar filters">
         ${view.chipsHtml}
         ${!activeCount ? '<span>Showing every item</span>' : ''}
@@ -106,12 +106,7 @@ function renderOverviewFilters(data,library){
       </button>
     </div>` : ''}`;
 
-  if(summary){
-    summary.textContent = activeCount
-      ? `${activeCount} on · the calendar updates as you tap`
-      : 'Pick when it’s due, what it is, or where it belongs.';
-  }
-  if(groups)groups.innerHTML = view.groupsHtml;
+  syncFilterSheetChrome({prefix:'calendar-filter', view, surfaceLabel:'calendar'});
 }
 
 // PURE: scheduled / due / plan-by markers for a habit (not yet in logs)

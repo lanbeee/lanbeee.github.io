@@ -370,7 +370,11 @@ $('bar-open-overview')?.addEventListener('click',()=>openRememberedCalendar());
 $('app-bar-place')?.addEventListener('click',()=>{
   if(typeof openPresencePicker === 'function')openPresencePicker();
 });
-$('app-bar-filters')?.addEventListener('click',()=>openSheet('home-filter-sheet'));
+$('app-bar-filters')?.addEventListener('click',()=>{
+  const groups = $('home-filter-groups');
+  if(groups)groups.scrollTop = 0;
+  openSheet('home-filter-sheet');
+});
 $('bar-open-about')?.addEventListener('click',()=>{
   if(typeof openSettingsSheet === 'function')openSettingsSheet();
 });

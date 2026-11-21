@@ -128,10 +128,10 @@ const {chromium,webkit} = require('playwright');
     await page.waitForTimeout(150);
     const outsideText = await page.locator('#bulk-outside-count').textContent();
     assert.ok(outsideText.includes('1 selected not in these results'),'outside count reported');
-    // Filter chips render real labels (priority choices are objects).
+    // Filter chips render real labels for all 6 priorities (priority choices are objects).
     await page.evaluate(()=>renderBulkPicker());
     const chipText = await page.locator('[data-bulk-filter="priority"]').allTextContents();
-    assert.ok(chipText.some(t=>t.includes('Important')),'priority chips show labels');
+    assert.ok(chipText.some(t=>t.includes('P0 · Critical')) && chipText.some(t=>t.includes('P5 · Someday')),'priority chips show all priority labels');
 
     // Dedupe: checking a visible row twice cannot double-count one hid.
     await page.locator('#bulk-clear-selection').click();
