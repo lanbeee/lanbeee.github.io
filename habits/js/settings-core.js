@@ -31,9 +31,29 @@ function syncCardDetailControls(){
 }
 
 let defaultProfileKind = 'habit';
-let addProfileDrafts = {};
 let addActiveDefaults = null;
+let addActiveBaseline = null;
+let addSharedEdits = {};
+let addHabitDraft = null;
+let addEventDraft = null;
+let addEventBaseline = null;
 let addSettingsReturn = false;
+
+const ADD_SHARED_PROFILE_KEYS = [
+  'durationMinutes','priority','breakable','minChunkMinutes',
+  'autoMarkMode','autoMarkMinutes','topics','locationIds',
+  'locationPrefs','anywhereAllowed','weatherProfileValue',
+  'weatherLocationId','showWeather','showWeatherAtLocation'
+];
+const ADD_HABIT_ONLY_KEYS = ['target','repeatMode','conditionTrigger','conditionRadiusM'];
+
+function cloneAddValue(value){
+  return value && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value;
+}
+
+function addDraftKind(){
+  return addAppointmentMode ? 'event' : selectedType === 'task' ? 'task' : 'habit';
+}
 
 function currentDefaultProfile(){
   return newItemDefaults(sortSettings,defaultProfileKind === 'task' ? 'task' : 'keepup');
@@ -81,6 +101,8 @@ function initialAddProfile(type,defaults = newItemDefaults(loadSortSettings(),ty
   return {
     defaults,
     repeatMode:'routine',
+    conditionTrigger:'weather',
+    conditionRadiusM:opportunityRadius({}),
     weatherProfileValue:'',
     weatherLocationId:'',
     showWeather:false,
@@ -101,14 +123,98 @@ function initialAddProfile(type,defaults = newItemDefaults(loadSortSettings(),ty
   };
 }
 
-function refreshAddProfile(previous,type){
-  const baseline = initialAddProfile(type,previous.defaults);
-  const fresh = initialAddProfile(type);
-  for(const key of Object.keys(fresh)){
-    if(key === 'defaults')continue;
-    if(JSON.stringify(previous[key]) !== JSON.stringify(baseline[key]))fresh[key] = previous[key];
+function captureAddDraftEdits(){
+  const kind = addDraftKind();
+  const current = readAddProfile();
+  const baseline = addActiveBaseline || initialAddProfile(selectedType);
+  if(kind === 'event'){
+    if(current.durationMinutes !== baseline.durationMinutes){
+      addSharedEdits.durationMinutes = current.durationMinutes;
+    }
+    const appt = typeof readAddAppointmentDraft === 'function' ? readAddAppointmentDraft() : null;
+    if(appt){
+      if(!addEventBaseline || appt.startDate !== addEventBaseline.startDate){
+        addSharedEdits.date = appt.startDate;
+      }
+      if(!addEventBaseline || appt.startTime !== addEventBaseline.startTime){
+        addSharedEdits.startTime = appt.startTime;
+        if(appt.startTime && !Object.prototype.hasOwnProperty.call(addSharedEdits,'date') && appt.startDate){
+          addSharedEdits.date = appt.startDate;
+        }
+      }
+      addEventDraft = {
+        repeat:appt.repeat,
+        weekdays:appt.weekdays,
+        weekdaysEdited:appt.weekdaysEdited,
+        ordinalWeekdays:appt.ordinalWeekdays,
+        until:appt.until
+      };
+    }
+    return;
   }
-  return fresh;
+  for(const key of ADD_SHARED_PROFILE_KEYS){
+    if(JSON.stringify(current[key]) !== JSON.stringify(baseline[key])){
+      addSharedEdits[key] = cloneAddValue(current[key]);
+    }
+  }
+  if(kind === 'task'){
+    if(current.dueDate !== baseline.dueDate){
+      addSharedEdits.date = current.dueDate;
+    }
+    if(current.dueTime !== baseline.dueTime){
+      addSharedEdits.startTime = current.dueTime;
+      if(current.dueTime && !Object.prototype.hasOwnProperty.call(addSharedEdits,'date') && current.dueDate){
+        addSharedEdits.date = current.dueDate;
+      }
+    }
+  }else if(kind === 'habit'){
+    addHabitDraft = addHabitDraft || {};
+    for(const key of ADD_HABIT_ONLY_KEYS){
+      if(JSON.stringify(current[key]) !== JSON.stringify(baseline[key])){
+        addHabitDraft[key] = cloneAddValue(current[key]);
+      }
+    }
+  }
+}
+
+function resolveAddProfile(kind,type){
+  const profile = initialAddProfile(type);
+  if(kind === 'event')profile.durationMinutes = 60;
+  for(const key of ADD_SHARED_PROFILE_KEYS){
+    if(Object.prototype.hasOwnProperty.call(addSharedEdits,key)){
+      profile[key] = cloneAddValue(addSharedEdits[key]);
+    }
+  }
+  if(kind === 'task'){
+    if(Object.prototype.hasOwnProperty.call(addSharedEdits,'date')){
+      profile.dueDate = addSharedEdits.date;
+    }
+    if(Object.prototype.hasOwnProperty.call(addSharedEdits,'startTime')){
+      profile.dueTime = addSharedEdits.startTime;
+      if(profile.dueTime && !profile.dueDate)profile.dueDate = todayIso();
+    }
+  }else if(kind === 'habit' && addHabitDraft){
+    for(const key of ADD_HABIT_ONLY_KEYS){
+      if(Object.prototype.hasOwnProperty.call(addHabitDraft,key)){
+        profile[key] = cloneAddValue(addHabitDraft[key]);
+      }
+    }
+  }
+  return profile;
+}
+
+function applyResolvedAddProfile(kind,type){
+  const profile = resolveAddProfile(kind,type);
+  addActiveBaseline = cloneAddValue(profile);
+  if(kind === 'event' && typeof applyAddAppointmentDraft === 'function'){
+    const startDate = Object.prototype.hasOwnProperty.call(addSharedEdits,'date') && addSharedEdits.date
+      ? addSharedEdits.date : todayIso();
+    const startTime = Object.prototype.hasOwnProperty.call(addSharedEdits,'startTime') && addSharedEdits.startTime
+      ? addSharedEdits.startTime : minutesToTimeInput(540);
+    applyAddAppointmentDraft({...(addEventDraft || {}),startDate,startTime});
+    addEventBaseline = {startDate,startTime};
+  }
+  applyAddProfile(profile);
 }
 
 function readAddProfile(){
@@ -155,6 +261,7 @@ function applyAddProfile(profile){
   renderWeatherLocationSelect('ting-weather-location',profile.weatherLocationId || '');
   $('ting-show-weather').setAttribute('aria-pressed',String(Boolean(profile.showWeather)));
   $('ting-show-weather-location').setAttribute('aria-pressed',String(Boolean(profile.showWeatherAtLocation)));
+  if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   addActiveDefaults = {...profile.defaults};
   syncRhythm('ting',profile.target);
   $('ting-due-date').value = profile.dueDate;
@@ -182,32 +289,34 @@ function applyAddProfile(profile){
 }
 
 function switchAddType(type){
-  const previousKind = addAppointmentMode ? 'event' : selectedType === 'task' ? 'task' : 'habit';
+  const previousKind = addDraftKind();
   const nextKind = type === 'event' ? 'event' : type === 'task' ? 'task' : 'habit';
-  if(previousKind===nextKind && nextKind==='event')return;
-  addProfileDrafts[previousKind] = readAddProfile();
-  addAppointmentMode=nextKind==='event';
+  if(previousKind === nextKind && (nextKind === 'event' || selectedType === type))return;
+  captureAddDraftEdits();
+  addAppointmentMode = nextKind === 'event';
   selectedType = addAppointmentMode ? 'keepup' : type;
-  const profile=addProfileDrafts[nextKind] ? refreshAddProfile(addProfileDrafts[nextKind],selectedType) : initialAddProfile(selectedType);
-  if(addAppointmentMode && !addProfileDrafts.event)profile.durationMinutes=60;
-  applyAddProfile(profile);
+  applyResolvedAddProfile(nextKind,selectedType);
 }
 
-// Reset only for a fresh add/cancel. Branch changes retain each in-flight draft.
+// Reset only for a fresh add/cancel. Type switches carry user edits forward.
 function applyAddDefaults(){
   // A fresh open (or completed/discard flow) always leaves batch mode.
   if(typeof exitBulkBatchMode === 'function')exitBulkBatchMode();
   resetAppointmentShortcut();
   document.querySelector('.add-content').scrollTop = 0;
   const settings = loadSortSettings();
-  addProfileDrafts = {};
+  addSharedEdits = {};
+  addHabitDraft = null;
+  addEventDraft = null;
+  addActiveBaseline = null;
+  addEventBaseline = null;
   addSettingsReturn = false;
   $('ting-message').value = '';
   $('ting-emoji').value = '';
   if(typeof renderEmojiBgSwatches === 'function')renderEmojiBgSwatches('ting-emoji-bg','');
   selectedType = settings.defaultType;
   document.querySelectorAll('#type-seg .seg-opt').forEach(btn=>btn.classList.toggle('on',selectedType === 'task' ? btn.dataset.v === 'task' : btn.dataset.v === 'keepup'));
-  applyAddProfile(initialAddProfile(selectedType));
+  applyResolvedAddProfile(selectedType === 'task' ? 'task' : 'habit',selectedType);
   if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('ting-weather-profile','');
   if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('ting-weather-location','');
   $('ting-show-weather')?.setAttribute('aria-pressed','false');
@@ -241,10 +350,10 @@ function openMinimalModeSettings(){
 
 function openAddSettings(section){
   // Leave the DOM draft intact, including weather, emoji and disclosure state.
-  const kind = selectedType === 'task' ? 'task' : 'habit';
-  addProfileDrafts[kind] = readAddProfile();
+  const kind = addDraftKind();
+  captureAddDraftEdits();
   addSettingsReturn = true;
-  defaultProfileKind = kind;
+  defaultProfileKind = kind === 'task' ? 'task' : 'habit';
   closeSheet('add-sheet');
   resetSettingsSheetState();
   syncSettingsControls();
@@ -252,7 +361,7 @@ function openAddSettings(section){
   const head = document.querySelector(`[data-collapse-target="${body.id}"]`);
   body.hidden = false;
   head.setAttribute('aria-expanded','true');
-  $('settings-close').setAttribute('aria-label','back to new ' + (kind === 'task' ? 'task' : 'habit'));
+  $('settings-close').setAttribute('aria-label','back to new ' + (kind === 'task' ? 'task' : kind === 'event' ? 'event' : 'habit'));
   openSheet('settings-sheet');
   requestAnimationFrame(()=>head.scrollIntoView({block:'start'}));
 }
@@ -274,9 +383,7 @@ function closeSettingsSheet(){
   if(!addSettingsReturn)return;
   addSettingsReturn = false;
   $('settings-close').setAttribute('aria-label','close settings');
-  const kind = selectedType === 'task' ? 'task' : 'habit';
-  applyAddProfile(refreshAddProfile(addProfileDrafts[kind],selectedType));
-  delete addProfileDrafts[kind];
+  applyResolvedAddProfile(addDraftKind(),selectedType);
   openSheet('add-sheet');
 }
 

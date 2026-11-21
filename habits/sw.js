@@ -1,4 +1,4 @@
-const CACHE = 'tings-v997';
+const CACHE = 'tings-v998';
 const MAPS_CACHE = 'tings-maps-v3';
 // Map tiles accumulate forever in a cache-first cache; this is the ceiling
 // where the oldest tiles get dropped (bounded, insertion-order eviction).

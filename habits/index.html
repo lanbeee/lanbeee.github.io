@@ -162,6 +162,8 @@
       <div class="add-content">
       <div class="add-sheet-head">
         <p class="sheet-title" id="add-title">new habit</p>
+        <button class="mini-text-btn add-batch-entry" id="add-batch-entry" type="button">add several</button>
+        <button class="mini-text-btn add-batch-exit" id="add-batch-exit" type="button" hidden>single item</button>
       </div>
       <div class="seg add-kind-seg" id="type-seg" role="group" aria-label="What would you like to add?" aria-describedby="add-type-help">
         <button type="button" class="seg-opt on" data-v="keepup" aria-pressed="true"><span>habit<i class="ti ti-rotate-clockwise" aria-hidden="true"></i></span><small>done regularly</small></button>
@@ -222,7 +224,10 @@
           <button type="button" data-add-due="none" aria-pressed="false">no date</button>
         </div>
         <label class="add-field-label" for="ting-due-time">Start time <span class="field-optional">(optional)</span></label>
-        <input type="time" id="ting-due-time" class="plan-time-input" step="300" aria-describedby="task-due-hint" />
+        <div class="add-time-row">
+          <input type="time" id="ting-due-time" class="plan-time-input" step="300" aria-describedby="task-due-hint" />
+          <button type="button" class="mini-text-btn add-time-clear" id="ting-due-time-clear" aria-label="clear start time" hidden>clear</button>
+        </div>
         <p class="field-hint" id="task-due-hint" hidden></p>
       </section>
       <div class="planning-grid planning-grid-single add-effort" id="add-minimal-effort">
@@ -317,7 +322,6 @@
         <p class="field-hint" id="add-batch-hint" hidden>Settings carry forward to the next item.</p>
       </div>
       <div class="btn-row add-actions">
-        <button class="btn" id="add-batch-entry" type="button">add several</button>
         <button class="btn primary" id="do-save">add habit</button>
         <button class="btn primary" id="do-batch-next" type="button">add &amp; next</button>
         <button class="btn" id="do-cancel">cancel</button>
