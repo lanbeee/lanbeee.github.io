@@ -92,7 +92,11 @@
 .loc-unit{font-size:13px;font-weight:650;color:var(--text2);}
 .loc-hint{font-size:11px;color:var(--text3);}
 .location-days .schedule-chip{min-width:36px;padding:7px 8px;}
-.loc-more-toggle{align-self:flex-start;margin-top:2px;color:var(--text2);}
+.loc-more-toggle{
+  align-self:flex-start;margin-top:2px;color:var(--text2);
+  display:inline-flex;align-items:center;gap:5px;
+}
+.loc-more-toggle i{font-size:13px;color:var(--text3);}
 .location-more{
   display:flex;flex-direction:column;gap:12px;padding-top:10px;
   border-top:0.5px solid var(--border);

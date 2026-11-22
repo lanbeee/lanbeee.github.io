@@ -108,6 +108,8 @@ const {chromium,webkit} = require('playwright');
     await placePref.locator('[data-bulk-pref-part="level"]').selectOption('little');
     const places = await set('places','replace');
     await places.locator('[data-bulk-value="park"]').click();
+    const placeTypes = await set('locationTypes','replace');
+    await placeTypes.locator('[data-bulk-value="env:indoor"]').click();
     assert.match(await page.locator('[data-bulk-applies="placePref"]').innerText(),/Applies to 2 of 2/);
     await selectValue('weatherProfile','replace','fair');
     await selectValue('weatherLocation','set','park');
@@ -133,6 +135,7 @@ const {chromium,webkit} = require('playwright');
     assert.equal(await page.locator('#bulk-review-summary').innerText(),'2 selected · 2 will change');
     const review = await page.locator('#bulk-review-lines').innerText();
     assert.match(review,/Priority → P0: 2 items/);
+    assert.match(review,/Place types → Indoor/);
     assert.match(review,/Allowed weekdays → Sun: 2 items/i);
     assert.match(review,/Allowed monthly weekdays → last Sun: 2 items/i);
     assert.equal(await page.locator('.bulk-problem-error').count(),0);
@@ -149,6 +152,7 @@ const {chromium,webkit} = require('playwright');
       allowedTimeStart:0,allowedTimeEnd:420,allowedTimeFixedStart:true,allowedTimeStartAnchor:null,allowedTimeStartOffsetMin:0,
       preferredTimeStart:60,preferredTimeEnd:180,preferredTimeStartAnchor:null,preferredTimeStartOffsetMin:0,
       locationIds:['park'],locationPrefs:{park:'little'},preferredLocationId:'park',
+      locationTypes:['env:indoor'],anywhereAllowed:false,
       weatherProfileMode:'profile',weatherProfileId:'fair',weatherLocationId:'park',showWeather:true,showWeatherAtLocation:true,
       autoMarkMinutes:0,timerAutoStopMinutes:35,tapStartsSession:true,trackValue:true,showOnSharedDisplay:false,allowSharedDisplayCompletion:false
     };

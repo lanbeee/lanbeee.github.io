@@ -287,11 +287,6 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) #location-picker-sheet{
 }
 .location-picker-actions .btn{min-height:46px;}
 .location-picker-sheet #picker-name,.location-picker-sheet .picker-coords-row input{font-size:16px;}
-.location-type-chip{
-  flex:0 0 auto;padding:3px 9px;border-radius:999px;
-  background:var(--teal-bg);color:var(--teal-text);font-size:11px;font-weight:700;
-  text-transform:capitalize;white-space:nowrap;
-}
 .picker-saved-popup{display:flex;flex-direction:column;gap:4px;min-width:130px;}
 .picker-saved-popup b{font-size:12.5px;}
 .picker-saved-popup small{color:var(--text3);font-size:10.5px;line-height:1.3;}
@@ -368,7 +363,7 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) #location-picker-sheet{
 }
 .settings-manager-card-meta{display:flex;flex-direction:column;gap:6px;flex:1 1 150px;min-width:0;}
 .settings-manager-card-count{font-size:13.5px;font-weight:700;color:var(--text);}
-.settings-manager-card-top > .btn{flex:0 0 auto;width:auto;min-height:40px;padding:8px 14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;}
+.settings-manager-card-top > .btn{flex:0 0 auto;width:auto;min-width:0;max-width:100%;min-height:40px;padding:8px 14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;}
 .settings-manager-preview{display:flex;flex-wrap:wrap;gap:5px;}
 .settings-preview-pill{
   display:inline-flex;align-items:center;gap:4px;
@@ -381,10 +376,10 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) #location-picker-sheet{
 .settings-manager-card .weather-actions{margin:0;}
 
 /* Full-page Places & Weather Profiles Manager sheets */
-#locations-manager-sheet,#weather-manager-sheet{
+#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet{
   bottom:auto;height:min(100%,var(--keyboard-viewport-bottom,100dvh));
 }
-body:is([data-pane-count="2"],[data-pane-count="3"]) :is(#locations-manager-sheet,#weather-manager-sheet){
+body:is([data-pane-count="2"],[data-pane-count="3"]) :is(#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet){
   top:var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height)));
   height:calc(min(100dvh,var(--keyboard-viewport-bottom,100dvh)) - var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height))));
 }
@@ -435,6 +430,11 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .manager-head{padding-top:1
   border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);
   font:inherit;font-size:14px;
 }
+/* One clear affordance only: the custom ✕ button, like the filter/detail search. */
+.manager-search-row input[type="search"]::-webkit-search-cancel-button,
+.manager-search-row input[type="search"]::-webkit-search-decoration{
+  -webkit-appearance:none;appearance:none;display:none;
+}
 .manager-search-clear{
   position:absolute;right:4px;width:30px !important;height:30px !important;min-width:30px;
 }
@@ -484,6 +484,11 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .manager-head{padding-top:1
 .manager-bulk-value{flex:1 1 150px;min-width:0;display:flex;align-items:center;gap:6px;}
 .manager-bulk-value > select{width:100%;}
 .manager-bulk-controls > .btn{flex:0 0 auto;width:auto;min-height:38px;padding:8px 16px;}
+/* On phones the value select and apply button wrap; give apply the full row so
+   it never sits half-width next to a leftover select. */
+@media (max-width:520px){
+  .manager-bulk-controls > .btn{flex:1 1 100%;min-height:42px;}
+}
 .manager-bulk-hours{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
 .manager-bulk-hours input[type="time"]{height:36px;padding:0 6px;border-radius:8px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font:inherit;font-size:12.5px;}
 .manager-bulk-check{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text2);white-space:nowrap;}
@@ -532,17 +537,25 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .manager-head{padding-top:1
 .loc-cat-select-wrap{
   display:inline-flex;align-items:center;gap:5px;flex:1 1 130px;min-width:0;
 }
+/* Type names are long ("Cafe / Coffee shop"); let the type select take the
+   larger share so neither select truncates at phone width. */
+.loc-cat-select-wrap:has([data-loc-type]){flex:1.3 1 150px;}
 .loc-cat-select-wrap .settings-select{flex:1 1 auto;min-width:0;height:34px;font-size:12.5px;}
-.location-env-chip{
-  flex:0 0 auto;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;
-  white-space:nowrap;
-}
-.location-env-chip.is-indoor{background:var(--bg3);color:var(--text2);}
-.location-env-chip.is-outdoor{background:color-mix(in srgb,var(--green-bg,var(--teal-bg)) 80%,var(--bg2));color:var(--green-text,var(--teal-text));}
-.location-env-chip.is-both{background:var(--teal-bg);color:var(--teal-text);}
 .loc-used-by{display:flex;flex-direction:column;gap:2px;margin-bottom:6px;}
 .loc-used-by .field-hint{margin:0;}
-.location-maps-btn{padding:4px 7px;}
+.location-maps-btn{
+  flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+  min-height:34px;min-width:34px;padding:0 8px;
+}
+.location-hours .loc-hours-fields{display:flex;align-items:center;gap:8px;min-width:0;}
+.location-hours .loc-hours-fields[hidden]{display:none;}
+/* Select mode turns a row into a selection target: its editors are disabled
+   in markup and dimmed so taps can't silently edit while selecting. */
+.location-row.is-bulk :is(input:not([type=checkbox]),select,button):disabled{
+  opacity:0.55;
+}
+.manager-empty-actions{margin:10px 0 4px;}
+.manager-empty-actions .mini-text-btn{min-height:36px;padding:8px 12px;}
 
 /* Weather Manager templates + summary */
 .weather-templates-bar{

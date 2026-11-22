@@ -77,7 +77,7 @@ const {chromium,BASE,baseHabit} = require('./helpers/planner-test-helpers');
           assert.equal(await page.locator('[data-detail-repeat]').isVisible(),false,'minimal detail hides when conditions fit');
         }else{
           await page.locator('[data-detail-rhythm="1,7"]').click();
-          assert.match(await detailPark.textContent(),/★/,'regular mode still exposes saved ranking');
+          assert.match(await detailPark.textContent(),/high preference/,'regular mode still exposes saved ranking');
           await page.locator('[data-detail-repeat]').click();
           assert.equal(await detailPark.innerText(),'Park');
         }

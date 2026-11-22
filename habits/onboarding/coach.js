@@ -33,7 +33,7 @@
   const OVERVIEW_STAGES = new Set(['eOverview','aOverview','aOverviewDay','aOverviewTools']);
   // Sheets each stage group may keep open. Anything else that appears is closed
   // by reconcile(): the coach decides what page is on screen, wander included.
-  const PICKER_SHEETS = ['location-picker-sheet','locations-manager-sheet','weather-manager-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet','background-location-disclosure-sheet'];
+  const PICKER_SHEETS = ['location-picker-sheet','locations-manager-sheet','weather-manager-sheet','busy-manager-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet','background-location-disclosure-sheet'];
   const SHEET_ALLOWANCES = new Map([
     [new Set(['eConditions']),['add-sheet','settings-sheet',...PICKER_SHEETS]],
     [ADD_STAGES,['add-sheet',...PICKER_SHEETS]],
@@ -1576,6 +1576,19 @@
     if(!active || !bubble || !spotlight)return;
     const m = model();
     let target = firstTarget(m.target);
+    // A tab can have a box while sitting outside its horizontal scrollport or
+    // underneath sticky Summary. Sheet entry and the browser's automatic
+    // scroll-to-click can move that strip after the stage first reveals it.
+    // Keep the actual requested tab exposed before placing the click guards.
+    const tabs = target?.closest('.detail-dots');
+    if(tabs && !target.hasAttribute('data-detail-pinned')){
+      const bar = tabs.getBoundingClientRect();
+      const pinned = tabs.querySelector('[data-detail-pinned]');
+      const left = bar.left + (pinned ? pinned.offsetWidth + 2 : 0);
+      const rect = target.getBoundingClientRect();
+      if(rect.left < left)tabs.scrollLeft += rect.left - left;
+      else if(rect.right > bar.right)tabs.scrollLeft += rect.right - bar.right;
+    }
     const view = coachViewport();
     view.right = view.left + view.width;
     view.bottom = view.top + view.height;

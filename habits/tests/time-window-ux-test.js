@@ -131,6 +131,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       openHomeCitySettings();
       $('settings-blocked-body').hidden=false;
       $('settings-blocked-head').setAttribute('aria-expanded','true');
+      openBusyManager();
     });
     const busy = page.locator('.blocked-endpoint[data-blocked-field="start"]').first();
     assert.equal(await busy.locator('.time-anchor').locator('option').first().textContent(),'— choose an event —');

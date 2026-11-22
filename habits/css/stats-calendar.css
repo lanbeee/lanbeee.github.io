@@ -420,7 +420,7 @@
   text-align:center;font-size:var(--detail-label-size,11.5px);
 }
 .detail-viz-toolbar .overview-today-btn{
-  flex:0 0 auto;min-width:max-content;white-space:nowrap;
+  flex:0 0 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .detail-calendar-page .month-nav[hidden]{display:none;}
 .detail-calendar-page .overview-stats.compact-stats{margin:0 0 5px;}

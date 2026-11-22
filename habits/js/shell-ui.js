@@ -444,7 +444,8 @@ function updateKeyboardLift(){
   const detailOpen = detailMounted || $('detail-sheet')?.classList.contains('open');
   const settingsOpen = $('settings-sheet')?.classList.contains('open');
   const managerOpen = $('locations-manager-sheet')?.classList.contains('open')
-    || $('weather-manager-sheet')?.classList.contains('open');
+    || $('weather-manager-sheet')?.classList.contains('open')
+    || $('busy-manager-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
   const feedbackOpen = $('feedback-sheet')?.classList.contains('open');
   const bulkEditOpen = $('bulk-edit-sheet')?.classList.contains('open');
@@ -754,10 +755,9 @@ function rememberBrowserPageScroll(pages = browserNavigationEntries[browserNavig
   }
 }
 
-function registerBrowserPage(id,reopen){
+function registerBrowserPage(id,reopen,fromAdd = false){
   if(window.Capacitor?.isNativePlatform?.())return;
   let key = id;
-  let fromAdd = false;
   if(id === 'detail-sheet'){
     const hid = load()[detailIdx]?.hid;
     key += ':' + hid;
@@ -797,6 +797,7 @@ function registerBrowserPage(id,reopen){
       openSheet(id);
     };
   }
+  if(fromAdd && id !== 'settings-sheet')key += ':add';
   browserSheetPages.set(id,{id,key,fromAdd,reopen:reopen || (()=>openSheet(id)),scroll:[]});
 }
 
@@ -1189,7 +1190,7 @@ document.addEventListener('focusin',event=>{
 function openSheet(id,opts = {}){
   const wasOpen = $(id).classList.contains('open');
   if(edgeBack || edgeBackSettling)edgeBackAbort();
-  registerBrowserPage(id,opts.reopen);
+  registerBrowserPage(id,opts.reopen,Boolean(opts.fromAdd));
   $(id).dataset.backSequence = String(++sheetOpenSequence);
   ensureSheetExit(id);
   if(id === 'about-sheet' && typeof syncInstallGuideVisibility === 'function'){
@@ -1302,7 +1303,7 @@ function closeSheet(id){
   $(id).style.zIndex = '';
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
-  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet' || id === 'locations-manager-sheet' || id === 'weather-manager-sheet')updateKeyboardLift();
+  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet' || id === 'locations-manager-sheet' || id === 'weather-manager-sheet' || id === 'busy-manager-sheet')updateKeyboardLift();
 }
 
 // HYBRID: opens a day drill-down item in detail without leaving the day sheet
@@ -1324,7 +1325,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'week-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet' || id === 'locations-manager-sheet' || id === 'weather-manager-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'week-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet' || id === 'locations-manager-sheet' || id === 'weather-manager-sheet' || id === 'busy-manager-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -1361,7 +1362,7 @@ function syncDetailIOSPageLock(detailOpen,modalOpen){
 // RENDER: toggles full-page chrome and locks every modal's background scroll.
 function updateFullPageState(){
   syncBrowserBack();
-  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','week-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet','home-filter-sheet','calendar-filter-sheet','locations-manager-sheet','weather-manager-sheet'].some(id=>$(id)?.classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','week-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet','home-filter-sheet','calendar-filter-sheet','locations-manager-sheet','weather-manager-sheet','busy-manager-sheet'].some(id=>$(id)?.classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);
@@ -2200,7 +2201,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','locations-manager-sheet','weather-manager-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','locations-manager-sheet','weather-manager-sheet','busy-manager-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')){
       $(id).classList.remove('open');
       $(id).style.zIndex = '';
@@ -2247,7 +2248,7 @@ document.addEventListener('keydown',e=>{
     plan.run();
     return;
   }
-  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','locations-manager-sheet','weather-manager-sheet','sample-habits-sheet','overview-sheet','week-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet','bulk-batch-sheet','bulk-edit-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','locations-manager-sheet','weather-manager-sheet','busy-manager-sheet','sample-habits-sheet','overview-sheet','week-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet','bulk-batch-sheet','bulk-edit-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -2266,6 +2267,7 @@ document.addEventListener('keydown',e=>{
     else if (id === 'settings-sheet') closeSettingsSheet();
     else if (id === 'locations-manager-sheet' && typeof closeLocationsManager === 'function') closeLocationsManager();
     else if (id === 'weather-manager-sheet' && typeof closeWeatherManager === 'function') closeWeatherManager();
+    else if (id === 'busy-manager-sheet') closeBusyManager();
     else if (id === 'about-sheet') closeSheet('about-sheet');
     else if (id === 'privacy-sheet') closeSheet('privacy-sheet');
     else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');

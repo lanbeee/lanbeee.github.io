@@ -62,11 +62,11 @@ function check(ok,label){
     check(await page.locator('#ting-message').inputValue() === 'Keep my draft' && await page.locator('#ting-due-date').inputValue() === '2026-10-09' && await page.locator('#ting-duration').inputValue() === '60','defaults round trip preserves explicit draft edits');
     check(await page.locator('#ting-priority-seg [data-priority="3"]').getAttribute('class').then(c=>c.includes('on')),'untouched draft fields receive changed defaults');
     await page.locator('#add-open-busy').click();
-    check(await page.locator('#settings-blocked-body').isVisible(),'busy-time shortcut opens busy-time editor');
+    check(await page.locator('#busy-manager-sheet').isVisible(),'busy-time shortcut opens busy-time editor');
     await page.locator('#blocked-time-add').click();
     await page.locator('[data-blocked-label="0"]').fill('Lunch');
     await page.locator('[data-blocked-label="0"]').dispatchEvent('change');
-    await page.locator('#settings-close').click();
+    await page.locator('#busy-manager-close').click();
     check(await page.locator('#ting-message').inputValue() === 'Keep my draft' && await page.locator('#ting-duration').inputValue() === '60','adding busy time returns to preserved item draft');
     await page.locator('#add-open-defaults').click();
     await page.keyboard.press('Escape');

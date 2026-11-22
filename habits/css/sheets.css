@@ -25,9 +25,12 @@ body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
 #add-sheet{z-index:107;}
 #detail-sheet{z-index:110;}
 #settings-sheet{z-index:115;}
-/* Full-page Places & Weather managers open from Settings, Add, Detail, or Presence;
-   below location-picker-sheet (125) so the map picker paints cleanly above them. */
-#locations-manager-sheet,#weather-manager-sheet{z-index:117;}
+/* Full-page Places & Weather managers open from Settings/About, Add, Detail, or
+   Presence. They are drill-downs of the settings screen (which lives inside the
+   118 about-sheet), so they must paint ABOVE it — 117 left them invisible
+   whenever About stayed open underneath. Still below location-picker-sheet
+   (125) so the map picker paints cleanly above them. */
+#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet{z-index:122;}
 /* Help, samples, and privacy open from Settings and stay above that page. */
 #about-sheet{z-index:118;}
 #sample-habits-sheet{z-index:119;}
@@ -53,7 +56,7 @@ body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
   will-change:transform,opacity;
 }
 .sheet-wrap.open .sheet{transform:translateY(0) scale(1);opacity:1;}
-#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#home-filter-sheet,#calendar-filter-sheet,#locations-manager-sheet,#weather-manager-sheet{
+#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#home-filter-sheet,#calendar-filter-sheet,#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet{
   align-items:stretch;background:rgba(0,0,0,0.18);padding-top:0;
 }
 body[data-pane-count="2"] #add-sheet,

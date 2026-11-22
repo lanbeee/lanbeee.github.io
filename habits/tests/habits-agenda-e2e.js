@@ -38,6 +38,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
   await page.getByRole('button', { name: 'settings', exact: true }).click();
   await page.locator('#settings-blocked-head').click();
+  await page.locator('#open-busy-manager').click();
   await page.waitForSelector('#blocked-time-list');
 
   const blocks = await page.locator('#blocked-time-list .blocked-time-row').count();
@@ -53,6 +54,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   const blocksFinal = await page.locator('#blocked-time-list .blocked-time-row').count();
   if (blocksFinal !== blocks) throw new Error('remove busy time failed');
 
+  await page.locator('#busy-manager-close').click();
   await page.locator('#settings-close').click();
   await page.setViewportSize({ width: 1180, height: 850 });
   await page.waitForSelector('.ting-card .context-pill.agenda-lead',{timeout:10000});

@@ -29,6 +29,8 @@ async function openBlockedSection(page){
   await openSettings(page);
   await page.locator('#settings-blocked-head').click();
   await page.waitForSelector('#settings-blocked-body:not([hidden])');
+  await page.locator('#open-busy-manager').click();
+  await page.waitForSelector('#busy-manager-sheet.open');
 }
 
 async function toastText(page){

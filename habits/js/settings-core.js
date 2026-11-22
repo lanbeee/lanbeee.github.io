@@ -361,9 +361,15 @@ function openAddSettings(section){
   // Leave the DOM draft intact, including weather, emoji and disclosure state.
   const kind = addDraftKind();
   captureAddDraftEdits();
+  if(section === 'busy'){
+    closeSheet('add-sheet');
+    openBusyManager({fromAdd:true,onClose:()=>openSheet('add-sheet')});
+    return;
+  }
   if(section === 'weather' && typeof openWeatherManager === 'function'){
     closeSheet('add-sheet');
     openWeatherManager({
+      fromAdd:true,
       onClose:()=>{
         applyResolvedAddProfile(addDraftKind(),selectedType);
         openSheet('add-sheet');

@@ -521,6 +521,16 @@ async function nativeKeyboardQuickStart(browser){
   await page.locator('[data-coach-chapter="schedule"]').click();
   await stage(page,'aDetailRead');
   assert(await page.locator('#detail-sheet.open').count() === 1,'starting the schedule chapter opens a real detail page');
+  // Browser scroll-to-click during sheet entry can move the requested tab
+  // underneath sticky Summary. The coach must expose it before gating taps.
+  await page.evaluate(()=>document.querySelector('.detail-dots').scrollLeft = 240);
+  await page.waitForFunction(()=>{
+    const target=document.querySelector('.detail-page-tab[aria-label="when & where"]');
+    const tabs=target.closest('.detail-dots'),bar=tabs.getBoundingClientRect(),rect=target.getBoundingClientRect();
+    const pinned=tabs.querySelector('[data-detail-pinned]');
+    const hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+    return rect.left >= bar.left+pinned.offsetWidth+1 && rect.right <= bar.right+1 && (hit === target || target.contains(hit));
+  },null,{timeout:4000});
   await page.locator('.detail-page-tab[aria-label="when & where"]').click();
   await stage(page,'aSchedule');
   assert(/general schedule/i.test(await page.locator('.tings-coach-title').textContent()),'the schedule starts by naming the general Allowed rule');

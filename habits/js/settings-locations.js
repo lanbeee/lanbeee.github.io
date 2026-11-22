@@ -17,7 +17,8 @@ const locManagerState = {
   status:'all',     // 'all' | 'hours' | 'allday' | 'weather' | 'unused' | 'notype'
   sort:'name',      // 'name' | 'used' | 'type' | 'env' | 'nearest'
   bulkMode:false,
-  selectedIds:new Set()
+  selectedIds:new Set(),
+  visibleIds:[]     // places currently shown (post search/filter) — drives the bulk "select all (N)" scope
 };
 
 let locationsManagerReturnSheet = null;
@@ -34,7 +35,7 @@ function openLocationsManager(opts = {}){
   const sheet = $('locations-manager-sheet');
   if(sheet){
     sheet.inert = false;
-    openSheet('locations-manager-sheet');
+    openSheet('locations-manager-sheet',{reopen:()=>openLocationsManager(opts)});
     const body = $('locations-manager-body');
     if(body)body.scrollTop = 0;
   }
@@ -258,7 +259,7 @@ function renderLocationsManagerFilters(locations, usageMap){
   wrap.hidden = !chips.length;
 }
 
-function renderLocationsBulkBar(visibleItems){
+function renderLocationsBulkBar(){
   const bar = $('locations-bulk-bar');
   const toggleBtn = $('locations-bulk-toggle');
   if(toggleBtn){
@@ -272,6 +273,14 @@ function renderLocationsBulkBar(visibleItems){
   const count = locManagerState.selectedIds.size;
   const countEl = $('locations-bulk-count');
   if(countEl)countEl.textContent = `${count} selected`;
+  // "select all" only takes the places currently shown (after search/filters);
+  // label it with that count so the scope is never a surprise.
+  const allBtn = $('locations-bulk-all');
+  if(allBtn){
+    const shown = (locManagerState.visibleIds || []).length;
+    allBtn.textContent = shown ? `select all (${shown})` : 'select all';
+    allBtn.disabled = shown === 0;
+  }
   const applyBtn = $('locations-bulk-apply');
   if(applyBtn)applyBtn.disabled = count === 0;
   const action = $('locations-bulk-action')?.value || 'type';
@@ -498,20 +507,40 @@ function renderLocationControls(){
   const wrap = $('location-list');
   if(!wrap)return;
   const displayLocations = filteredManagerLocations(locations, usageMap);
+  locManagerState.visibleIds = displayLocations.map(({loc})=>loc.id);
   const empty = $('location-empty-hint');
   if(empty){
     empty.hidden = displayLocations.length > 0;
-    empty.textContent = locations.length === 0
-      ? 'No places yet. Add a place to plan travel, hours, and weather — habits without a place can be done anywhere.'
-      : 'No places match your search or filters.';
+    if(locations.length === 0){
+      empty.textContent = 'No places yet. Add a place to plan travel, hours, and weather — habits without a place can be done anywhere.';
+    }else if(displayLocations.length === 0){
+      // Places exist but none match — offer the one-tap way back.
+      empty.innerHTML = 'No places match your search or filters. '
+        + '<button type="button" class="mini-text-btn" data-loc-empty-reset>clear search &amp; filters</button>';
+    }else{
+      empty.textContent = '';
+    }
   }
   wrap.innerHTML = displayLocations.map(({loc,index})=>locationRowMarkup(loc,index,usageMap)).join('');
   expandedLocationMores.forEach(i=>{
     const body = wrap.querySelector(`[data-location-more="${i}"]`);
     if(body)body.hidden = false;
   });
-  renderLocationsBulkBar(displayLocations);
+  renderLocationsBulkBar();
 }
+
+// HANDLER: empty-state recovery — same reset as the "Reset filters" chip.
+document.addEventListener('click',event=>{
+  if(!event.target.closest('[data-loc-empty-reset]'))return;
+  locManagerState.search = '';
+  locManagerState.scope = 'all';
+  locManagerState.env = 'all';
+  locManagerState.type = 'all';
+  locManagerState.status = 'all';
+  const el = $('locations-manager-search');
+  if(el){ el.value = ''; }
+  renderLocationControls();
+});
 
 // RENDER: rebuild ONE location row in place.
 function rerenderLocationRow(index){
@@ -526,6 +555,8 @@ function rerenderLocationRow(index){
 
 // RENDER: one location row — name, categorization (type + indoor/outdoor),
 // usage badge, temporary promote, hours, radius, and More options.
+// In bulk (select) mode every editor is disabled: the row becomes a pure
+// selection target, so taps can't silently edit a place while selecting.
 function locationRowMarkup(loc,i,usageMap = null){
   const hoursSaved = Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd);
   const hoursOpenUI = hoursSaved || pendingLocationHoursEdit.has(i);
@@ -556,78 +587,78 @@ function locationRowMarkup(loc,i,usageMap = null){
     weatherProfile ? `${weatherProfile.name} weather` : null,
     usedNames.length ? `${usedNames.length} linked` : null
   ].filter(Boolean).join(' · ');
-  const typeLabel = loc.placeType ? placeTypeLabel(loc.placeType) : '';
-  const effEnv = typeof effectiveLocationEnvironment === 'function' ? effectiveLocationEnvironment(loc) : '';
-  const envBadge = effEnv ? locationEnvironmentLabel(effEnv) : '';
   const iconMark = loc.emoji || (typeof emojiForPlaceType === 'function' ? emojiForPlaceType(loc.placeType) : '');
   const selected = locManagerState.selectedIds.has(loc.id);
-  return `<div class="location-row${loc.temporary ? ' is-temporary' : ''}${selected ? ' is-selected' : ''}" data-location-row="${i}" data-location-id="${escapeHtml(loc.id)}">
+  const bulk = locManagerState.bulkMode;
+  const dis = bulk ? ' disabled' : '';
+  const moreChevron = `<i class="ti ${moreOpen ? 'ti-chevron-down' : 'ti-chevron-right'}" aria-hidden="true"></i>`;
+  return `<div class="location-row${loc.temporary ? ' is-temporary' : ''}${selected ? ' is-selected' : ''}${bulk ? ' is-bulk' : ''}" data-location-row="${i}" data-location-id="${escapeHtml(loc.id)}">
     <div class="location-row-head">
-      ${locManagerState.bulkMode ? `<label class="manager-row-check"><input type="checkbox" data-loc-select="${escapeHtml(loc.id)}" aria-label="select ${escapeHtml(loc.name)}"${selected ? ' checked' : ''} /></label>` : ''}
+      ${bulk ? `<label class="manager-row-check"><input type="checkbox" data-loc-select="${escapeHtml(loc.id)}" aria-label="select ${escapeHtml(loc.name)}"${selected ? ' checked' : ''} /></label>` : ''}
       <span class="location-row-icon" aria-hidden="true">${iconMark ? escapeHtml(iconMark) : '<i class="ti ti-map-pin"></i>'}</span>
-      <input type="text" class="location-name" data-loc-name="${i}" aria-label="place name" maxlength="48" value="${escapeHtml(loc.name)}" />
+      <input type="text" class="location-name" data-loc-name="${i}" aria-label="place name" maxlength="48" value="${escapeHtml(loc.name)}"${dis} />
       <span class="location-usage-badge${totalUsed ? '' : ' is-unused'}" title="${escapeHtml(usedNames.slice(0,6).join(', ') || 'No items using this place')}">${escapeHtml(usageText)}</span>
-      <button class="mini-text-btn location-remove-btn" type="button" data-loc-remove="${i}" aria-label="remove ${escapeHtml(loc.name)}"><i class="ti ti-trash" aria-hidden="true"></i><span>remove</span></button>
+      <button class="mini-text-btn location-remove-btn" type="button" data-loc-remove="${i}" aria-label="remove ${escapeHtml(loc.name)}"${dis}><i class="ti ti-trash" aria-hidden="true"></i><span>remove</span></button>
     </div>
     ${loc.temporary ? `<div class="location-temp-strip">
       <span class="location-temp-badge"><i class="ti ti-clock-hour-4" aria-hidden="true"></i> One-off place</span>
-      <button class="mini-text-btn location-promote-btn" type="button" data-loc-promote="${i}">save to places</button>
+      <button class="mini-text-btn location-promote-btn" type="button" data-loc-promote="${i}"${dis}>save to places</button>
     </div>` : ''}
     <div class="location-meta">
-      <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)" />
-      <button class="mini-text-btn location-pin-btn" type="button" data-loc-edit-pin="${i}" title="edit pin on map">
+      <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)"${dis} />
+      <button class="mini-text-btn location-pin-btn" type="button" data-loc-edit-pin="${i}" title="edit pin on map" aria-label="edit pin on map for ${escapeHtml(loc.name)}"${dis}>
         <i class="ti ti-map-pin" aria-hidden="true"></i> edit map
       </button>
-      <button class="mini-text-btn location-maps-btn" type="button" data-loc-maps="${i}" title="open directions in maps">
+      <button class="mini-text-btn location-maps-btn" type="button" data-loc-maps="${i}" title="open directions in maps" aria-label="open directions to ${escapeHtml(loc.name)} in maps"${dis}>
         <i class="ti ti-external-link" aria-hidden="true"></i>
       </button>
     </div>
     <div class="location-categories">
       <label class="loc-cat-select-wrap">
         <span class="loc-field-label">type</span>
-        <select class="settings-select loc-type-select" data-loc-type="${i}" aria-label="place type for ${escapeHtml(loc.name)}">${placeTypeSelectOptionsHtml(loc.placeType)}</select>
+        <select class="settings-select loc-type-select" data-loc-type="${i}" aria-label="place type for ${escapeHtml(loc.name)}"${dis}>${placeTypeSelectOptionsHtml(loc.placeType)}</select>
       </label>
       <label class="loc-cat-select-wrap">
         <span class="loc-field-label">setting</span>
-        <select class="settings-select loc-env-select" data-loc-env="${i}" aria-label="indoor or outdoor setting for ${escapeHtml(loc.name)}">${locationEnvironmentSelectOptionsHtml(loc)}</select>
+        <select class="settings-select loc-env-select" data-loc-env="${i}" aria-label="indoor or outdoor setting for ${escapeHtml(loc.name)}"${dis}>${locationEnvironmentSelectOptionsHtml(loc)}</select>
       </label>
-      ${typeLabel ? `<span class="location-type-chip" hidden>${escapeHtml(typeLabel)}</span>` : ''}
-      ${envBadge ? `<span class="location-env-chip is-${escapeHtml(effEnv)}">${escapeHtml(envBadge)}</span>` : ''}
     </div>
     <div class="location-hours">
       <span class="loc-field-label">hours</span>
-      <input type="time" step="300" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
-      <span class="loc-sep">–</span>
-      <input type="time" step="300" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
-      <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}">All day</button>
+      <span class="loc-hours-fields"${hoursOpenUI ? '' : ' hidden'}>
+        <input type="time" step="300" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'}${dis} />
+        <span class="loc-sep">–</span>
+        <input type="time" step="300" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'}${dis} />
+      </span>
+      <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}"${dis}>All day</button>
     </div>
     <div class="location-radius">
       <span class="loc-field-label">nearby</span>
-      <input type="number" data-loc-radius="${i}" aria-label="how close in metres" min="10" max="2000" step="5" inputmode="numeric" value="${radius}" />
+      <input type="number" data-loc-radius="${i}" aria-label="how close in metres" min="10" max="2000" step="5" inputmode="numeric" value="${radius}"${dis} />
       <span class="loc-unit">m</span>
       <span class="loc-hint">how close means you’re here</span>
     </div>
-    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} more options${moreSummary ? ` · ${moreSummary}` : ''}</button>
+    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}" data-more-summary="${escapeHtml(moreSummary)}"${dis}>${moreChevron}<span>more options${moreSummary ? ` · ${escapeHtml(moreSummary)}` : ''}</span></button>
     <div class="location-more" data-location-more="${i}" ${moreOpen ? '' : 'hidden'}>
       ${usedNames.length ? `<div class="loc-used-by"><span class="loc-field-label">used by</span><span class="field-hint">${escapeHtml(usedNames.slice(0,8).join(', '))}${usedNames.length > 8 ? ` +${usedNames.length - 8} more` : ''}</span></div>` : ''}
       <label class="loc-weather habit-option-field">
         <span class="loc-field-label">weather guidance</span>
-        <select class="settings-select" data-loc-weather="${i}" aria-label="weather guidance for ${escapeHtml(loc.name)}">${weatherOptions}</select>
+        <select class="settings-select" data-loc-weather="${i}" aria-label="weather guidance for ${escapeHtml(loc.name)}"${dis}>${weatherOptions}</select>
         <span class="field-hint">Applies automatically to items scheduled here unless an item or option overrides it.</span>
       </label>
       <div class="location-days">
         <span class="loc-field-label">closed</span>
         ${WEEKDAY_LABELS.map((label,day)=>{
           const on = closedSet.has(day);
-          return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-loc-closed-day="${day}" data-loc-index="${i}" aria-pressed="${on}">${label}</button>`;
+          return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-loc-closed-day="${day}" data-loc-index="${i}" aria-pressed="${on}"${dis}>${label}</button>`;
         }).join('')}
       </div>
       <div class="loc-pref">
         <span class="loc-field-label">prefer</span>
-        <input type="time" step="300" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}" />
+        <input type="time" step="300" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}"${dis} />
         <span class="loc-sep">–</span>
-        <input type="time" step="300" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}" />
-        <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}">clear</button>
+        <input type="time" step="300" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}"${dis} />
+        <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}"${dis}>clear</button>
       </div>
       <div class="loc-perday">
         <span class="loc-field-label">by day</span>
@@ -638,10 +669,10 @@ function locationRowMarkup(loc,i,usageMap = null){
           const de = hd && Number.isFinite(hd.end) ? minutesToTimeInput(hd.end) : '';
           return `<div class="perday-row">
             <span class="perday-label">${label}</span>
-            <input type="time" step="300" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
+            <input type="time" step="300" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''}${dis} />
             <span class="loc-sep">–</span>
-            <input type="time" step="300" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
-            <label class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''} /> closed</label>
+            <input type="time" step="300" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''}${dis} />
+            <label class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''}${dis} /> closed</label>
           </div>`;
         }).join('')}
       </div>
@@ -807,8 +838,11 @@ function toggleLocationMore(index){
   body.hidden = !opening;
   if(opening)expandedLocationMores.add(index); else expandedLocationMores.delete(index);
   if(btn){
+    // Keep the summary ("closed 2d · Dry weather · 2 linked") in the collapsed
+    // label — it is the only place those facts are visible without expanding.
+    const summary = btn.dataset.moreSummary || '';
     btn.setAttribute('aria-expanded',String(opening));
-    btn.innerHTML = (opening ? '▾' : '▸') + ' hours by day &amp; preferred time';
+    btn.innerHTML = `<i class="ti ${opening ? 'ti-chevron-down' : 'ti-chevron-right'}" aria-hidden="true"></i><span>more options${summary ? ` · ${escapeHtml(summary)}` : ''}</span>`;
   }
 }
 

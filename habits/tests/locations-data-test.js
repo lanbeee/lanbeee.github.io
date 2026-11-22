@@ -116,7 +116,8 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
     radiusDefault: normalizeLocationRegistry([{id:'a',name:'A',lat:0,lng:0}])[0].radiusM,
     latRound: normalizeLocationRegistry([{id:'a',name:'A',lat:51.50741234,lng:0}])[0].lat,
     hoursCarried: normalizeLocationRegistry([{id:'a',name:'A',lat:0,lng:0,allowedTimeStart:360,allowedTimeEnd:1200,closedDays:[0]}])[0],
-    cap: normalizeLocationRegistry(Array.from({length:40},(_,i)=>({id:'l'+i,name:'L'+i,lat:0,lng:i}))).length,
+    capMax: MAX_LOCATIONS,
+    cap: normalizeLocationRegistry(Array.from({length:MAX_LOCATIONS+8},(_,i)=>({id:'l'+i,name:'L'+i,lat:0,lng:i}))).length,
   }));
   console.log(reg);
   assert(eq(reg.empty, []), 'null registry → []');
@@ -131,7 +132,7 @@ function eq(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
   assert(reg.latRound === 51.507412, 'lat rounded to 6 decimals');
   assert(reg.hoursCarried.allowedTimeStart === 360, 'hours fields carried through');
   assert(reg.hoursCarried.closedDays[0] === 0, 'closedDays carried through');
-  assert(reg.cap === 32, 'caps at MAX_LOCATIONS (32)');
+  assert(reg.cap === reg.capMax, `caps at MAX_LOCATIONS (${reg.capMax})`);
   const sorted = await page.evaluate(() => locationsForDisplay([
     {id:'z',name:'zoo 10',lat:0,lng:0},
     {id:'a',name:'Alpha',lat:0,lng:0},

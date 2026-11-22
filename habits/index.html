@@ -1309,8 +1309,15 @@
           </button>
           <div class="settings-collapse-body" id="settings-blocked-body" hidden>
             <p class="field-hint">Reserve regular time for sleep, meals, work, or travel.</p>
-            <div class="blocked-time-list" id="blocked-time-list"></div>
-            <button class="btn" id="blocked-time-add" type="button">add busy time</button>
+            <div class="settings-manager-card">
+              <div class="settings-manager-card-top">
+                <div class="settings-manager-card-meta">
+                  <span class="settings-manager-card-count" id="busy-times-summary" aria-live="polite">No busy times</span>
+                  <div class="settings-manager-preview" id="busy-times-preview"></div>
+                </div>
+                <button class="btn primary" id="open-busy-manager" type="button"><i class="ti ti-calendar-time" aria-hidden="true"></i> manage busy times</button>
+              </div>
+            </div>
           </div>
         </section>
         <section class="settings-block settings-collapsible settings-full-only">
@@ -2126,6 +2133,58 @@
     </div>
   </div>
 
+  <!-- full-page Busy Times manager; the existing recurring editors keep their contracts -->
+  <div class="sheet-wrap" id="busy-manager-sheet" inert>
+    <div class="sheet manager-sheet busy-manager-sheet" role="dialog" aria-modal="true" aria-labelledby="busy-manager-title">
+      <div class="manager-head">
+        <button class="icon-btn" type="button" id="busy-manager-close" aria-label="close busy times"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+        <div class="manager-head-copy">
+          <p class="sheet-title" id="busy-manager-title">Busy times</p>
+          <span class="manager-head-sub" id="busy-manager-count" aria-live="polite"></span>
+        </div>
+        <button class="btn manager-select-btn" type="button" id="busy-bulk-toggle" aria-pressed="false">select</button>
+        <button class="btn primary manager-add-btn" type="button" id="blocked-time-add" aria-label="add busy time"><i class="ti ti-plus" aria-hidden="true"></i><span>add</span></button>
+      </div>
+      <div class="manager-toolbar">
+        <div class="manager-search-row">
+          <i class="ti ti-search" aria-hidden="true"></i>
+          <input type="search" id="busy-manager-search" placeholder="Search busy times" aria-label="search busy times or places" autocomplete="off" enterkeyhint="search" />
+          <button type="button" class="icon-btn manager-search-clear" id="busy-manager-search-clear" aria-label="clear busy time search" hidden><i class="ti ti-x" aria-hidden="true"></i></button>
+        </div>
+        <select id="busy-manager-sort" class="settings-select manager-sort-select" aria-label="sort busy times">
+          <option value="saved">Saved order</option>
+          <option value="name">A–Z</option>
+          <option value="start">Start time today</option>
+        </select>
+      </div>
+      <div class="manager-filters" id="busy-manager-filters" role="group" aria-label="filter busy times"></div>
+      <div class="manager-body" id="busy-manager-body">
+        <p class="field-hint">Recurring reservations for sleep, work, meals, and travel. Changes save automatically. To change just one date, open its busy-time card on Home.</p>
+        <div class="blocked-time-list" id="blocked-time-list"></div>
+        <p class="field-hint" id="busy-manager-empty" hidden></p>
+      </div>
+      <div class="manager-bulk-bar" id="busy-bulk-bar" hidden>
+        <div class="manager-bulk-top">
+          <span class="manager-bulk-count" id="busy-bulk-count" aria-live="polite">0 selected</span>
+          <div class="manager-bulk-top-actions">
+            <button class="mini-text-btn" type="button" id="busy-bulk-all">select all</button>
+            <button class="mini-text-btn" type="button" id="busy-bulk-clear">clear</button>
+          </div>
+        </div>
+        <div class="manager-bulk-controls">
+          <select id="busy-bulk-action" class="settings-select" aria-label="bulk edit busy times">
+            <option value="place">Set place…</option>
+            <option value="duplicate">Duplicate selected</option>
+            <option value="delete">Remove selected</option>
+          </select>
+          <div class="manager-bulk-value" id="busy-bulk-value"></div>
+          <button class="btn primary" type="button" id="busy-bulk-apply">apply</button>
+        </div>
+        <p class="field-hint" id="busy-bulk-hint">Changes apply to the selected recurring busy times.</p>
+      </div>
+    </div>
+  </div>
+
   <!-- full-page Places manager -->
   <div class="sheet-wrap" id="locations-manager-sheet" inert>
     <div class="sheet manager-sheet locations-manager-sheet" role="dialog" aria-modal="true" aria-labelledby="locations-manager-title">
@@ -2141,7 +2200,7 @@
       <div class="manager-toolbar">
         <div class="manager-search-row">
           <i class="ti ti-search" aria-hidden="true"></i>
-          <input type="search" id="locations-manager-search" placeholder="Search places, addresses, types…" aria-label="search places" autocomplete="off" spellcheck="false" />
+          <input type="search" id="locations-manager-search" placeholder="Search places" aria-label="search places" autocomplete="off" spellcheck="false" enterkeyhint="search" />
           <button type="button" class="icon-btn manager-search-clear" id="locations-manager-search-clear" aria-label="clear place search" hidden><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
         <select id="locations-manager-sort" class="settings-select manager-sort-select" aria-label="sort places">
@@ -2178,7 +2237,7 @@
             <option value="radius">Set nearby radius…</option>
             <option value="save">Make saved places</option>
             <option value="temp">Make temporary</option>
-            <option value="delete">Remove unused</option>
+            <option value="delete">Remove · keeps in-use</option>
           </select>
           <div class="manager-bulk-value" id="locations-bulk-value"></div>
           <button class="btn primary" type="button" id="locations-bulk-apply">apply</button>
@@ -2202,7 +2261,7 @@
       <div class="manager-toolbar">
         <div class="manager-search-row">
           <i class="ti ti-search" aria-hidden="true"></i>
-          <input type="search" id="weather-manager-search" placeholder="Search profiles or metrics (rain, wind, UV…)" aria-label="search weather profiles" autocomplete="off" spellcheck="false" />
+          <input type="search" id="weather-manager-search" placeholder="Search profiles or rules" aria-label="search weather profiles" autocomplete="off" spellcheck="false" enterkeyhint="search" />
           <button type="button" class="icon-btn manager-search-clear" id="weather-manager-search-clear" aria-label="clear weather search" hidden><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
       </div>
@@ -2229,7 +2288,7 @@
             <option value="hard">Make all limits hard</option>
             <option value="soft">Make all limits soft</option>
             <option value="duplicate">Duplicate selected</option>
-            <option value="delete">Remove unused</option>
+            <option value="delete">Remove · keeps in-use</option>
           </select>
           <div class="manager-bulk-value" id="weather-bulk-value"></div>
           <button class="btn primary" type="button" id="weather-bulk-apply">apply</button>
