@@ -3020,7 +3020,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
       }
     }
   }
-  const reuseFarDays = Boolean(
+  let reuseFarDays = Boolean(
     opts.day0Only
     && dirtyKey
     && _plannerWeekDayMemo.dirtyKey === dirtyKey
@@ -3111,6 +3111,45 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     const snoozed = h && h.snoozedUntil && Date.now() < h.snoozedUntil;
     if(snoozed || !candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
+  const linkedTodayIndices = new Set();
+  if(reuseFarDays){
+    const todayHids = new Set((_plannerWeekDayMemo.days[0].timeline || [])
+      .filter(row=>row && (row.kind === 'fill' || row.kind === 'scheduled'))
+      .map(row=>data[row.i]?.hid).filter(Boolean));
+    const laterHids = new Set(_plannerWeekDayMemo.days.slice(1)
+      .flatMap(day=>day.timeline || []).filter(row=>row && row.kind === 'fill')
+      .map(row=>data[row.i]?.hid).filter(Boolean));
+    // A cached week may already be missing a required same-day subject. Do
+    // not prune it as "assigned later" when an extra occurrence can coexist
+    // with the memoized week. Check cadence against every retained occurrence;
+    // the ordinary day solve still owns clock, location and link feasibility.
+    const missingLinkedSubjects = candidates.filter(c=>c.h.type !== 'task' && c.eligible.has(todayBase)
+      && isDayChoosingWeekCandidate(c) && laterHids.has(c.h.hid)
+      && !todayHids.has(c.h.hid)
+      && !scheduleAnchorCommitForDay(c.h.hid,todayBase)
+      && sameDayScheduleLinks(c.h).some(link=>todayHids.has(link.anchorHid)
+        || scheduleAnchorCommitForDay(link.anchorHid,todayBase)));
+    if(missingLinkedSubjects.length){
+      const memoStates = dayStates.map((state,index)=>({...state,
+        fills:(_plannerWeekDayMemo.days[index]?.timeline || [])
+          .filter(row=>row.kind === 'fill' && data[row.i])
+          .map(row=>({fill:{h:data[row.i],i:row.i}}))
+      }));
+      for(const c of missingLinkedSubjects){
+        const trialStates = memoStates.map((state,index)=>index === 0
+          ? {...state,fills:[...state.fills,{fill:{h:c.h,i:c.i}}]} : state);
+        if(candidateWeekOccurrencesFit(c,trialStates)){
+          linkedTodayIndices.add(c.i);
+        }else{
+          // A cadence conflict needs a whole-week solve rather than
+          // invalidating a frozen later occurrence.
+          reuseFarDays = false;
+          opts = {...opts,day0Only:false,reuseIncumbent:false};
+          break;
+        }
+      }
+    }
+  }
   const memoFutureBreakableMinutes = {};
   if(reuseFarDays){
     const todayMemoCounts = new Map();
@@ -3139,7 +3178,8 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     // selected a second time today when the old today packing cannot replay.
     for(let i = candidates.length - 1;i >= 0;i -= 1){
       const c = candidates[i];
-      if((todayMemoCounts.get(c.i) || 0) > 0 || !(futureMemoCounts.get(c.i) > 0))continue;
+      if((todayMemoCounts.get(c.i) || 0) > 0 || !(futureMemoCounts.get(c.i) > 0)
+        || linkedTodayIndices.has(c.i))continue;
       if(typeof isDayChoosingWeekCandidate === 'function' && isDayChoosingWeekCandidate(c)){
         candidates.splice(i,1);
       }
