@@ -25,7 +25,9 @@ async function openPicker(page){
   await openSettings(page);
   await page.locator('#settings-locations-head').click();
   await page.waitForSelector('#settings-locations-body:not([hidden])');
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#open-locations-manager').click();
+  await page.waitForSelector('#locations-manager-sheet.open');
+  await page.locator('#locations-manager-add').click();
   await page.waitForSelector('#location-picker-sheet.open');
 }
 
@@ -169,7 +171,7 @@ async function openPicker(page){
 
   // ── C. recents + saved badge ──
   console.log('\n[C] recents show on empty focus and re-pin the pick');
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.waitForSelector('#location-picker-sheet.open');
   const recents = await page.evaluate(() => recentPlacePicks().map(r => r.name));
   assert(recents.some(n => /Esporta/.test(n)), 'the pick landed in recents (' + JSON.stringify(recents) + ')');
@@ -210,7 +212,7 @@ async function openPicker(page){
       ] } }
     };
   });
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.waitForSelector('#location-picker-sheet.open');
   await page.locator('#picker-search').fill('Planet Fitness');
   await page.waitForTimeout(700);
@@ -244,7 +246,7 @@ async function openPicker(page){
         address:{ country_code:'us' }, extratags:{ opening_hours:'Mo-Su 05:00-23:00' } }
     ] };
   });
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.waitForSelector('#location-picker-sheet.open');
   await page.locator('#picker-search').fill('Other Gym');
   await page.waitForTimeout(700);
@@ -307,7 +309,7 @@ async function openPicker(page){
 
   // ── F. keyboard reflow: search pane on top, fields stay reachable ──
   console.log('\n[F] keyboard reflow: search pane on top, card within reach');
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.waitForSelector('#location-picker-sheet.open');
   const mapHeight = () => page.evaluate(() =>
     Math.round(document.querySelector('.picker-map').getBoundingClientRect().height));
@@ -399,7 +401,7 @@ async function openPicker(page){
   }),{ids,top,bottom});
   const pin = () => page.evaluate(()=>[$('picker-lat').value,$('picker-lng').value].join(','));
   await viewport(640);
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.waitForFunction(()=>getSheetInner('location-picker-sheet').getAnimations().every(animation=>animation.playState !== 'running'));
   // The sheet entrance finishing is not the map height transition finishing;
   // measuring mid-transition pushed the docked footer below the fold.
@@ -483,7 +485,7 @@ async function openPicker(page){
   await page.evaluate(()=>window.__finishReverse[40]({address:'New pin address',name:'New name'}));
   assert(!(await page.evaluate(()=>loadSortSettings().locations)).some(loc=>loc.name === 'Cancelled place'),
     'cancelling during the address lookup prevents a late save');
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.locator('#picker-search').click();
   await page.keyboard.press('Escape');
   assert(await page.locator('#picker-cancel').isVisible(), 'Escape returns to the map from search');

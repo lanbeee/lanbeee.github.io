@@ -229,11 +229,14 @@
   .tings-coach-root[data-add-rail="true"] :is(.tings-coach-bubble,.tings-coach-spotlight){transition:none;}
   .tings-coach-root[data-mode="essentials"][data-typing="true"] .tings-coach-hint{display:none;}
   #add-sheet .add-sheet[data-coach-space]{padding-bottom:var(--coach-space);}
-  #settings-sheet .sheet[data-coach-editor-space],#location-picker-sheet .sheet[data-coach-editor-space]{min-height:0;height:var(--coach-editor-height);max-height:var(--coach-editor-height);}
+  #settings-sheet .sheet[data-coach-editor-space],#location-picker-sheet .sheet[data-coach-editor-space],#weather-manager-sheet .sheet[data-coach-editor-space],#locations-manager-sheet .sheet[data-coach-editor-space]{min-height:0;height:var(--coach-editor-height);max-height:var(--coach-editor-height);}
   /* The coach supplies the explanation and return action in this editor. */
   #settings-sheet .sheet[data-coach-editor-space] > :is(.about-copy,.settings-actions,.sheet-search-dock){display:none;}
   #settings-sheet .sheet[data-coach-editor-space] > .settings-stack{padding-bottom:6px;}
-  #location-picker-sheet:has([data-coach-editor-space]){align-items:flex-start;}
+  :is(#weather-manager-sheet,#locations-manager-sheet) .sheet[data-coach-editor-space] > :is(.manager-toolbar,.manager-filters,.weather-templates-bar,.manager-cleanup-bar,.manager-footer){display:none;}
+  :is(#weather-manager-sheet,#locations-manager-sheet) .sheet[data-coach-editor-space] > .manager-head{padding:6px 12px;}
+  :is(#weather-manager-sheet,#locations-manager-sheet) .sheet[data-coach-editor-space] > .manager-body{padding-bottom:6px;}
+  :is(#location-picker-sheet,#weather-manager-sheet,#locations-manager-sheet):has([data-coach-editor-space]){align-items:flex-start;}
 }
 @media (prefers-reduced-motion:reduce){
   .tings-coach-shade,.tings-coach-spotlight,.tings-coach-bubble{transition:none;}

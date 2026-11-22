@@ -75,7 +75,9 @@ function renderBlockedTimeControls(){
     return [`${endpoint.dataset.blockedIndex}:${endpoint.dataset.blockedField}`,el.open];
   }));
   const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
-  const locs = typeof locationOptions === 'function' ? locationOptions() : [];
+  const locs = typeof selectableLocationOptions === 'function'
+    ? selectableLocationOptions(blocks.map(b=>b.locationId).filter(Boolean))
+    : (typeof locationOptions === 'function' ? locationOptions() : []);
   wrap.innerHTML = blocks.length ? blocks.map((block,i)=>`
     <div class="blocked-time-row" data-blocked-row="${i}">
       <div class="blocked-time-head">

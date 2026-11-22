@@ -314,11 +314,13 @@ function addBlankScheduleLinkRow(){
 }
 
 function habitScheduleOptionLocationOptions(selectedId){
-  const registry = typeof normalizeLocationRegistry === 'function'
-    ? normalizeLocationRegistry((sortSettings || {}).locations) : [];
+  const raw = (sortSettings || {}).locations;
+  const list = typeof selectableLocationsForDisplay === 'function'
+    ? selectableLocationsForDisplay(raw, selectedId ? [selectedId] : [])
+    : locationsForDisplay(raw);
   const options = ['<option value="">anywhere</option>'];
-  for(const loc of locationsForDisplay(registry)){
-    options.push(`<option value="${escapeHtml(loc.id)}"${loc.id === selectedId ? ' selected' : ''}>${escapeHtml(loc.name)}</option>`);
+  for(const loc of list){
+    options.push(`<option value="${escapeHtml(loc.id)}"${loc.id === selectedId ? ' selected' : ''}>${escapeHtml(loc.name)}${loc.temporary ? ' (one-off)' : ''}</option>`);
   }
   return options.join('');
 }
@@ -530,7 +532,7 @@ function syncDetailSchedulePlacesUi(){
   const preferenceOnly = !optional && detailScheduleView === 'preferred';
   if(wrap){
     wrap.dataset.locationChoiceMode = preferenceOnly ? 'preference' : 'allowed';
-    renderTagChips(wrap.id,[],selectedLocationIdsFrom(wrap.id),null,selectedLocationPrefsFrom(wrap.id),selectedAnywhereFrom(wrap.id));
+    renderTagChips(wrap.id,[],selectedLocationIdsFrom(wrap.id),null,selectedLocationPrefsFrom(wrap.id),selectedAnywhereFrom(wrap.id),selectedLocationTypesFrom(wrap.id));
   }
   if(label)label.textContent = preferenceOnly ? 'place preferences' : 'places';
   const hint = $('detail-places-hint');

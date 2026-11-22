@@ -320,10 +320,11 @@ function normalize(items){
       : {options:[],locationIds:[],anywhereAllowed:false};
     const scheduleOptions = optionLocationState.options;
     const locationIds = normalizeLocationIds(raw.locationIds);
-    const anywhereAllowed = raw.anywhereAllowed == null ? locationIds.length === 0 : Boolean(raw.anywhereAllowed);
+    const locationTypes = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(raw.locationTypes) : [];
+    const anywhereAllowed = raw.anywhereAllowed == null ? (locationIds.length === 0 && locationTypes.length === 0) : Boolean(raw.anywhereAllowed);
     const importedAt = Number(raw.importedAt);
     const prefIds = typeof habitPrefLocationIds === 'function'
-      ? habitPrefLocationIds({locationIds,scheduleOptions})
+      ? habitPrefLocationIds({locationIds,locationTypes,scheduleOptions})
       : locationIds;
     const locationPrefs = normalizeLocationPrefs(raw.locationPrefs, prefIds, raw.preferredLocationId);
     const preferredLocationId = primaryPreferredLocationId(locationPrefs, prefIds);
@@ -407,6 +408,7 @@ function normalize(items){
       trackValue:Boolean(raw.trackValue),
       priority:clampPriority(raw.priority),
       locationIds,
+      locationTypes,
       anywhereAllowed,
       locationPrefs,
       preferredLocationId,

@@ -443,12 +443,14 @@ function updateKeyboardLift(){
   const assistantOpen = $('assistant-sheet')?.classList.contains('open');
   const detailOpen = detailMounted || $('detail-sheet')?.classList.contains('open');
   const settingsOpen = $('settings-sheet')?.classList.contains('open');
+  const managerOpen = $('locations-manager-sheet')?.classList.contains('open')
+    || $('weather-manager-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
   const feedbackOpen = $('feedback-sheet')?.classList.contains('open');
   const bulkEditOpen = $('bulk-edit-sheet')?.classList.contains('open');
   const picker = $('location-picker-sheet');
   const pickerOpen = picker?.classList.contains('open');
-  const needsLift = (pickerOpen || addOpen || settingsOpen || feedbackOpen || bulkEditOpen || ((!paneTierActive() || detailMounted)
+  const needsLift = (pickerOpen || addOpen || settingsOpen || managerOpen || feedbackOpen || bulkEditOpen || ((!paneTierActive() || detailMounted)
     && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
@@ -553,12 +555,12 @@ function keepFocusedInputVisible(){
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
   if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input,#bulk-search,#bulk-settings-search,#picker-search'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll,.picker-content');
+  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.manager-body,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll,.picker-content');
   if(!host)return;
   // Minimal detail sections share the Settings scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
   if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-minimal-settings') || host;
-  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll,.picker-content'))return;
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.manager-body,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll,.picker-content'))return;
   const target = active.closest('.picker-coords-row') || active;
   const rect = target.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
@@ -566,7 +568,7 @@ function keepFocusedInputVisible(){
     && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01
     ? {offsetTop:0,height:document.documentElement.clientHeight} : window.visualViewport;
   const top = Math.max(bounds.top,viewport?.offsetTop || 0) + 8;
-  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet,.feedback-sheet,.bulk-edit-sheet,.bulk-batch-sheet')?.querySelector('.sheet-search-dock,.add-actions,.feedback-actions,.bulk-edit-actions,.bulk-batch-actions');
+  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet,.manager-sheet,.feedback-sheet,.bulk-edit-sheet,.bulk-batch-sheet')?.querySelector('.sheet-search-dock,.add-actions,.manager-footer,.manager-bulk-bar,.feedback-actions,.bulk-edit-actions,.bulk-batch-actions');
   const footerTop = footer?.getClientRects().length ? footer.getBoundingClientRect().top : Infinity;
   const bottom = Math.min(bounds.bottom,footerTop,(viewport?.offsetTop || 0) + (viewport?.height || innerHeight)) - 8;
   if(rect.top >= top && rect.bottom <= bottom)return;
@@ -607,7 +609,7 @@ function ensureSheetExit(id){
     const row = button.parentElement;
     if(row.classList.contains('btn-row') && [...row.children].every(child=>child.classList.contains('sheet-exit-redundant')))row.hidden = true;
   });
-  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head,.feedback-head,.wv-head');
+  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head,.feedback-head,.wv-head,.manager-head');
   if(head){
     head.classList.add('sheet-exit-head');
     return;
@@ -1300,7 +1302,7 @@ function closeSheet(id){
   $(id).style.zIndex = '';
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
-  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet')updateKeyboardLift();
+  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet' || id === 'locations-manager-sheet' || id === 'weather-manager-sheet')updateKeyboardLift();
 }
 
 // HYBRID: opens a day drill-down item in detail without leaving the day sheet
@@ -1322,7 +1324,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'week-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'week-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet' || id === 'locations-manager-sheet' || id === 'weather-manager-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -1359,7 +1361,7 @@ function syncDetailIOSPageLock(detailOpen,modalOpen){
 // RENDER: toggles full-page chrome and locks every modal's background scroll.
 function updateFullPageState(){
   syncBrowserBack();
-  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','week-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet','home-filter-sheet','calendar-filter-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','week-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet','home-filter-sheet','calendar-filter-sheet','locations-manager-sheet','weather-manager-sheet'].some(id=>$(id)?.classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);
@@ -2198,7 +2200,7 @@ document.addEventListener('tierchange',()=>{
     document.body.classList.remove('pane-active');
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
-  ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
+  ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','locations-manager-sheet','weather-manager-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
     if ($(id).classList.contains('open')){
       $(id).classList.remove('open');
       $(id).style.zIndex = '';
@@ -2245,7 +2247,7 @@ document.addEventListener('keydown',e=>{
     plan.run();
     return;
   }
-  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','week-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet','bulk-batch-sheet','bulk-edit-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','locations-manager-sheet','weather-manager-sheet','sample-habits-sheet','overview-sheet','week-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet','bulk-batch-sheet','bulk-edit-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -2262,6 +2264,8 @@ document.addEventListener('keydown',e=>{
     else if (id === 'overview-sheet') closeSheet('overview-sheet');
     else if (id === 'week-sheet') closeSheet('week-sheet');
     else if (id === 'settings-sheet') closeSettingsSheet();
+    else if (id === 'locations-manager-sheet' && typeof closeLocationsManager === 'function') closeLocationsManager();
+    else if (id === 'weather-manager-sheet' && typeof closeWeatherManager === 'function') closeWeatherManager();
     else if (id === 'about-sheet') closeSheet('about-sheet');
     else if (id === 'privacy-sheet') closeSheet('privacy-sheet');
     else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');

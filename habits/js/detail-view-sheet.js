@@ -53,7 +53,7 @@ function paintDetailFields(h){
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
   renderDetailLinkRows(normalizeLinks(h.links));
-  renderTagChips('detail-place-chips',[],h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
+  renderTagChips('detail-place-chips',[],h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed,h.locationTypes || []);
   renderTagChips('detail-topic-chips',h.topics,[]);
   if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',
     typeof weatherProfileSelectValue==='function' ? weatherProfileSelectValue(h.weatherProfileMode,h.weatherProfileId) : (h.weatherProfileId || ''));
@@ -125,6 +125,7 @@ function detailTuneSnapshot(h){
     allowSharedDisplayCompletion:h.allowSharedDisplayCompletion !== false,
     topics:normalizeTopics(h.topics),
     locationIds:normalizeLocationIds(h.locationIds),
+    locationTypes:typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(h.locationTypes) : [],
     anywhereAllowed:Boolean(h.anywhereAllowed),
     locationPrefs:normalizeLocationPrefs(h.locationPrefs,typeof habitPrefLocationIds === 'function' ? habitPrefLocationIds(h) : h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,

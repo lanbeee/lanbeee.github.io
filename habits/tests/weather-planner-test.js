@@ -28,6 +28,8 @@ function assert(value,message){
   await page.locator('#settings-weather-head').click();
   assert(await page.locator('#settings-weather-body [data-setting-toggle^="showWeatherOn"]').count()===2,'weather settings expose busy-time and travel toggles; habits and tasks opt in per item');
   assert(await page.locator('#detail-show-weather').count()===1 && await page.locator('#ting-show-weather').count()===1,'habit and task weather display is a per-item toggle');
+  await page.locator('#open-weather-manager').click();
+  await page.waitForSelector('#weather-manager-sheet.open');
   await page.locator('#weather-profile-add').click();
   assert(await page.locator('.weather-profile-card').count()===1,'settings creates a named weather profile');
   assert(await page.locator('#ting-weather-profile option').count()===3,'new profile appears beside inherit and no-weather choices');
@@ -307,7 +309,7 @@ function assert(value,message){
       scarceHour:new Date(scarceChosen.placeStart).getHours(),
       missing:Boolean(missing),
       nearOnly:nearRows.length===1 && nearRows[0].source==='near',
-      normalized:normalizeWeatherProfiles(Array.from({length:10},(_,i)=>({id:`p${i}`,name:`P${i}`,rules:profiles[0].rules}))).length,
+      normalized:normalizeWeatherProfiles(Array.from({length:12},(_,i)=>({id:`p${i}`,name:`P${i}`,rules:profiles[0].rules}))).length,
       migratedPriority:normalizeWeatherProfiles(profiles)[0].rules[0].importance,
       dryScore,warmScore,
       percentileLowPass:!lowWind.hardFail,
@@ -328,7 +330,7 @@ function assert(value,message){
   assert(result.scarceHour===15,'prefer-lower rain outranks scarce-window overlap');
   assert(result.missing,'missing forecast fails open');
   assert(result.nearOnly,'near-term samples replace weekly samples in overlap');
-  assert(result.normalized===8,'weather profiles are capped at eight');
+  assert(result.normalized===10,'weather profiles are capped at ten');
   assert(result.migratedPriority==='medium','existing weather rules migrate to medium relative priority');
   assert(result.dryScore>result.warmScore,'a high-priority prefer-lower rain rule outweighs a low-priority prefer-higher feels-like rule');
   assert(result.percentileLowPass && result.percentileHighBlocked && result.percentileRank===100,'a hard max-25 percentile rule accepts the calmest quarter and rejects the highest forecast wind');

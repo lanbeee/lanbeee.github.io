@@ -2,7 +2,10 @@
 function opportunityProximitySignature(data,settings,coord){
   if(!coord || settings.pinnedLocationId)return '';
   return data.filter(h=>isOpportunityHabit(h) && opportunityTrigger(h) === 'location').map(h=>{
-    const ids = new Set([...(h.locationIds || []),...(h.scheduleOptions || []).map(option=>option.locationId)]);
+    const resolved = typeof habitDisplayLocationIds === 'function'
+      ? habitDisplayLocationIds(h,settings.locations)
+      : [...(h.locationIds || []),...(h.scheduleOptions || []).map(option=>option.locationId)];
+    const ids = new Set(resolved);
     return (settings.locations || []).filter(loc=>ids.has(loc.id)).map(loc=>
       haversineMetres(coord.lat,coord.lng,loc.lat,loc.lng) <= opportunityRadius(h) ? '1' : '0').join('');
   }).join(',');
@@ -30,6 +33,7 @@ function homeListFingerprint(now = Date.now()){
     h.name, h.emoji || '', h.emojiBgColor || '', h.type, h.lastLog, h.dueDate, h.eventTime,
     h.pinned ? 1 : 0, h.snoozedUntil || '',
     (h.locationIds || []).join(','),
+    (h.locationTypes || []).join(','),
     h.durationMinutes, h.priority, habitEarlyWindowDays(h), habitDelayAllowanceDays(h),
     h.breakable ? 1 : 0,
     h.minChunkMinutes || '',
@@ -841,6 +845,7 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     defaultTravelMode:s.defaultTravelMode || '',
     locations:(s.locations || []).map(l=>({
       id:l.id,lat:l.lat,lng:l.lng,
+      placeType:l.placeType || '',environment:l.environment || '',temporary:Boolean(l.temporary),
       allowedTimeStart:l.allowedTimeStart,allowedTimeEnd:l.allowedTimeEnd,
       preferredTimeStart:l.preferredTimeStart,preferredTimeEnd:l.preferredTimeEnd,
       closedDays:l.closedDays,hoursByDay:l.hoursByDay,weatherProfileId:l.weatherProfileId || null
@@ -1427,6 +1432,7 @@ function homeCardFaceSignature(data = (typeof load === 'function' ? load() : [])
       h.minChunkMinutes || 0,
       (h.topics || []).join(','),
       (h.locationIds || []).join(','),
+    (h.locationTypes || []).join(','),
       (h.allowedWeekdays || []).join(','),
       JSON.stringify([h.allowedMonthDays,h.allowedOrdinalWeekdays,h.preferredWeekdays,h.preferredMonthDays,h.preferredOrdinalWeekdays]),
       h.allowedTimeStart ?? '',

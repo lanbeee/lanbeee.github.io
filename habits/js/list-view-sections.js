@@ -213,7 +213,7 @@ function missedPlannerFingerprint(data,settings){
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeFixedStart,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
-    h.allowedWeekdays,h.allowedMonthDays,h.allowedOrdinalWeekdays,h.preferredOrdinalWeekdays,h.locationIds,h.anywhereAllowed,h.logs,
+    h.allowedWeekdays,h.allowedMonthDays,h.allowedOrdinalWeekdays,h.preferredOrdinalWeekdays,h.locationIds,h.locationTypes,h.anywhereAllowed,h.logs,
     h.scheduleLinks,h.scheduleOptions,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId
   ]);
   const plannerSettings = {

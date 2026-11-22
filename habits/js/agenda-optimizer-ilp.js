@@ -1816,7 +1816,10 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     if(!o || !o.fit)return null;
     if(o.fit.locId)return o.fit.locId;
     const h = o.c && o.c.h;
-    if(!h || !Array.isArray(h.locationIds) || !h.locationIds.length)return null;
+    const resolvedIds = h && typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds(h,state.registry)
+      : (h && Array.isArray(h.locationIds) ? h.locationIds : []);
+    if(!h || !resolvedIds.length)return null;
     if(typeof pickHabitLocationId !== 'function')return null;
     return pickHabitLocationId(h,null,state.registry,state.mode,state.dayBase) || null;
   };

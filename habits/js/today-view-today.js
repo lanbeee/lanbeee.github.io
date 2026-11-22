@@ -111,7 +111,10 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   // Skip when ≤1 distinct location (no clustering to discover).
   const distinctLocs = new Set();
   for(const c of candidates){
-    for(const id of (c.h && c.h.locationIds) || []){
+    const cIds = c.h && typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds(c.h, settings && settings.locations)
+      : ((c.h && c.h.locationIds) || []);
+    for(const id of cIds){
       if(id)distinctLocs.add(id);
     }
   }

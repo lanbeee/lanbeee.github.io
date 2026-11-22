@@ -46,6 +46,7 @@ function detailTuneType(){
 function currentDetailTune(){
   const type = detailTuneType();
   const locationIds = selectedLocationIdsFrom('detail-place-chips');
+  const locationTypes = typeof selectedLocationTypesFrom === 'function' ? selectedLocationTypesFrom('detail-place-chips') : [];
   const locationPrefs = selectedLocationPrefsFrom('detail-place-chips');
   const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';
   const sharedDisplayMode = currentDetailSharedDisplayMode();
@@ -67,6 +68,7 @@ function currentDetailTune(){
     links:currentDetailLinks(),
     topics:selectedTopicsFrom('detail-topic-chips'),
     locationIds,
+    locationTypes,
     anywhereAllowed:selectedAnywhereFrom('detail-place-chips'),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),

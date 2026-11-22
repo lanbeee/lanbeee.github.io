@@ -79,11 +79,13 @@ async function openSettings(page){
   await page.goto(baseUrl, { waitUntil:'load' });
   await page.waitForTimeout(300);
 
-  // ── A. The locations section exists and starts empty ──
+  // ── A. The locations section exists and opens full-page Places manager ──
   console.log('\n[A] locations section — empty state');
   await openSettings(page);
   await page.locator('#settings-locations-head').click();
   await page.waitForSelector('#settings-locations-body:not([hidden])');
+  await page.locator('#open-locations-manager').click();
+  await page.waitForSelector('#locations-manager-sheet.open');
   const emptyVisible = await page.locator('#location-empty-hint').isVisible();
   assert(emptyVisible, 'empty hint shown when no locations');
 
@@ -103,7 +105,7 @@ async function openSettings(page){
       { display_name:'10 Downing Street, Westminster, London', lat:'51.5034', lon:'-0.1276' }
     ]}
   };});
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.waitForSelector('#location-picker-sheet.open');
   const mapViews = await page.evaluate(()=>({
     street:Boolean(document.querySelector('#picker-layer-street')),
@@ -298,7 +300,7 @@ async function openSettings(page){
 
   // ── H. GPS add via picker ──
   console.log('\n[H] add via GPS (mocked geolocation) in picker');
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.waitForSelector('#location-picker-sheet.open');
   await page.locator('#picker-name').fill('Gym');
   await page.locator('#picker-gps').click();
@@ -319,7 +321,7 @@ async function openSettings(page){
 
   // ── H1. Pan map → pin follows center; Pin button snaps ──
   console.log('\n[H1] drop pin at map center after pan');
-  await page.locator('#loc-open-picker').click();
+  await page.locator('#locations-manager-add').click();
   await page.waitForSelector('#location-picker-sheet.open');
   await page.waitForTimeout(200);
   const beforeDrop = await page.evaluate(() => ({
@@ -363,8 +365,10 @@ async function openSettings(page){
   await page.locator('#picker-cancel').click();
   await page.waitForTimeout(100);
 
-  // Settings enable-location control + rationale sheet.
+  // Settings enable-location control + rationale sheet (in Settings behind Places manager).
   console.log('\n[H2] settings enable location control');
+  await page.locator('#locations-manager-close').click();
+  await page.waitForSelector('#locations-manager-sheet.open', {state:'hidden'});
   await page.evaluate(() => {
     // Reset opt-in so the rationale sheet shows again.
     if(typeof stopLocationWatch === 'function')stopLocationWatch();
@@ -470,6 +474,8 @@ async function openSettings(page){
 
   // ── I. In-use location cannot be removed; unused can ──
   console.log('\n[I] remove location → in-use guard');
+  await page.locator('#open-locations-manager').click();
+  await page.waitForSelector('#locations-manager-sheet.open');
   // Seed a habit referencing the first location's id.
   const firstId = await page.evaluate(() => loadSortSettings().locations[0].id);
   await page.evaluate(id => {
@@ -534,6 +540,8 @@ async function openSettings(page){
 
   // ── K2. Add-from-habit returns with the place selected ──
   console.log('\n[K2] add place from new habit → immediately selected');
+  await page.locator('#locations-manager-close').click();
+  await page.waitForSelector('#locations-manager-sheet.open', {state:'hidden'});
   await page.locator('#settings-close').click();
   await page.evaluate(() => updateSortSetting({minimalMode:false},{renderNow:true}));
   await page.locator('#open-add').click();

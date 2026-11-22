@@ -742,7 +742,9 @@ function pickHabitLocationId(h,anchorId,registry,mode,dayBase = dayStart(Date.no
 // placement path optimizes the complete committed chain; this helper only
 // explains the incoming/outgoing contribution around one fill.
 function locationChoiceBreakdown(h,anchorId,registry,mode,nextLocId,actualChosenId){
-  const ids = normalizeLocationIds(h.locationIds,registry);
+  const ids = typeof habitResolvedLocationIds === 'function'
+    ? habitResolvedLocationIds(h,registry)
+    : normalizeLocationIds(h.locationIds,registry);
   if(!ids.length)return null;
   const locName = id => {
     const loc = registry.find(l=>l.id === id);
@@ -1342,7 +1344,9 @@ function explainUnplacedAgendaFill(state,fill,remainingLoad){
     if(inWindow < needed)return `allowed window has no ${needed}m open gap`;
   }
 
-  const locIds = normalizeLocationIds(h.locationIds,state.registry);
+  const locIds = typeof habitResolvedLocationIds === 'function'
+    ? habitResolvedLocationIds(h,state.registry)
+    : normalizeLocationIds(h.locationIds,state.registry);
   if(locIds.length){
     let locationGap = 0;
     for(const id of locIds){
@@ -2286,7 +2290,9 @@ function createDayPlacementState(day,settings,opts = {}){
     const start = scheduledEventStart(ev);
     if(start == null)return;
     const end = start + scheduledEventDuration(ev) * 60000;
-    const locIds = normalizeLocationIds(ev.h.locationIds,registry);
+    const locIds = typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds(ev.h,registry)
+      : normalizeLocationIds(ev.h.locationIds,registry);
     let locationId = ev.locationId || null;
     if(locationId){
       const known = registry.some(l=>l.id === locationId);
@@ -2435,6 +2441,7 @@ function todaySequencingLocationId(state){
 function habitMatchesSequencingLocation(h, locId){
   if(!h || !locId)return false;
   if(Array.isArray(h.locationIds) && h.locationIds.includes(locId))return true;
+  if(typeof habitResolvedLocationIds === 'function' && habitResolvedLocationIds(h).includes(locId))return true;
   if(h.preferredLocationId === locId)return true;
   return false;
 }

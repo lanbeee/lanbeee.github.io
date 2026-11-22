@@ -477,6 +477,7 @@ function readAddRecord(){
   const isHabit = type === 'keepup' || type === 'reduce';
   const target = isHabit ? targetFromRhythmParts($('ting-times')?.value || 1,$('ting-days').value) : null;
   const locationIds = selectedLocationIds();
+  const locationTypes = typeof selectedLocationTypes === 'function' ? selectedLocationTypes() : [];
   const locationPrefs = selectedLocationPrefs();
   const weatherChoice=typeof readWeatherProfileChoice==='function'
     ? readWeatherProfileChoice('ting-weather-profile')
@@ -498,6 +499,7 @@ function readAddRecord(){
     priority:selectedAddPriority(),
     topics:selectedAddTopics(),
     locationIds,
+    locationTypes,
     anywhereAllowed:selectedAnywhere(),
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
@@ -547,7 +549,7 @@ $('do-save').addEventListener('click',()=>{
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
   if(addAppointmentMode && !validateAppointmentFields('add-appt'))return;
   const record = readAddRecord();
-  if(isOpportunityHabit(record) && !record.locationIds.length
+  if(isOpportunityHabit(record) && !record.locationIds.length && !(record.locationTypes && record.locationTypes.length)
     && !weatherHabitHasActiveGuidance(record,sortSettings)){
     refreshAddAvailability();
     $('ting-weather-profile').focus();
@@ -555,6 +557,7 @@ $('do-save').addEventListener('click',()=>{
   }
   data.push(record);
   if(save(data)){
+    if(typeof addSessionTempLocationIds !== 'undefined')addSessionTempLocationIds = [];
     cancelAdd();
     render();
     if(typeof renderOverview === 'function' && ($('overview-sheet')?.classList.contains('open') || (typeof paneTierActive === 'function' && paneTierActive()))){
@@ -1071,12 +1074,17 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
     // Preserve every other chip choice made before opening the map picker.
     if(typeof openLocationPicker === 'function'){
       openLocationPicker({
+        allowTemporary:true,
         name:e.target.closest('.tag-row').querySelector('.tag-search').value.trim().slice(0,48),
         onCreated:id=>{
+          const created = typeof locationById === 'function' ? locationById(id) : null;
+          if(created && created.temporary && typeof addSessionTempLocationIds !== 'undefined'){
+            addSessionTempLocationIds.push(id);
+          }
           const wrap = 'ting-tag-chips';
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
           const prefs = selectedLocationPrefsFrom(wrap);
-          renderTagChips(wrap,selectedTopicsFrom(wrap),selected,null,prefs,false);
+          renderTagChips(wrap,selectedTopicsFrom(wrap),selected,null,prefs,false,selectedLocationTypesFrom(wrap));
           if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
         }
       });
@@ -1085,6 +1093,11 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
   }
   if(e.target.closest('[data-anywhere]')){
     toggleAnywhereChip('ting-tag-chips');
+    if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
+    return;
+  }
+  if(e.target.closest('.location-type-chip-btn[data-location-type]')){
+    toggleLocationTypeChip(e);
     if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     return;
   }
@@ -1102,13 +1115,15 @@ $('detail-place-chips')?.addEventListener('click',e=>{
     // Open the place picker; on save, auto-select the new place on this habit.
     if(typeof openLocationPicker === 'function'){
       openLocationPicker({
+        allowTemporary:true,
         name:e.target.closest('.tag-row').querySelector('.tag-search').value.trim().slice(0,48),
         onCreated:id=>{
           const wrap = 'detail-place-chips';
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
           const prefs = selectedLocationPrefsFrom(wrap);
           renderTagChips(wrap,[],selected,null,prefs,
-            isLocationConditionControl($(wrap)) ? false : selectedAnywhereFrom(wrap));
+            isLocationConditionControl($(wrap)) ? false : selectedAnywhereFrom(wrap),
+            selectedLocationTypesFrom(wrap));
           if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
           setDetailDirty();
         }
@@ -1120,6 +1135,11 @@ $('detail-place-chips')?.addEventListener('click',e=>{
     toggleAnywhereChip('detail-place-chips');
     if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     setDetailDirty();
+    return;
+  }
+  if(e.target.closest('.location-type-chip-btn[data-location-type]')){
+    toggleLocationTypeChip(e);
+    if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     return;
   }
   if(e.target.closest('.location-chip[data-location-id]')){
@@ -1825,11 +1845,17 @@ function applyDetailTuneToRecord(h,data){
   h.links = normalizeLinks(current.links);
   h.topics = normalizeTopics(current.topics);
   h.scheduleOptions = normalizeHabitScheduleOptions(current.scheduleOptions,sortSettings.locations);
+  const prevLocIds = Array.isArray(h.locationIds) ? h.locationIds.slice() : [];
   h.locationIds = normalizeLocationIds(current.locationIds,sortSettings.locations);
+  h.locationTypes = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(current.locationTypes) : [];
   h.anywhereAllowed = Boolean(current.anywhereAllowed);
   const prefIds = habitPrefLocationIds(h,sortSettings.locations);
   h.locationPrefs = normalizeLocationPrefs(current.locationPrefs,prefIds,current.preferredLocationId);
   h.preferredLocationId = primaryPreferredLocationId(h.locationPrefs,prefIds);
+  const droppedLocIds = prevLocIds.filter(id=>!h.locationIds.includes(id));
+  if(droppedLocIds.length && typeof cleanupUnusedTemporaryLocations === 'function'){
+    setTimeout(()=>cleanupUnusedTemporaryLocations(load(),{onlyIds:droppedLocIds,quiet:true}),0);
+  }
   h.weatherProfileMode = normalizeWeatherProfileMode(current.weatherProfileMode,current.weatherProfileId);
   h.weatherProfileId = h.weatherProfileMode === 'profile' ? cleanWeatherProfileId(current.weatherProfileId) || null : null;
   h.weatherLocationId = h.weatherProfileMode === 'profile'
@@ -2069,6 +2095,14 @@ $('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)d
 
 $('ting-weather-profiles')?.addEventListener('click',()=>openAddSettings('weather'));
 $('detail-weather-profiles')?.addEventListener('click',()=>{
+  if(typeof openWeatherManager === 'function'){
+    openWeatherManager({
+      onClose:()=>{
+        if(typeof setDetailDirty === 'function' && detailIdx != null)setDetailDirty();
+      }
+    });
+    return;
+  }
   resetSettingsSheetState();
   syncSettingsControls();
   $('settings-weather-body').hidden = false;

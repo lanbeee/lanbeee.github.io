@@ -91,7 +91,7 @@ const SETTINGS_SEARCH_ALIAS_LABELS = {
 };
 
 // Rendered lists that hold the user's own data. Nothing inside is indexed.
-const SETTINGS_USER_CONTENT = '#location-list,#topic-list,#blocked-time-list,#weather-profile-list,#calendar-device-controls,#settings-agenda-devices,#weather-forecast-data,#calendar-pdf-preview,#default-places-chips,#default-topics-chips';
+const SETTINGS_USER_CONTENT = '#location-list,#location-settings-preview,#topic-list,#blocked-time-list,#weather-profile-list,#weather-profiles-preview,#calendar-device-controls,#settings-agenda-devices,#weather-forecast-data,#calendar-pdf-preview,#default-places-chips,#default-topics-chips';
 
 function settingsSearchExtra(target){
   const head = target.closest?.('.settings-collapse-head');

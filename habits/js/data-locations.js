@@ -363,7 +363,7 @@ function habitScheduleOptionLocationState(value,registry){
 function habitPrefLocationIds(h,registry){
   const optionState = habitScheduleOptionLocationState(h && h.scheduleOptions,registry);
   return normalizeLocationIds([
-    ...normalizeLocationIds(h && h.locationIds,registry),
+    ...habitResolvedLocationIds(h,registry),
     ...optionState.locationIds
   ],registry);
 }
@@ -384,6 +384,7 @@ function hasGeneralAllowedSchedule(h,registry){
   if(!h)return false;
   if(!hasHabitScheduleOptions(h))return true;
   if(hasSimpleAllowedTimeWindow(h) || hasSimpleAllowedDays(h))return true;
+  if(normalizeLocationTypes(h.locationTypes).length)return true;
   const optionState = habitScheduleOptionLocationState(h.scheduleOptions,registry);
   const generalIds = normalizeLocationIds(h.locationIds,registry);
   const optionIds = new Set(optionState.locationIds);
@@ -469,6 +470,7 @@ function habitBoundToScheduleOption(h,option){
     allowedMonthDays:[],
     allowedOrdinalWeekdays:normalized.ordinalWeekdays,
     locationIds:locationId ? [locationId] : [],
+    locationTypes:[],
     anywhereAllowed:locationId == null,
     locationPrefs,
     _scheduleOptionPref:pref,
@@ -555,9 +557,9 @@ function habitLocationIdsForDay(h,dayBase,registry){
     ids.push(id);
   };
   if(hasGeneralAllowedSchedule(h,registry) && isDateEligibleForGeneralSchedule(h,dayBase)){
-    for(const id of normalizeLocationIds(h && h.locationIds,registry))add(id);
+    for(const id of habitResolvedLocationIds(h,registry))add(id);
   }else if(!hasHabitScheduleOptions(h)){
-    return normalizeLocationIds(h && h.locationIds,registry);
+    return habitResolvedLocationIds(h,registry);
   }
   for(const option of habitScheduleOptionsForDay(h,dayBase))add(option.locationId);
   return ids;
@@ -672,6 +674,235 @@ function normalizePlaceType(value){
   return slug.slice(0,32);
 }
 
+// PURE: indoor/outdoor setting categorization for a place.
+// '' = auto (infer from placeType), 'none' = explicitly none, else indoor/outdoor/both.
+const LOCATION_ENVIRONMENTS = ['indoor','outdoor','both'];
+function normalizeLocationEnvironment(value){
+  const v = String(value || '').trim().toLowerCase();
+  if(v === 'indoor' || v === 'outdoor' || v === 'both' || v === 'none')return v;
+  return '';
+}
+
+// PURE: place-type category groups so an item can allow e.g. all "grocery" or
+// "stores" or "gym" places automatically without naming every branch.
+const PLACE_TYPE_GROUPS = [
+  {key:'grocery', label:'Grocery', emoji:'🛒', types:['supermarket','grocery','convenience','greengrocer','butcher','bakery','deli','organic','wholesale']},
+  {key:'stores', label:'Stores', emoji:'🛍️', types:['supermarket','grocery','convenience','greengrocer','mall','department_store','clothes','shoes','books','hardware','do_it_yourself','electronics','computer','mobile_phone','phone','gift','florist','jewelry','optician','pet','pharmacy','bakery','copyshop','furniture','home_goods','variety_store','general','stores','shop']},
+  {key:'gym', label:'Gym & fitness', emoji:'🏋️', types:['fitness_centre','sports_centre','gym','sports_hall','stadium','swimming_pool']},
+  {key:'cafe', label:'Cafes', emoji:'☕', types:['cafe','coffee','tea','bakery']},
+  {key:'food', label:'Food & dining', emoji:'🍽️', types:['restaurant','fast_food','cafe','bakery','deli','ice_cream','bar','pub','food_court','food']},
+  {key:'pharmacy', label:'Pharmacy', emoji:'💊', types:['pharmacy','chemist']},
+  {key:'health', label:'Health & medical', emoji:'🏥', types:['hospital','clinic','doctors','dentist','pharmacy','optician','veterinary','health']},
+  {key:'worship', label:'Worship', emoji:'🕌', types:['mosque','place_of_worship','church','synagogue','temple','worship']},
+  {key:'park', label:'Parks & nature', emoji:'🌳', types:['park','playground','garden','nature_reserve','beach','trail']},
+  {key:'library', label:'Library & study', emoji:'📚', types:['library','books','university','college','school','coworking']},
+  {key:'errands', label:'Errands & services', emoji:'🏦', types:['bank','atm','post_office','laundry','dry_cleaning','hairdresser','beauty','car_repair','fuel','townhall','errands']},
+  {key:'entertainment', label:'Culture & leisure', emoji:'🎬', types:['cinema','theatre','museum','gallery','zoo','attraction','events_venue','community_centre']},
+  {key:'transit', label:'Transit & travel', emoji:'🚉', types:['station','bus_station','bus_stop','aerodrome','hotel','motel','parking','fuel']},
+  {key:'home', label:'Home', emoji:'🏠', types:['home']},
+  {key:'work', label:'Work & office', emoji:'💼', types:['work','office','coworking']}
+];
+const PLACE_TYPE_GROUP_BY_KEY = new Map(PLACE_TYPE_GROUPS.map(g=>[g.key,g]));
+
+// Curated place-type choices shown in the map picker & Places Manager dropdowns.
+const PLACE_TYPE_PICKER_OPTIONS = [
+  {value:'', label:'None'},
+  {value:'home', label:'Home'},
+  {value:'work', label:'Work / Office'},
+  {value:'supermarket', label:'Grocery / Supermarket'},
+  {value:'convenience', label:'Convenience store'},
+  {value:'mall', label:'Mall / Shopping'},
+  {value:'hardware', label:'Hardware store'},
+  {value:'clothes', label:'Clothing store'},
+  {value:'books', label:'Bookstore'},
+  {value:'pharmacy', label:'Pharmacy'},
+  {value:'fitness_centre', label:'Gym / Fitness'},
+  {value:'cafe', label:'Cafe / Coffee'},
+  {value:'restaurant', label:'Restaurant'},
+  {value:'fast_food', label:'Fast food'},
+  {value:'bakery', label:'Bakery'},
+  {value:'park', label:'Park'},
+  {value:'playground', label:'Playground'},
+  {value:'trail', label:'Trail / Nature'},
+  {value:'beach', label:'Beach'},
+  {value:'library', label:'Library'},
+  {value:'school', label:'School / University'},
+  {value:'mosque', label:'Mosque'},
+  {value:'church', label:'Church'},
+  {value:'place_of_worship', label:'Place of worship'},
+  {value:'hospital', label:'Hospital'},
+  {value:'clinic', label:'Clinic / Doctor'},
+  {value:'dentist', label:'Dentist'},
+  {value:'bank', label:'Bank'},
+  {value:'post_office', label:'Post office'},
+  {value:'fuel', label:'Gas station'},
+  {value:'hairdresser', label:'Barber / Salon'},
+  {value:'laundry', label:'Laundry / Dry cleaning'},
+  {value:'cinema', label:'Cinema / Theatre'},
+  {value:'museum', label:'Museum / Gallery'},
+  {value:'station', label:'Transit station'},
+  {value:'hotel', label:'Hotel'}
+];
+
+const OUTDOOR_PLACE_TYPES = new Set([
+  'park','playground','garden','nature_reserve','beach','trail','zoo','fuel','parking','bus_stop'
+]);
+const BOTH_ENV_PLACE_TYPES = new Set([
+  'stadium','sports_centre','attraction','university','college','school','market','swimming_pool','home'
+]);
+const INDOOR_PLACE_TYPES = new Set([
+  'fitness_centre','gym','sports_hall','supermarket','grocery','convenience','greengrocer','butcher','bakery','deli','organic','wholesale',
+  'mall','department_store','clothes','shoes','books','hardware','do_it_yourself','electronics','computer','mobile_phone','phone','gift','florist','jewelry','optician','pet','copyshop','furniture','home_goods','variety_store','general','stores','shop',
+  'cafe','coffee','tea','restaurant','fast_food','ice_cream','bar','pub','food_court',
+  'pharmacy','chemist','hospital','clinic','doctors','dentist','veterinary',
+  'mosque','place_of_worship','church','synagogue','temple',
+  'library','coworking','work','office','bank','atm','post_office','laundry','dry_cleaning','hairdresser','beauty','car_repair','townhall',
+  'cinema','theatre','museum','gallery','events_venue','community_centre','nightclub','karaoke','massage','hotel','motel','guest_house','station','bus_station','aerodrome'
+]);
+
+function inferredLocationEnvironment(placeType){
+  const t = normalizePlaceType(placeType);
+  if(!t)return '';
+  if(OUTDOOR_PLACE_TYPES.has(t))return 'outdoor';
+  if(BOTH_ENV_PLACE_TYPES.has(t))return 'both';
+  if(INDOOR_PLACE_TYPES.has(t))return 'indoor';
+  return '';
+}
+
+function effectiveLocationEnvironment(loc){
+  if(!loc)return '';
+  const explicit = normalizeLocationEnvironment(loc.environment);
+  if(explicit === 'none')return '';
+  if(explicit)return explicit;
+  return inferredLocationEnvironment(loc.placeType);
+}
+
+function locationEnvironmentLabel(env){
+  if(env === 'indoor')return 'Indoor';
+  if(env === 'outdoor')return 'Outdoor';
+  if(env === 'both')return 'Indoor & outdoor';
+  return '';
+}
+
+function normalizeLocationTypeKey(value){
+  const raw = String(value || '').trim().toLowerCase();
+  if(raw === 'env:indoor' || raw === 'indoor')return 'env:indoor';
+  if(raw === 'env:outdoor' || raw === 'outdoor')return 'env:outdoor';
+  return normalizePlaceType(raw);
+}
+
+function normalizeLocationTypes(value){
+  const items = Array.isArray(value) ? value : String(value || '').split(',');
+  const out = [];
+  const seen = new Set();
+  for(const item of items){
+    const key = normalizeLocationTypeKey(item);
+    if(!key || seen.has(key))continue;
+    seen.add(key);
+    out.push(key);
+    if(out.length >= 16)break;
+  }
+  return out;
+}
+
+function locationMatchesTypeKey(loc, key){
+  if(!loc)return false;
+  const k = normalizeLocationTypeKey(key);
+  if(!k)return false;
+  if(k === 'env:indoor'){
+    const env = effectiveLocationEnvironment(loc);
+    return env === 'indoor' || env === 'both';
+  }
+  if(k === 'env:outdoor'){
+    const env = effectiveLocationEnvironment(loc);
+    return env === 'outdoor' || env === 'both';
+  }
+  const pt = normalizePlaceType(loc.placeType);
+  if(!pt)return false;
+  if(pt === k)return true;
+  const group = PLACE_TYPE_GROUP_BY_KEY.get(k);
+  return Boolean(group && group.types.includes(pt));
+}
+
+function locationTypeKeyLabel(key){
+  const k = normalizeLocationTypeKey(key);
+  if(k === 'env:indoor')return 'Indoor';
+  if(k === 'env:outdoor')return 'Outdoor';
+  const group = PLACE_TYPE_GROUP_BY_KEY.get(k);
+  if(group)return group.label;
+  if(typeof placeTypeLabel === 'function'){
+    const lbl = placeTypeLabel(k);
+    if(lbl)return lbl.charAt(0).toUpperCase() + lbl.slice(1);
+  }
+  return k ? k.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()) : '';
+}
+
+function locationTypeKeyEmoji(key){
+  const k = normalizeLocationTypeKey(key);
+  if(k === 'env:indoor')return '🏠';
+  if(k === 'env:outdoor')return '🌤️';
+  const group = PLACE_TYPE_GROUP_BY_KEY.get(k);
+  if(group)return group.emoji;
+  if(typeof emojiForPlaceType === 'function')return emojiForPlaceType(k) || '📍';
+  return '📍';
+}
+
+function locationCategoryChoices(registry, selectedTypes = []){
+  const locs = normalizeLocationRegistry(registry).filter(loc=>!loc.temporary);
+  const selected = new Set(normalizeLocationTypes(selectedTypes));
+  const out = [];
+  const seen = new Set();
+  const matchedSignature = key => locs.filter(loc=>locationMatchesTypeKey(loc, key)).map(loc=>loc.id).sort().join(',');
+  const add = (key, label, emoji, kind)=>{
+    if(seen.has(key))return;
+    const count = locs.filter(loc=>locationMatchesTypeKey(loc, key)).length;
+    if(!count && !selected.has(key))return;
+    seen.add(key);
+    out.push({key, label, emoji, count, kind});
+  };
+  add('env:indoor', 'Any indoor', '🏠', 'env');
+  add('env:outdoor', 'Any outdoor', '🌤️', 'env');
+  const groupMatchSigs = new Set();
+  for(const group of PLACE_TYPE_GROUPS){
+    const count = locs.filter(loc=>locationMatchesTypeKey(loc, group.key)).length;
+    if(count || selected.has(group.key)){
+      add(group.key, `Any ${group.label.toLowerCase()}`, group.emoji, 'group');
+      if(count)groupMatchSigs.add(matchedSignature(group.key));
+    }
+  }
+  // Surface specific OSM placeTypes when they narrow down a broader group (e.g. "bakery" vs "food").
+  const rawTypes = new Set([...locs.map(l=>l.placeType).filter(Boolean), ...selected]);
+  for(const pt of [...rawTypes].sort()){
+    if(seen.has(pt) || pt.startsWith('env:'))continue;
+    const sig = matchedSignature(pt);
+    if(!selected.has(pt) && groupMatchSigs.has(sig))continue;
+    add(pt, `Any ${locationTypeKeyLabel(pt).toLowerCase()}`, locationTypeKeyEmoji(pt), 'type');
+  }
+  return out;
+}
+
+// PURE: resolve all concrete location IDs allowed by an item's direct
+// locationIds PLUS any non-temporary locations matching its locationTypes.
+function habitResolvedLocationIds(h, registry){
+  const reg = Array.isArray(registry)
+    ? registry
+    : (typeof sortSettings !== 'undefined' && sortSettings && Array.isArray(sortSettings.locations) ? sortSettings.locations : null);
+  const direct = normalizeLocationIds(h && h.locationIds, reg);
+  const types = normalizeLocationTypes(h && h.locationTypes);
+  if(!types.length || !Array.isArray(reg))return direct;
+  const locs = normalizeLocationRegistry(reg);
+  const seen = new Set(direct);
+  const out = direct.slice();
+  for(const loc of locs){
+    if(loc.temporary || seen.has(loc.id))continue;
+    if(types.some(key=>locationMatchesTypeKey(loc, key))){
+      seen.add(loc.id);
+      out.push(loc.id);
+    }
+  }
+  return out;
+}
+
 // PURE: coerce the raw locations array into the canonical registry. Invalid
 // entries (no id, no name, bad coords) are dropped; duplicates by id collapse.
 function normalizeLocationRegistry(value){
@@ -693,6 +924,8 @@ function normalizeLocationRegistry(value){
     const address = String(raw.address || '').trim().slice(0,120);
     const emoji = String(raw.emoji || '').slice(0,4);
     const placeType = normalizePlaceType(raw.placeType);
+    const environment = normalizeLocationEnvironment(raw.environment);
+    const temporary = Boolean(raw.temporary);
     const weatherProfileId = cleanWeatherProfileRef(raw.weatherProfileId) || null;
     out.push({
       id,
@@ -703,6 +936,8 @@ function normalizeLocationRegistry(value){
       radiusM:Number.isFinite(radius) ? Math.max(10,Math.min(5000,radius)) : DEFAULT_LOCATION_RADIUS_M,
       emoji,
       placeType,
+      environment,
+      temporary,
       weatherProfileId,
       ...normalizeLocationHours(raw)
     });
@@ -726,6 +961,12 @@ function locationsForDisplay(value){
   const out = normalizeLocationRegistry(value).slice().sort(compareLocationNames);
   _locDisplayCache = {src:Array.isArray(value) ? value : null,out};
   return out;
+}
+// PURE: locations visible in general item pickers — all saved places plus any
+// temporary place already attached to the item currently being edited.
+function selectableLocationsForDisplay(value, includeIds = []){
+  const include = new Set(normalizeLocationIds(includeIds));
+  return locationsForDisplay(value).filter(loc=>!loc.temporary || include.has(loc.id));
 }
 // PURE: coerce the cached travel map. Drops edges with bad numbers, stale
 // fetchedAt (older than 2× TTL), or malformed keys; re-keys each edge with the
@@ -928,9 +1169,14 @@ function habitGeneralAppliesAtLocation(h,loc,dayBase,registry){
   if(!hasGeneralAllowedSchedule(h,registry))return false;
   if(!isDateEligibleForGeneralSchedule(h,dayBase != null ? dayBase : Date.now()))return false;
   const locationId = loc ? loc.id : null;
-  if(locationId)return Boolean(h && h.anywhereAllowed)
-    || normalizeLocationIds(h && h.locationIds,registry).includes(locationId);
-  return Boolean(h && h.anywhereAllowed) || !normalizeLocationIds(h && h.locationIds,registry).length;
+  const types = normalizeLocationTypes(h && h.locationTypes);
+  if(locationId){
+    if(Boolean(h && h.anywhereAllowed))return true;
+    if(normalizeLocationIds(h && h.locationIds,registry).includes(locationId))return true;
+    if(types.length && !loc.temporary && types.some(key=>locationMatchesTypeKey(loc,key)))return true;
+    return false;
+  }
+  return Boolean(h && h.anywhereAllowed) || (!habitResolvedLocationIds(h,registry).length && !types.length);
 }
 
 // PURE: the feasible minute-intervals today for a habit at a location — the
@@ -963,21 +1209,24 @@ function reconcileLocations(data,settings){
     const optionState = habitScheduleOptionLocationState(h.scheduleOptions,registry);
     const scheduleOptions = optionState.options;
     const locationIds = normalizeLocationIds(prev.filter(id=>valid.has(id)),registry);
+    const locationTypes = normalizeLocationTypes(h.locationTypes);
     const anywhereAllowed = Boolean(h.anywhereAllowed);
-    const prefIds = normalizeLocationIds([...locationIds,...optionState.locationIds],registry);
+    const resolvedIds = habitResolvedLocationIds({...h,locationIds,locationTypes},registry);
+    const prefIds = normalizeLocationIds([...resolvedIds,...optionState.locationIds],registry);
     const locationPrefs = normalizeLocationPrefs(h.locationPrefs,prefIds,h.preferredLocationId);
     const preferredLocationId = primaryPreferredLocationId(locationPrefs,prefIds);
     const weatherLocationId = valid.has(cleanLocationId(h.weatherLocationId)) ? cleanLocationId(h.weatherLocationId) : null;
     const prevPref = h.preferredLocationId || null;
     const prevPrefs = JSON.stringify(h.locationPrefs || {});
     const moved = locationIds.length !== prev.length
+      || JSON.stringify(locationTypes) !== JSON.stringify(Array.isArray(h.locationTypes) ? h.locationTypes : [])
       || preferredLocationId !== prevPref
       || JSON.stringify(locationPrefs) !== prevPrefs
       || anywhereAllowed !== Boolean(h.anywhereAllowed)
       || JSON.stringify(scheduleOptions) !== JSON.stringify(h.scheduleOptions || [])
       || weatherLocationId !== (h.weatherLocationId || null);
     if(moved)changed = true;
-    return moved ? {...h,locationIds,anywhereAllowed,locationPrefs,preferredLocationId,scheduleOptions,weatherLocationId} : h;
+    return moved ? {...h,locationIds,locationTypes,anywhereAllowed,locationPrefs,preferredLocationId,scheduleOptions,weatherLocationId} : h;
   });
   return {data:next,changed};
 }

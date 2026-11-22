@@ -25,6 +25,9 @@ body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
 #add-sheet{z-index:107;}
 #detail-sheet{z-index:110;}
 #settings-sheet{z-index:115;}
+/* Full-page Places & Weather managers open from Settings, Add, Detail, or Presence;
+   below location-picker-sheet (125) so the map picker paints cleanly above them. */
+#locations-manager-sheet,#weather-manager-sheet{z-index:117;}
 /* Help, samples, and privacy open from Settings and stay above that page. */
 #about-sheet{z-index:118;}
 #sample-habits-sheet{z-index:119;}
@@ -50,7 +53,7 @@ body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
   will-change:transform,opacity;
 }
 .sheet-wrap.open .sheet{transform:translateY(0) scale(1);opacity:1;}
-#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#home-filter-sheet,#calendar-filter-sheet{
+#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#home-filter-sheet,#calendar-filter-sheet,#locations-manager-sheet,#weather-manager-sheet{
   align-items:stretch;background:rgba(0,0,0,0.18);padding-top:0;
 }
 body[data-pane-count="2"] #add-sheet,
@@ -72,13 +75,17 @@ body[data-pane-count="3"] #assistant-sheet,
 body[data-pane-count="2"] #home-filter-sheet,
 body[data-pane-count="3"] #home-filter-sheet,
 body[data-pane-count="2"] #calendar-filter-sheet,
-body[data-pane-count="3"] #calendar-filter-sheet{
+body[data-pane-count="3"] #calendar-filter-sheet,
+body[data-pane-count="2"] #locations-manager-sheet,
+body[data-pane-count="3"] #locations-manager-sheet,
+body[data-pane-count="2"] #weather-manager-sheet,
+body[data-pane-count="3"] #weather-manager-sheet{
   align-items:center;
   justify-content:center;
   background:rgba(0,0,0,0.36);
   padding:24px;
 }
-.add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet,.assistant-sheet,.home-filter-sheet{
+.add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet,.assistant-sheet,.home-filter-sheet,.manager-sheet{
   border-radius:0;min-height:100dvh;max-height:100dvh;
   padding-top:calc(22px + var(--content-safe-top));
   padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + var(--content-safe-bottom));
