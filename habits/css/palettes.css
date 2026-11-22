@@ -5,7 +5,7 @@
   --bg3:#e6e5df; --palette-dark-bg3:#373737;
   --text:#292a27; --palette-dark-text:#ededed;
   --text2:#60615c; --palette-dark-text2:#c4c4c4;
-  --text3:#696a63; --palette-dark-text3:#a1a1a1;
+  --text3:#696a63; --palette-dark-text3:#a6a6a6;
   --field-bg:#e9e8e2; --palette-dark-field-bg:#323232;
   --teal-bg:#c5dff5; --palette-dark-teal-bg:#234864;
   --teal-icon:#24628f; --palette-dark-teal-icon:#8fc3ef;
@@ -20,7 +20,7 @@
   --bg3:#e6e5df; --palette-dark-bg3:#373737;
   --text:#292a27; --palette-dark-text:#ededed;
   --text2:#60615c; --palette-dark-text2:#c4c4c4;
-  --text3:#696a63; --palette-dark-text3:#a1a1a1;
+  --text3:#696a63; --palette-dark-text3:#a6a6a6;
   --field-bg:#e9e8e2; --palette-dark-field-bg:#323232;
   --teal-bg:#e3e4df; --palette-dark-teal-bg:#3d3f3a;
   --teal-icon:#555752; --palette-dark-teal-icon:#c8cbc1;
@@ -32,7 +32,7 @@
   --bg3:#e2e7da; --palette-dark-bg3:#343e31;
   --text:#252c25; --palette-dark-text:#e6eddf;
   --text2:#5b6559; --palette-dark-text2:#bdc8b6;
-  --text3:#646e5e; --palette-dark-text3:#929f8b;
+  --text3:#646e5e; --palette-dark-text3:#9fab99;
   --field-bg:#e8ecdf; --palette-dark-field-bg:#303a2e;
   --teal-bg:#dcebcf; --palette-dark-teal-bg:#334d2b;
   --teal-icon:#47643c; --palette-dark-teal-icon:#b2d59e;
@@ -44,7 +44,7 @@
   --bg3:#dde6ef; --palette-dark-bg3:#323e4b;
   --text:#242d36; --palette-dark-text:#e2ebf5;
   --text2:#566473; --palette-dark-text2:#b8c7d6;
-  --text3:#626f7d; --palette-dark-text3:#91a2b4;
+  --text3:#626f7d; --palette-dark-text3:#9cabbc;
   --field-bg:#e2eaf3; --palette-dark-field-bg:#2c3846;
   --teal-bg:#d6e8fa; --palette-dark-teal-bg:#294661;
   --teal-icon:#385f82; --palette-dark-teal-icon:#a6cef2;
@@ -56,7 +56,7 @@
   --bg3:#e8e1ef; --palette-dark-bg3:#3e3548;
   --text:#302a38; --palette-dark-text:#efe5f6;
   --text2:#675c73; --palette-dark-text2:#cdbed9;
-  --text3:#73677f; --palette-dark-text3:#ab99ba;
+  --text3:#73677f; --palette-dark-text3:#af9ebd;
   --field-bg:#ede5f3; --palette-dark-field-bg:#382f42;
   --teal-bg:#e8dcf6; --palette-dark-teal-bg:#4b365f;
   --teal-icon:#6b5185; --palette-dark-teal-icon:#d7b8ef;
@@ -68,7 +68,7 @@
   --bg3:#eae2d4; --palette-dark-bg3:#40382c;
   --text:#342e26; --palette-dark-text:#f2e9da;
   --text2:#6d6151; --palette-dark-text2:#cfc1ac;
-  --text3:#786b59; --palette-dark-text3:#ad9d85;
+  --text3:#786b59; --palette-dark-text3:#b2a38c;
   --field-bg:#eee6d8; --palette-dark-field-bg:#393225;
   --teal-bg:#f1dfbf; --palette-dark-teal-bg:#534128;
   --teal-icon:#79603c; --palette-dark-teal-icon:#dec297;
@@ -138,7 +138,8 @@
 }
 /* Neutral surfaces. Blue is selection and tools; green is the create action. */
 :root[data-palette="default"] .bottom-nav .nav-add,
-:root[data-palette="default"] .app-bar-add{
+:root[data-palette="default"] .app-bar-add,
+:root[data-palette="default"] .overview-create-btn{
   background:var(--go-bg);color:var(--go-text);border-color:transparent;
 }
 :root[data-palette="default"] .bottom-nav .nav-add:hover,

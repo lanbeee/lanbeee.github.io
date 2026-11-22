@@ -323,8 +323,10 @@ function normalize(items){
     const locationTypes = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(raw.locationTypes) : [];
     const anywhereAllowed = raw.anywhereAllowed == null ? (locationIds.length === 0 && locationTypes.length === 0) : Boolean(raw.anywhereAllowed);
     const importedAt = Number(raw.importedAt);
+    // Keep explicitly selected places until reconciliation, even if the
+    // current registry cannot resolve them yet (for example during restore).
     const prefIds = typeof habitPrefLocationIds === 'function'
-      ? habitPrefLocationIds({locationIds,locationTypes,scheduleOptions})
+      ? normalizeLocationIds([...locationIds,...habitPrefLocationIds({locationIds,locationTypes,scheduleOptions})])
       : locationIds;
     const locationPrefs = normalizeLocationPrefs(raw.locationPrefs, prefIds, raw.preferredLocationId);
     const preferredLocationId = primaryPreferredLocationId(locationPrefs, prefIds);

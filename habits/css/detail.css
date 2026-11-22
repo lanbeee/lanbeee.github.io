@@ -117,7 +117,10 @@
   background:var(--field-bg);
 }
 .detail-sheet .detail-page .timer-auto-stop-label{font-size:var(--detail-label-size);}
-@media (max-width:360px){
+/* Stack "start session" above the session-target pill while a shared row
+   would squeeze the pill below its label+input+unit width (~190px per
+   column); the pane-width rows keep the side-by-side layout. */
+@media (max-width:430px){
   .detail-sheet .detail-page .timer-row{grid-template-columns:1fr;}
 }
 .link-field{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
@@ -508,7 +511,7 @@ body .detail-ask textarea{
   -webkit-appearance:none;appearance:none;
 }
 body .detail-ask textarea:is(:focus,:focus-visible){outline:none;box-shadow:none;}
-.detail-ask textarea::placeholder{color:var(--text3);opacity:1;}
+.detail-ask textarea::placeholder{color:var(--text2);opacity:1;}
 .detail-ask textarea:disabled{-webkit-text-fill-color:var(--text3);}
 .detail-ask-send{
   flex:0 0 36px;width:36px;height:36px;margin:4px 0;display:flex;align-items:center;justify-content:center;

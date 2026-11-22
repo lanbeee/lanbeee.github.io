@@ -234,8 +234,8 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .settings-sheet{
 .weather-rule{display:grid;grid-template-columns:minmax(0,1fr) minmax(62px,.6fr) minmax(104px,.9fr) 32px;gap:6px;align-items:end;padding-top:7px;border-top:0.5px solid var(--border);}
 .weather-rule>label{display:flex;flex-direction:column;gap:3px;color:var(--text3);font-size:10px;font-weight:700;}
 .weather-rule input[type="number"]{width:100%;min-width:0;height:36px;padding:0 7px;border:0.5px solid var(--border);border-radius:9px;background:var(--bg2);color:var(--text);font:inherit;font-size:12px;font-weight:400;}
-/* A range placeholder ("0–100") must read as a hint, not as an entered value. */
-.weather-rule input[type="number"]::placeholder{color:var(--text3);opacity:0.75;font-weight:500;}
+/* Use secondary text at full opacity to retain contrast on the recessed fill. */
+.weather-rule input[type="number"]::placeholder{color:var(--text2);opacity:1;font-weight:500;}
 .weather-rule .settings-select{height:36px;min-width:0;margin:0;padding:0 7px;font-size:11px;}
 .weather-rule [data-weather-rule-metric]{grid-column:1/3;}
 .weather-rule .weather-bound-mode{grid-column:3;}
@@ -430,9 +430,17 @@ button.setting-toggle{
 .settings-danger{
   background:transparent;border-style:dashed;
 }
-.danger-soft{
-  background:var(--bg);border-color:var(--border);color:var(--red-text);
+/* Destructive actions: red text plus a red-tinted edge so the danger reads
+   beyond text hue alone — in dark mode pale-red text alone read as neutral.
+   The paired class outranks the later generic .btn sweeps (background, color,
+   border) without needing !important. */
+.btn.danger-soft{
+  background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red-icon) 45%,var(--border));color:var(--red-text);
 }
+@media (hover:hover){
+  .btn.danger-soft:hover{background:color-mix(in srgb,var(--red-bg) 90%,var(--red-icon));}
+}
+.btn.danger-soft:active{background:color-mix(in srgb,var(--red-bg) 78%,var(--red-icon));}
 .reset-confirm{
   margin-top:10px;padding:10px;border-radius:var(--radius-sm);
   background:var(--bg);border:0.5px solid var(--border);

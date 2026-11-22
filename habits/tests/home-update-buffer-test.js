@@ -3,11 +3,15 @@ const {chromium,BASE,baseHabit,plannerSettings} = require('./helpers/planner-tes
 
 (async()=>{
   const browser = await chromium.launch({headless:true});
+  const now = new Date(2026,10,17,10).getTime();
   try{
     for(const layout of ['mobile','desktop']){
     const page = await browser.newPage(layout === 'mobile'
       ? {viewport:{width:390,height:844},isMobile:true,hasTouch:true}
       : {viewport:{width:1280,height:900}});
+    // A minute rollover supersedes the mocked planner result with a new
+    // request. Pin wall time while leaving the buffer and animation timers real.
+    await page.clock.setFixedTime(now);
     const settle = ()=>page.evaluate(async()=>Promise.race([
       waitForHomeAgendaRender(),
       new Promise((_,reject)=>setTimeout(()=>reject(new Error(JSON.stringify({
@@ -25,7 +29,6 @@ const {chromium,BASE,baseHabit,plannerSettings} = require('./helpers/planner-tes
     });
     await page.goto(BASE,{waitUntil:'load'});
     await settle();
-    const now = Date.now();
     await page.evaluate(({habits,settings})=>{
       cancelHomeAgendaRefinement('buffer test');
       sortSettings = settings;

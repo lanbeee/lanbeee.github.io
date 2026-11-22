@@ -92,8 +92,8 @@
 .free-day-open.tone-open{color:var(--teal-text);}
 .free-day-open.tone-mid{color:var(--text2);}
 .free-day-open.tone-tight{color:var(--amber-text);}
-.free-day-chip.on{background:var(--text);color:var(--bg);}
-.free-day-chip.on b,.free-day-chip.on .free-day-open,.free-day-chip.on .free-day-wx{color:var(--bg);}
+.free-day-chip.on{background:var(--teal-bg);color:var(--teal-text);}
+.free-day-chip.on b,.free-day-chip.on .free-day-open,.free-day-chip.on .free-day-wx{color:var(--teal-text);}
 .free-day-chip:active{transform:scale(.97);}
 .free-time-sheet{max-height:min(92dvh,820px);overflow-y:auto;overscroll-behavior:contain;}
 .free-weather-context{display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:15px;background:var(--bg2);}
@@ -105,7 +105,7 @@
 .free-weather-picker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;}
 .free-weather-picker button{min-width:0;height:30px;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 4px;border:0;border-radius:9px;background:var(--bg3);color:var(--text2);font:inherit;font-size:9px;font-weight:700;cursor:pointer;}
 .free-weather-picker button i{font-size:12px;}
-.free-weather-picker button[aria-pressed="true"]{background:var(--text);color:var(--bg);}
+.free-weather-picker button[aria-pressed="true"]{background:var(--teal-bg);color:var(--teal-text);}
 .free-weather-picker button:disabled{opacity:.38;cursor:default;}
 .free-weather-charts{display:flex;flex-direction:column;gap:5px;}
 .free-weather-chart{min-width:0;margin:0;padding:6px 7px 4px;border-radius:11px;background:var(--bg);overflow:hidden;}

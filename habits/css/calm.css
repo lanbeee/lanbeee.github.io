@@ -121,17 +121,13 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail .detail-bottom
 .detail-search-field input:focus,.detail-search-field input:focus-visible{
   outline:none;outline-offset:0;box-shadow:none;
 }
+/* Focus visibility follows the control, regardless of the primary pointer. */
+button:focus-visible,[role="button"]:focus-visible,
+input:focus-visible,select:focus-visible,textarea:focus-visible,
+[contenteditable]:focus-visible{
+  outline:2px solid var(--teal-icon);outline-offset:3px;
+}
 @media (hover:hover) and (pointer:fine){
-  /* Keyboard-only: a 3px offset ring on tap reads as a highlight and clips
-     inside overflow chrome (search in the bottom nav). */
-  button:focus-visible,[role="button"]:focus-visible,
-  input:focus-visible,select:focus-visible,textarea:focus-visible{
-    outline:2px solid var(--teal-icon);outline-offset:3px;
-  }
-  .app-bar-search input:focus-visible,.nav-search input:focus-visible,
-  .detail-search-field input:focus-visible{
-    outline:none;outline-offset:0;
-  }
   .ting-card:hover{background:color-mix(in srgb,var(--teal-bg) 18%,var(--bg));}
   .icon-btn:hover{background:var(--bg3);}
   .bottom-nav .nav-add:hover{background:var(--teal-bg);box-shadow:var(--accent-glow);}
@@ -233,6 +229,13 @@ body[data-pane-count="2"] .app,body[data-pane-count="3"] .app{
 .native-reminder-more > summary:focus-visible{outline:2px solid var(--text);outline-offset:2px;border-radius:4px;}
 .native-reminder-more .native-reminder-row{margin-top:12px;}
 .detail-sheet .detail-page{box-shadow:none;}
+/* The optional local-assistant download is quiet on the item Summary page —
+   a filled primary button there outranked every item setting. The assistant
+   sheet's own panel keeps its filled primary CTA. */
+#detail-summary-setup .btn.primary{
+  background:var(--teal-bg);color:var(--teal-text);border-color:transparent;
+  box-shadow:none;
+}
 .detail-sheet .detail-page-tab.on{background:var(--teal-bg);color:var(--teal-text);box-shadow:none;}
 .detail-sheet :is(.detail-schedule-flexibility,.schedule-order-block){margin-top:20px;}
 /* Flat controls: the switch track is the control, without a browser button frame. */

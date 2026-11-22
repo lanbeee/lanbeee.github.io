@@ -71,7 +71,7 @@
     color-scheme:dark;
     --bg:#242424; --bg2:#171717; --bg3:#373737;
     --tick-ink:#000;
-    --text:#ededed; --text2:#c4c4c4; --text3:#a1a1a1;
+    --text:#ededed; --text2:#c4c4c4; --text3:#a6a6a6;
     --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
     --teal-bg:#3d3f3a; --teal-icon:#c8cbc1; --teal-text:#e6e8e0;
     --amber-bg:#633806; --amber-icon:#EF9F27; --amber-text:#FAC775;
@@ -87,6 +87,9 @@
     --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
     --field-bg:#323232;
     --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
+    /* Dark glass needs a firmer fill than light glass: at 78% the floating
+       nav read as loose circles over the dark page instead of one pill. */
+    --glass-bg:color-mix(in srgb,var(--bg) 90%,transparent);
   }
   :root:not([data-theme="light"]) .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
   :root:not([data-theme="light"]) .cal-day{background:#242426;}
@@ -105,7 +108,7 @@
   color-scheme:dark;
   --bg:#242424; --bg2:#171717; --bg3:#373737;
   --tick-ink:#000;
-  --text:#ededed; --text2:#c4c4c4; --text3:#a1a1a1;
+  --text:#ededed; --text2:#c4c4c4; --text3:#a6a6a6;
   --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
   --teal-bg:#3d3f3a; --teal-icon:#c8cbc1; --teal-text:#e6e8e0;
   --amber-bg:#633806; --amber-icon:#EF9F27; --amber-text:#FAC775;
@@ -121,6 +124,8 @@
   --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
   --field-bg:#323232;
   --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
+  /* Same firmer dark glass as the system-dark block above. */
+  --glass-bg:color-mix(in srgb,var(--bg) 90%,transparent);
 }
 :root[data-theme="dark"] .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
 :root[data-theme="dark"] .cal-day{background:#242426;}

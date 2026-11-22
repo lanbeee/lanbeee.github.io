@@ -1177,6 +1177,7 @@ function attachFreeTimeIndicator(header,day){
   pill.type = 'button';
   pill.className = 'free-pill';
   pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
+  pill.setAttribute('aria-label',`${pill.textContent}, view open time`);
   bindDayHeaderPill(pill,()=>openFreeTimeForDay(dateKey(day.dayBase)));
   dayHeaderContextHost(header)?.appendChild(pill);
 }
