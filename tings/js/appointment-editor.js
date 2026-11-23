@@ -152,7 +152,7 @@ function renderLocalAppointmentDetail(h){
     <label class="planning-field" id="detail-appt-occurrence-row" hidden>date<input type="date" id="detail-appt-occurrence" class="plan-date-input" value="${nextAppointmentDate(h)}"></label>
     <div id="detail-appt-rule">${appointmentFields('detail-appt',h.appointment)}</div>
     <label class="planning-field">how long <span><input type="number" id="detail-appt-duration" class="mini-time-input" min="1" max="720" required value="${h.durationMinutes}"> min</span></label>
-    <label class="planning-field" id="detail-appt-place-row"><span>place <small>(optional)</small></span><select id="detail-appt-place" class="settings-select"><option value="">no place</option>${(sortSettings.locations || []).map(loc=>`<option value="${escapeHtml(loc.id)}"${h.locationIds.includes(loc.id)?' selected':''}>${escapeHtml(loc.name)}</option>`).join('')}</select></label>
+    <label class="planning-field" id="detail-appt-place-row"><span>place <small>(optional)</small></span><span class="appt-place-control"><select id="detail-appt-place" class="settings-select"><option value="">no place</option>${(typeof selectableLocationsForDisplay === 'function' ? selectableLocationsForDisplay(sortSettings.locations, h.locationIds) : (sortSettings.locations || [])).map(loc=>`<option value="${escapeHtml(loc.id)}"${h.locationIds.includes(loc.id)?' selected':''}>${escapeHtml(loc.name)}${loc.temporary ? ' (one-off)' : ''}</option>`).join('')}</select><button type="button" class="mini-text-btn" id="detail-appt-add-place" title="add a new or one-off place">+ place</button></span></label>
     <p class="field-hint" id="detail-appt-help"></p>
     <div id="detail-appt-date-actions" class="add-presets" hidden><button type="button" id="detail-appt-skip">cancel this date</button><button type="button" id="detail-appt-reset">use the usual time and icon</button></div>
     ${eventHelpHtml('detail-event-help')}`;
@@ -188,6 +188,25 @@ function renderLocalAppointmentDetail(h){
     }
   };
   $('detail-appt-scope').addEventListener('change',paint);$('detail-appt-occurrence').addEventListener('change',paint);
+  $('detail-appt-add-place')?.addEventListener('click',()=>{
+    if(typeof openLocationPicker !== 'function')return;
+    openLocationPicker({
+      allowTemporary:true,
+      temporary:true,
+      onCreated:id=>{
+        const sel = $('detail-appt-place');
+        if(!sel)return;
+        const list = typeof selectableLocationsForDisplay === 'function'
+          ? selectableLocationsForDisplay(sortSettings.locations, [id, ...(h.locationIds || [])])
+          : (sortSettings.locations || []);
+        sel.innerHTML = '<option value="">no place</option>' + list.map(loc=>
+          `<option value="${escapeHtml(loc.id)}"${loc.id === id ? ' selected' : ''}>${escapeHtml(loc.name)}${loc.temporary ? ' (one-off)' : ''}</option>`
+        ).join('');
+        sel.value = id;
+        setDetailDirty(true);
+      }
+    });
+  });
   host.addEventListener('input',()=>setDetailDirty(true));host.addEventListener('change',()=>setDetailDirty(true));
   const changeException=reset=>{
     const key=$('detail-appt-occurrence').value;

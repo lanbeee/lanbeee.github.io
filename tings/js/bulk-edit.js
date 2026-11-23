@@ -282,7 +282,7 @@ function bulkEnsurePending(opDesc){
 
 function bulkDefaultValue(opDesc,op,records){
   switch(opDesc.valueKind){
-    case 'topics':case 'places':case 'monthdays':case 'ordinal':return [];
+    case 'topics':case 'places':case 'placetypes':case 'monthdays':case 'ordinal':return [];
     case 'number':{
       if(opDesc.id !== 'conditionRadius')return bulkDefaultNumber(opDesc);
       const radii = new Set(records.filter(h=>opDesc.applies(h)).map(opportunityRadius));
@@ -363,8 +363,19 @@ function bulkValueControlHtml(opDesc,pending,data){
         <div class="bulk-topic-add"><input type="text" maxlength="32" placeholder="new topic" aria-label="new topic name" data-bulk-new-topic="${id}" /><button type="button" class="mini-text-btn" data-bulk-add-topic="${id}">add</button></div></div>`;
       }
     case 'places':{
-      const locations = typeof locationOptions === 'function' ? locationOptions() : [];
+      const locations = typeof selectableLocationOptions === 'function' ? selectableLocationOptions(value || []) : (typeof locationOptions === 'function' ? locationOptions() : []);
       return `<div class="topic-chip-row" data-bulk-kind="places" data-bulk-field="${id}">${bulkChipRow(id,locations.map(loc=>[loc.id,loc.name]),value,'data-bulk-value')}</div>`;
+      }
+    case 'placetypes':{
+      const cats = typeof locationCategoryChoices === 'function'
+        ? locationCategoryChoices((sortSettings || {}).locations || [], value || []) : [];
+      const fallback = [
+        {key:'env:indoor',label:'Any indoor',emoji:'🏠'},
+        {key:'env:outdoor',label:'Any outdoor',emoji:'🌤️'},
+        ...(typeof PLACE_TYPE_GROUPS !== 'undefined' ? PLACE_TYPE_GROUPS.map(g=>({key:g.key,label:`Any ${g.label.toLowerCase()}`,emoji:g.emoji})) : [])
+      ];
+      const list = cats.length ? cats : fallback;
+      return `<div class="topic-chip-row" data-bulk-kind="placetypes" data-bulk-field="${id}">${bulkChipRow(id,list.map(c=>[c.key,`${c.emoji} ${c.label}`]),value,'data-bulk-value')}</div>`;
       }
     case 'date':
       return `<input type="date" class="plan-date-input" data-bulk-field="${id}" data-bulk-kind="date" value="${escapeHtml(String(value || ''))}" />`;
@@ -406,11 +417,11 @@ function bulkValueControlHtml(opDesc,pending,data){
       </select>`;
       }
     case 'place':{
-      const locations = typeof locationOptions === 'function' ? locationOptions() : [];
+      const locations = typeof selectableLocationOptions === 'function' ? selectableLocationOptions(value ? [value] : []) : (typeof locationOptions === 'function' ? locationOptions() : []);
       return `<select class="mini-select" data-bulk-field="${id}" data-bulk-kind="place"><option value="">pick a place</option>${locations.map(loc=>`<option value="${escapeHtml(loc.id)}"${value === loc.id ? ' selected' : ''}>${escapeHtml(loc.name)}</option>`).join('')}</select>`;
       }
     case 'placepref':{
-      const locations = typeof locationOptions === 'function' ? locationOptions() : [];
+      const locations = typeof selectableLocationOptions === 'function' ? selectableLocationOptions(value && value.locationId ? [value.locationId] : []) : (typeof locationOptions === 'function' ? locationOptions() : []);
       return `<div class="bulk-window" data-bulk-kind="placepref" data-bulk-field="${id}">
         <select class="mini-select" aria-label="place" data-bulk-pref-part="locationId"><option value="">pick a place</option>${locations.map(loc=>`<option value="${escapeHtml(loc.id)}"${value && value.locationId === loc.id ? ' selected' : ''}>${escapeHtml(loc.name)}</option>`).join('')}</select>
         <select class="mini-select" aria-label="preference" data-bulk-pref-part="level"><option value="high"${value && value.level === 'high' ? ' selected' : ''}>prefer</option><option value="little"${value && value.level === 'little' ? ' selected' : ''}>slightly prefer</option><option value="avoid"${value && value.level === 'avoid' ? ' selected' : ''}>avoid</option></select>
@@ -613,6 +624,7 @@ function bulkReadControlValue(opDesc,host){
     case 'topics':
       return [...host.querySelectorAll(`[data-bulk-chip="${opDesc.id}"][aria-pressed="true"]`)].map(el=>el.dataset.bulkValue);
     case 'places':
+    case 'placetypes':
       return [...host.querySelectorAll(`[data-bulk-chip="${opDesc.id}"][aria-pressed="true"]`)].map(el=>el.dataset.bulkValue);
     case 'date':
       return host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="date"]`)?.value || '';

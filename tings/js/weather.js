@@ -465,7 +465,9 @@ function weatherCoordsForLocation(locationId,settings){
 
 function weatherDisplayLocationId(h,row){
   if(!h || !h.showWeatherAtLocation)return null;
-  return (row && row.locationId) || (Array.isArray(h.locationIds) && h.locationIds[0]) || null;
+  if(row && row.locationId)return row.locationId;
+  const ids = typeof habitResolvedLocationIds === 'function' ? habitResolvedLocationIds(h) : (Array.isArray(h.locationIds) ? h.locationIds : []);
+  return ids[0] || null;
 }
 
 function weatherCoordsForHabit(h,settings){
@@ -938,7 +940,10 @@ function weatherHabitHasActiveGuidance(h,settings){
   };
   addLoc(null);
   if(h.weatherLocationId)addLoc(h.weatherLocationId);
-  for(const id of h.locationIds || [])addLoc(id);
+  const resolvedIds = typeof habitResolvedLocationIds === 'function'
+    ? habitResolvedLocationIds(h, settings && settings.locations)
+    : (h.locationIds || []);
+  for(const id of resolvedIds)addLoc(id);
   for(const option of h.scheduleOptions || []){
     if(option && option.locationId)addLoc(option.locationId);
   }
@@ -3030,7 +3035,9 @@ function weatherPotentialGuidancesForHabit(h,settings){
     seen.add(key);
     out.push(guidance);
   };
-  const generalIds=normalizeLocationIds(h.locationIds,registry);
+  const generalIds=typeof habitResolvedLocationIds==='function'
+    ? habitResolvedLocationIds(h,registry)
+    : normalizeLocationIds(h.locationIds,registry);
   generalIds.forEach(id=>add(id));
   if(Boolean(h.anywhereAllowed) || !generalIds.length)add(null);
   for(const option of normalizeHabitScheduleOptions(h.scheduleOptions,registry))add(option.locationId,option.id);

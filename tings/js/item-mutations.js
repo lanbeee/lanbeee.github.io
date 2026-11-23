@@ -1234,6 +1234,45 @@ const BULK_FIELD_OPS = [
     }
   },
   {
+    id:'locationTypes',group:'Places and weather',label:'Place types & setting',
+    hint:'Allow any saved place of a type (grocery, gym, cafe…) or setting (indoor, outdoor).',
+    choices:[BULK_KEEP,{key:'add',label:'Add'},{key:'remove',label:'Remove'},{key:'replace',label:'Replace'},{key:'clear',label:'Clear'}],
+    valueless:['clear'],
+    valueKind:'placetypes',
+    applies:h=>!bulkAppointmentOwned(h),
+    blockedReason:()=>'owned by its event schedule',
+    current:h=>{
+      const types = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(h.locationTypes) : [];
+      if(!types.length)return 'none';
+      return types.map(k=>typeof locationTypeKeyLabel === 'function' ? locationTypeKeyLabel(k) : k).join(', ');
+    },
+    plan:(h,op,value)=>{
+      const types = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(value) : [];
+      if((op === 'add' || op === 'remove' || op === 'replace') && !types.length)return {ok:false,error:'pick a place type or setting'};
+      return {ok:true};
+    },
+    apply:(h,op,value)=>{
+      const nextTypes = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(value) : [];
+      const cur = new Set(typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(h.locationTypes) : []);
+      if(op === 'clear')cur.clear();
+      else if(op === 'replace'){ cur.clear(); nextTypes.forEach(t=>cur.add(t)); }
+      else if(op === 'add')nextTypes.forEach(t=>cur.add(t));
+      else if(op === 'remove')nextTypes.forEach(t=>cur.delete(t));
+      h.locationTypes = [...cur];
+      if(h.locationTypes.length && h.anywhereAllowed && op === 'replace')h.anywhereAllowed = false;
+      if(!h.locationTypes.length && !(h.locationIds && h.locationIds.length))h.anywhereAllowed = true;
+      return ['locationTypes','anywhereAllowed'];
+    },
+    changeLabel:(h,op,value)=>{
+      const names = (typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(value) : [])
+        .map(k=>typeof locationTypeKeyLabel === 'function' ? locationTypeKeyLabel(k) : k).join(', ');
+      if(op === 'clear')return 'Clear place types';
+      if(op === 'add')return `Add place type ${names}`;
+      if(op === 'remove')return `Remove place type ${names}`;
+      return `Place types → ${names}`;
+    }
+  },
+  {
     id:'placePref',group:'Places and weather',label:'Place preference',
     hint:'How much the planner should prefer one of the item’s places.',
     choices:[BULK_KEEP,{key:'set',label:'Set'}],

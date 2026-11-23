@@ -176,7 +176,9 @@ input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
 .range-value input:is([type="text"],[type="number"]){font-size:max(16px,calc(16px * var(--font-scale)));height:26px;line-height:26px;}
 .timer-auto-stop-field input[type="text"]{flex:0 0 4ch;width:4ch;min-width:4ch;}
-.timer-auto-stop-label{white-space:normal;min-width:0;flex:1;}
+/* The label stays one line; if the row is too narrow the whole pill wraps to
+   the next flex line (.timer-row wraps) instead of breaking the words apart. */
+.timer-auto-stop-label{white-space:nowrap;min-width:0;}
 .snooze-hours-field input[type="number"]{min-height:44px;padding:8px 0;line-height:24px;}
 #settings-defaults-body .settings-range input[type="number"]{font-size:max(16px,calc(16px * var(--font-scale)));}
 .time-endpoint input.mini-time-input{font-size:max(16px,calc(16px * var(--font-scale)));}
@@ -193,15 +195,19 @@ input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0
 input:is([type="number"],[inputmode="numeric"],[inputmode="decimal"])::selection{
   background:var(--text);color:var(--bg);
 }
+/* Phone rule editor: two controls per row max, paired by meaning — bounds
+   together, limit mode with its hard qualifier, preference with priority.
+   The old all-stacked layout made one rule taller than a phone viewport. */
 @media(max-width:520px){
-  .weather-rule{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px;}
-  .weather-rule .weather-bound-mode{grid-column:1/3;grid-row:2;}
-  .weather-rule .weather-min{grid-column:1;grid-row:3;}
-  .weather-rule .weather-max{grid-column:2;grid-row:3;}
-  .weather-rule [data-weather-rule-relative]{grid-column:1/3;grid-row:4;}
-  .weather-rule .weather-importance{grid-column:1/3;grid-row:5;}
-  .weather-rule .weather-hard{grid-column:3;grid-row:5;}
+  .weather-rule{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 36px;}
+  .weather-rule [data-weather-rule-metric]{grid-column:1/3;}
   .weather-rule .mini-nav{grid-column:3;grid-row:1;}
+  .weather-rule .weather-min{grid-column:1;grid-row:2;}
+  .weather-rule .weather-max{grid-column:2;grid-row:2;}
+  .weather-rule .weather-bound-mode{grid-column:1;grid-row:3;}
+  .weather-rule .weather-hard{grid-column:2;grid-row:3;justify-self:stretch;justify-content:center;}
+  .weather-rule [data-weather-rule-relative]{grid-column:1;grid-row:4;}
+  .weather-rule .weather-importance{grid-column:2;grid-row:4;min-width:0;}
 }
 
 /* ── Glass fallbacks ──────────────────────────────────────────────────────── */

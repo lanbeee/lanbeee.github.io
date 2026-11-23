@@ -877,7 +877,7 @@
             <button class="habit-action" id="detail-duplicate" type="button"><i class="ti ti-copy" aria-hidden="true"></i><span><b>duplicate</b><small>Opens a copy to edit</small></span></button>
             <button class="habit-action danger" id="detail-delete" type="button">
               <i class="ti ti-trash" aria-hidden="true"></i>
-              <span><b>remove</b><small>Undo appears after</small></span>
+              <span><b>remove</b><small>Undo appears for a few seconds</small></span>
             </button>
             <div class="reset-confirm" id="detail-delete-confirm" hidden>
               <p id="detail-delete-question">Remove this habit?</p>
@@ -1309,8 +1309,15 @@
           </button>
           <div class="settings-collapse-body" id="settings-blocked-body" hidden>
             <p class="field-hint">Reserve regular time for sleep, meals, work, or travel.</p>
-            <div class="blocked-time-list" id="blocked-time-list"></div>
-            <button class="btn" id="blocked-time-add" type="button">add busy time</button>
+            <div class="settings-manager-card">
+              <div class="settings-manager-card-top">
+                <div class="settings-manager-card-meta">
+                  <span class="settings-manager-card-count" id="busy-times-summary" aria-live="polite">No busy times</span>
+                  <div class="settings-manager-preview" id="busy-times-preview"></div>
+                </div>
+                <button class="btn primary" id="open-busy-manager" type="button"><i class="ti ti-calendar-time" aria-hidden="true"></i> manage busy times</button>
+              </div>
+            </div>
           </div>
         </section>
         <section class="settings-block settings-collapsible settings-full-only">
@@ -1322,12 +1329,19 @@
             <span data-ui-leave="weather"></span>
           </div>
           <div class="settings-collapse-body" id="settings-weather-body" hidden>
-            <p class="field-hint">Save weather profiles, then choose one on a habit or place.</p>
-            <div data-settings-help-title="weather profiles" data-settings-help-id="settings-weather-help"><p class="field-hint">Save up to eight kinds of weather, such as dry or mild, then choose one on a habit. Rules combine into one 0–100 score. Set each rule's relative priority to low, medium, or high. Prefer lower/higher is ranked against the actual seven-day forecast for that place, so the baseline changes with the week and season. Limits can use fixed values or 0–100 forecast percentiles; hard rejects flexible times outside them. Each rule shows its metric's scale in your display unit (°F/°C, in/mm, mph/km/h — see the unit settings below); a rule with no preference and no bounds stays inactive until you set one.</p></div>
-            <div id="weather-profile-list" class="weather-profile-list"></div>
-            <div class="btn-row weather-actions">
-              <button class="btn" id="weather-profile-add" type="button">add profile</button>
-              <button class="btn" id="weather-refresh" type="button">refresh forecast</button>
+            <p class="field-hint">Save up to 10 weather profiles, then choose one on a habit or place.</p>
+            <div data-settings-help-title="weather profiles" data-settings-help-id="settings-weather-help"><p class="field-hint">Save up to ten kinds of weather, such as dry or mild, then choose one on a habit. Rules combine into one 0–100 score. Set each rule's relative priority to low, medium, or high. Prefer lower/higher is ranked against the actual seven-day forecast for that place, so the baseline changes with the week and season. Limits can use fixed values or 0–100 forecast percentiles; hard rejects flexible times outside them. Each rule shows its metric's scale in your display unit (°F/°C, in/mm, mph/km/h — see the unit settings below); a rule with no preference and no bounds stays inactive until you set one.</p></div>
+            <div class="settings-manager-card" id="weather-settings-summary-card">
+              <div class="settings-manager-card-top">
+                <div class="settings-manager-card-meta">
+                  <span class="settings-manager-card-count" id="weather-profiles-summary">No weather profiles yet</span>
+                  <div class="settings-manager-preview" id="weather-profiles-preview"></div>
+                </div>
+                <button class="btn primary" id="open-weather-manager" type="button"><i class="ti ti-cloud-sun" aria-hidden="true"></i> manage profiles</button>
+              </div>
+              <div class="btn-row weather-actions">
+                <button class="btn" id="weather-refresh" type="button">refresh forecast</button>
+              </div>
             </div>
             <p class="field-hint" id="weather-status" aria-live="polite"></p>
             <details class="settings-disclosure" id="weather-display-options">
@@ -1415,13 +1429,19 @@
             <span data-ui-leave="geocode"></span>
           </div>
           <div class="settings-collapse-body" id="settings-locations-body" hidden>
-            <p class="field-hint">Save places to use on your habits and tasks.</p>
-            <div class="location-add-actions">
-              <button class="btn primary" id="loc-open-picker" type="button"><i class="ti ti-map-pin-plus" aria-hidden="true"></i> add place</button>
-              <span class="field-hint" id="location-list-summary" aria-live="polite"></span>
+            <p class="field-hint">Save places, categorize them by type and indoor/outdoor setting, and use them on habits and tasks.</p>
+            <div class="settings-manager-card" id="location-settings-summary-card">
+              <div class="settings-manager-card-top">
+                <div class="settings-manager-card-meta">
+                  <span class="settings-manager-card-count" id="location-list-summary" aria-live="polite">No saved places</span>
+                  <div class="settings-manager-preview" id="location-settings-preview"></div>
+                </div>
+                <button class="btn primary" id="open-locations-manager" type="button"><i class="ti ti-map-pins" aria-hidden="true"></i> manage places</button>
+              </div>
+              <div class="location-add-actions">
+                <button class="btn" id="loc-open-picker" type="button"><i class="ti ti-map-pin-plus" aria-hidden="true"></i> add place</button>
+              </div>
             </div>
-            <div class="location-list" id="location-list"></div>
-            <p class="field-hint location-empty-hint" id="location-empty-hint" hidden>No places yet. Habits without a place can be done anywhere.</p>
             <div class="location-support-settings">
             <div class="location-access-row" id="location-access-row">
               <div>
@@ -2075,6 +2095,25 @@
           </div>
           <label class="field-label" for="picker-name">place name</label>
           <input type="text" id="picker-name" maxlength="48" placeholder="e.g. Gym" autocomplete="off" />
+          <label class="picker-temp-row" id="picker-temp-row" hidden>
+            <input type="checkbox" id="picker-temporary" />
+            <span><strong>One-off place</strong><small>Only for this item — won’t show in place lists for other items.</small></span>
+          </label>
+          <div class="picker-categorize-row">
+            <label class="picker-cat-field">
+              <span class="field-label">type</span>
+              <select id="picker-place-type" class="settings-select" aria-label="place type"></select>
+            </label>
+            <div class="picker-cat-field">
+              <span class="field-label" id="picker-env-label">setting</span>
+              <div class="seg compact-seg picker-env-seg" id="picker-env-seg" role="group" aria-labelledby="picker-env-label">
+                <button type="button" class="seg-opt on" data-picker-env="" aria-pressed="true">Auto</button>
+                <button type="button" class="seg-opt" data-picker-env="indoor" aria-pressed="false">Indoor</button>
+                <button type="button" class="seg-opt" data-picker-env="outdoor" aria-pressed="false">Outdoor</button>
+                <button type="button" class="seg-opt" data-picker-env="both" aria-pressed="false">Both</button>
+              </div>
+            </div>
+          </div>
           <div class="picker-place-facts" id="picker-place-facts" hidden></div>
           <p class="picker-selected-address" id="picker-address-hint" aria-live="polite"></p>
           <details class="picker-coords-details">
@@ -2090,6 +2129,174 @@
       <div class="btn-row location-picker-actions">
         <button class="btn primary" type="button" id="picker-save">add place</button>
         <button class="btn" type="button" id="picker-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- full-page Busy Times manager; the existing recurring editors keep their contracts -->
+  <div class="sheet-wrap" id="busy-manager-sheet" inert>
+    <div class="sheet manager-sheet busy-manager-sheet" role="dialog" aria-modal="true" aria-labelledby="busy-manager-title">
+      <div class="manager-head">
+        <button class="icon-btn" type="button" id="busy-manager-close" aria-label="close busy times"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+        <div class="manager-head-copy">
+          <p class="sheet-title" id="busy-manager-title">Busy times</p>
+          <span class="manager-head-sub" id="busy-manager-count" aria-live="polite"></span>
+        </div>
+        <button class="btn manager-select-btn" type="button" id="busy-bulk-toggle" aria-pressed="false">select</button>
+        <button class="btn primary manager-add-btn" type="button" id="blocked-time-add" aria-label="add busy time"><i class="ti ti-plus" aria-hidden="true"></i><span>add</span></button>
+      </div>
+      <div class="manager-toolbar">
+        <div class="manager-search-row">
+          <i class="ti ti-search" aria-hidden="true"></i>
+          <input type="search" id="busy-manager-search" placeholder="Search busy times" aria-label="search busy times or places" autocomplete="off" enterkeyhint="search" />
+          <button type="button" class="icon-btn manager-search-clear" id="busy-manager-search-clear" aria-label="clear busy time search" hidden><i class="ti ti-x" aria-hidden="true"></i></button>
+        </div>
+        <select id="busy-manager-sort" class="settings-select manager-sort-select" aria-label="sort busy times">
+          <option value="saved">Saved order</option>
+          <option value="name">A–Z</option>
+          <option value="start">Start time today</option>
+        </select>
+      </div>
+      <div class="manager-filters" id="busy-manager-filters" role="group" aria-label="filter busy times"></div>
+      <div class="manager-body" id="busy-manager-body">
+        <p class="field-hint">Recurring reservations for sleep, work, meals, and travel. Changes save automatically. To change just one date, open its busy-time card on Home.</p>
+        <div class="blocked-time-list" id="blocked-time-list"></div>
+        <p class="field-hint" id="busy-manager-empty" hidden></p>
+      </div>
+      <div class="manager-bulk-bar" id="busy-bulk-bar" hidden>
+        <div class="manager-bulk-top">
+          <span class="manager-bulk-count" id="busy-bulk-count" aria-live="polite">0 selected</span>
+          <div class="manager-bulk-top-actions">
+            <button class="mini-text-btn" type="button" id="busy-bulk-all">select all</button>
+            <button class="mini-text-btn" type="button" id="busy-bulk-clear">clear</button>
+          </div>
+        </div>
+        <div class="manager-bulk-controls">
+          <select id="busy-bulk-action" class="settings-select" aria-label="bulk edit busy times">
+            <option value="place">Set place…</option>
+            <option value="duplicate">Duplicate selected</option>
+            <option value="delete">Remove selected</option>
+          </select>
+          <div class="manager-bulk-value" id="busy-bulk-value"></div>
+          <button class="btn primary" type="button" id="busy-bulk-apply">apply</button>
+        </div>
+        <p class="field-hint" id="busy-bulk-hint">Changes apply to the selected recurring busy times.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- full-page Places manager -->
+  <div class="sheet-wrap" id="locations-manager-sheet" inert>
+    <div class="sheet manager-sheet locations-manager-sheet" role="dialog" aria-modal="true" aria-labelledby="locations-manager-title">
+      <div class="manager-head">
+        <button class="icon-btn" type="button" id="locations-manager-close" aria-label="close places manager"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+        <div class="manager-head-copy">
+          <p class="sheet-title" id="locations-manager-title">Places</p>
+          <span class="manager-head-sub" id="locations-manager-count" aria-live="polite">0 places</span>
+        </div>
+        <button class="btn manager-select-btn" type="button" id="locations-bulk-toggle" aria-pressed="false">select</button>
+        <button class="btn primary manager-add-btn" type="button" id="locations-manager-add"><i class="ti ti-plus" aria-hidden="true"></i><span>add</span></button>
+      </div>
+      <div class="manager-toolbar">
+        <div class="manager-search-row">
+          <i class="ti ti-search" aria-hidden="true"></i>
+          <input type="search" id="locations-manager-search" placeholder="Search places" aria-label="search places" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+          <button type="button" class="icon-btn manager-search-clear" id="locations-manager-search-clear" aria-label="clear place search" hidden><i class="ti ti-x" aria-hidden="true"></i></button>
+        </div>
+        <select id="locations-manager-sort" class="settings-select manager-sort-select" aria-label="sort places">
+          <option value="name">A–Z</option>
+          <option value="used">Most used</option>
+          <option value="type">By type</option>
+          <option value="env">Indoor / Outdoor</option>
+          <option value="nearest">Nearest</option>
+        </select>
+      </div>
+      <div class="manager-filters" id="locations-manager-filters" role="group" aria-label="filter places"></div>
+      <div class="manager-cleanup-bar" id="locations-temp-cleanup-bar" hidden>
+        <span id="locations-temp-cleanup-text"></span>
+        <button class="mini-text-btn" type="button" id="locations-temp-cleanup-btn">clean up</button>
+      </div>
+      <div class="manager-body" id="locations-manager-body">
+        <div class="location-list" id="location-list"></div>
+        <p class="field-hint location-empty-hint" id="location-empty-hint" hidden>No places yet. Add a place to plan travel, hours, and weather — habits without a place can be done anywhere.</p>
+      </div>
+      <div class="manager-bulk-bar" id="locations-bulk-bar" hidden>
+        <div class="manager-bulk-top">
+          <span class="manager-bulk-count" id="locations-bulk-count">0 selected</span>
+          <div class="manager-bulk-top-actions">
+            <button class="mini-text-btn" type="button" id="locations-bulk-all">select all</button>
+            <button class="mini-text-btn" type="button" id="locations-bulk-clear">clear</button>
+          </div>
+        </div>
+        <div class="manager-bulk-controls">
+          <select id="locations-bulk-action" class="settings-select" aria-label="bulk edit action">
+            <option value="type">Set place type…</option>
+            <option value="env">Set indoor / outdoor…</option>
+            <option value="weather">Set weather profile…</option>
+            <option value="hours">Set hours…</option>
+            <option value="radius">Set nearby radius…</option>
+            <option value="save">Make saved places</option>
+            <option value="temp">Make temporary</option>
+            <option value="delete">Remove · keeps in-use</option>
+          </select>
+          <div class="manager-bulk-value" id="locations-bulk-value"></div>
+          <button class="btn primary" type="button" id="locations-bulk-apply">apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- full-page Weather Profiles manager -->
+  <div class="sheet-wrap" id="weather-manager-sheet" inert>
+    <div class="sheet manager-sheet weather-manager-sheet" role="dialog" aria-modal="true" aria-labelledby="weather-manager-title">
+      <div class="manager-head">
+        <button class="icon-btn" type="button" id="weather-manager-close" aria-label="close weather profiles"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+        <div class="manager-head-copy">
+          <p class="sheet-title" id="weather-manager-title">Weather Profiles</p>
+          <span class="manager-head-sub" id="weather-manager-count" aria-live="polite">0 / 10 profiles</span>
+        </div>
+        <button class="btn manager-select-btn" type="button" id="weather-bulk-toggle" aria-pressed="false">select</button>
+        <button class="btn primary manager-add-btn" type="button" id="weather-profile-add"><i class="ti ti-plus" aria-hidden="true"></i><span>add profile</span></button>
+      </div>
+      <div class="manager-toolbar">
+        <div class="manager-search-row">
+          <i class="ti ti-search" aria-hidden="true"></i>
+          <input type="search" id="weather-manager-search" placeholder="Search profiles or rules" aria-label="search weather profiles" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+          <button type="button" class="icon-btn manager-search-clear" id="weather-manager-search-clear" aria-label="clear weather search" hidden><i class="ti ti-x" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div class="manager-filters" id="weather-manager-filters" role="group" aria-label="filter weather profiles"></div>
+      <div class="weather-templates-bar" id="weather-templates-bar">
+        <span class="weather-templates-label">Quick start</span>
+        <div class="weather-templates-chips" id="weather-templates-chips"></div>
+      </div>
+      <div class="manager-body" id="weather-manager-body">
+        <div id="weather-profile-list" class="weather-profile-list"></div>
+        <p class="field-hint weather-empty-hint" id="weather-empty-hint" hidden>No weather profiles yet. Pick a quick start above or tap add profile (up to 10).</p>
+      </div>
+      <div class="manager-bulk-bar" id="weather-bulk-bar" hidden>
+        <div class="manager-bulk-top">
+          <span class="manager-bulk-count" id="weather-bulk-count">0 selected</span>
+          <div class="manager-bulk-top-actions">
+            <button class="mini-text-btn" type="button" id="weather-bulk-all">select all</button>
+            <button class="mini-text-btn" type="button" id="weather-bulk-clear">clear</button>
+          </div>
+        </div>
+        <div class="manager-bulk-controls">
+          <select id="weather-bulk-action" class="settings-select" aria-label="bulk edit weather profiles">
+            <option value="priority">Set rule priority…</option>
+            <option value="hard">Make all limits hard</option>
+            <option value="soft">Make all limits soft</option>
+            <option value="duplicate">Duplicate selected</option>
+            <option value="delete">Remove · keeps in-use</option>
+          </select>
+          <div class="manager-bulk-value" id="weather-bulk-value"></div>
+          <button class="btn primary" type="button" id="weather-bulk-apply">apply</button>
+        </div>
+      </div>
+      <div class="manager-footer" id="weather-manager-footer">
+        <p class="field-hint" id="weather-manager-status" aria-live="polite"></p>
+        <button class="btn" id="weather-manager-refresh" type="button">refresh forecast</button>
       </div>
     </div>
   </div>
@@ -2110,6 +2317,9 @@
         <button class="icon-btn utility-sheet-close" type="button" id="presence-picker-close" aria-label="close current place"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
       <div class="topic-chip-row presence-picker-chips" id="presence-picker-chips"></div>
+      <div class="presence-picker-footer">
+        <button class="mini-text-btn" type="button" id="presence-manage-places"><i class="ti ti-map-pins" aria-hidden="true"></i> manage places</button>
+      </div>
     </div>
   </div>
 

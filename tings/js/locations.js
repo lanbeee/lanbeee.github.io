@@ -1543,8 +1543,10 @@ function renderPresencePickerBody(){
   // The picker can run without a home render in its wake (wide-layout app-bar
   // chip), so keep the bar chrome in step on every body render.
   if(typeof syncAppBarChrome === 'function')syncAppBarChrome();
-  const registry = locationsForDisplay((sortSettings || loadSortSettings()).locations);
   const current = currentLocationId();
+  const registry = typeof selectableLocationsForDisplay === 'function'
+    ? selectableLocationsForDisplay((sortSettings || loadSortSettings()).locations, current ? [current] : [])
+    : locationsForDisplay((sortSettings || loadSortSettings()).locations);
   const presence = locationPresence(registry);
   if(!registry.length){
     wrap.innerHTML = '<p class="field-hint">Add places in settings first.</p>';

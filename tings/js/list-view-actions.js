@@ -1132,6 +1132,18 @@ function executeUndo(){
     }
     return;
   }
+  if(pendingAction.type === 'busy-times'){
+    const action = pendingAction;
+    hideActionToast();
+    if(JSON.stringify(normalizeBlockedTimes(sortSettings.blockedTimes)) !== action.after){
+      showToast('Busy times changed again; undo is no longer available');
+      return;
+    }
+    updateSortSetting({blockedTimes:action.before});
+    renderBlockedTimeControls();
+    showToast('undone');
+    return;
+  }
   const refreshBlockedPresentation = pendingAction.type === 'restore-blocked'
     || pendingAction.type === 'restore-block-adjust';
   const data = load();

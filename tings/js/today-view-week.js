@@ -50,8 +50,10 @@ function opportunityFitMatches(fill,fit,state,settings,originState = state){
     .slice().sort((a,b)=>a.fit.placeStart-b.fit.placeStart);
   const locationTrigger = opportunityTrigger(fill.h) === 'location';
   if(locationTrigger){
-    const triggerPlaces = new Set([...(fill.h.locationIds || []),
-      ...(fill.h.scheduleOptions || []).map(option=>option.locationId).filter(Boolean)]);
+    const triggerPlaces = new Set([
+      ...(typeof habitResolvedLocationIds === 'function' ? habitResolvedLocationIds(fill.h,settings.locations) : (fill.h.locationIds || [])),
+      ...(fill.h.scheduleOptions || []).map(option=>option.locationId).filter(Boolean)
+    ]);
     if(!fit.locId || !triggerPlaces.has(fit.locId))return false;
     const target = (settings.locations || []).find(loc=>loc.id === fit.locId);
     const near = id=>{
@@ -875,9 +877,11 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
     if(days === null || days < 0)continue;
     const rawTarget = typeof rhythmCadenceGapDays === 'function'
       ? rhythmCadenceGapDays(h,0) : (h.target || 7);
-    const myLocs = typeof normalizeLocationIds === 'function'
-      ? normalizeLocationIds(h.locationIds,registry)
-      : (Array.isArray(h.locationIds) ? h.locationIds.filter(Boolean) : []);
+    const myLocs = typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds(h,registry)
+      : (typeof normalizeLocationIds === 'function'
+        ? normalizeLocationIds(h.locationIds,registry)
+        : (Array.isArray(h.locationIds) ? h.locationIds.filter(Boolean) : []));
     if(!myLocs.length)continue; // anywhere-allowed: no fixed cluster anchor
     for(const {dayBase,weekday,seedLocId} of dayMeta){
       if(c.eligible.has(dayBase))continue;
@@ -894,9 +898,11 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
       for(const p of candidates){
         if(p === c || !p.h)continue;
         if(!clusterNativeDueOnDay(p,dayBase,weekday,cfg))continue;
-        const pLocs = typeof normalizeLocationIds === 'function'
-          ? normalizeLocationIds(p.h.locationIds,registry)
-          : (Array.isArray(p.h.locationIds) ? p.h.locationIds.filter(Boolean) : []);
+        const pLocs = typeof habitResolvedLocationIds === 'function'
+          ? habitResolvedLocationIds(p.h,registry)
+          : (typeof normalizeLocationIds === 'function'
+            ? normalizeLocationIds(p.h.locationIds,registry)
+            : (Array.isArray(p.h.locationIds) ? p.h.locationIds.filter(Boolean) : []));
         if(pLocs.length && clusterFlexPairSavesTravel(
           myLocs,pLocs,seedLocId,registry,mode
         ))partnerIds.add(p.i);
@@ -1091,7 +1097,9 @@ function hasPlannedForDay(h,dayBase){
 function daySeedLocationSet(day,settings,registry){
   const set = new Set();
   for(const ev of day.scheduled || []){
-    const ids = normalizeLocationIds(ev.h.locationIds,registry);
+    const ids = typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds(ev.h,registry)
+      : normalizeLocationIds(ev.h.locationIds,registry);
     const locId = primaryPreferredLocationId(ev.h.locationPrefs,ids) || normalizePreferredLocation(ev.h.preferredLocationId,ids) || ids[0];
     if(locId)set.add(locId);
   }
@@ -1106,7 +1114,9 @@ function daySeedLocationSet(day,settings,registry){
 // PURE: soft preference miss costs for week scoring (never veto placement).
 function weekPreferencePenalty(h,fit,day,registry){
   let penalty = 0;
-  const ids = normalizeLocationIds(h.locationIds,registry);
+  const ids = typeof habitResolvedLocationIds === 'function'
+    ? habitResolvedLocationIds(h,registry)
+    : normalizeLocationIds(h.locationIds,registry);
   const pref = primaryPreferredLocationId(h.locationPrefs,ids) || normalizePreferredLocation(h.preferredLocationId,ids);
   const level = fit && fit.schedulePrefLevel !== undefined
     ? fit.schedulePrefLevel
@@ -2680,7 +2690,9 @@ function routeCandidateOrders(state){
   if(items.length < 2)return [chron];
   const locIdFor = (fill,anchor)=>{
     if(fill.locationId)return fill.locationId;
-    const ids = fill.h && fill.h.locationIds;
+    const ids = fill.h && typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds(fill.h,state.registry)
+      : (fill.h && fill.h.locationIds);
     if(Array.isArray(ids) && ids.length === 1)return ids[0];
     if(typeof pickHabitLocationId === 'function'){
       return pickHabitLocationId(fill.h,anchor,state.registry,state.mode,state.dayBase) || anchor;
@@ -3221,9 +3233,12 @@ function candidateOccurrenceFitsOnDay(c,state,dayStates){
     state.fills.some(entry=>entry.fill.h.hid === link.anchorHid)
       || scheduleAnchorCommitForDay(link.anchorHid,state.dayBase));
   if(linked)return true;
-  const myLocs = normalizeLocationIds(h.locationIds,state.registry);
+  const myLocs = typeof habitResolvedLocationIds === 'function'
+    ? habitResolvedLocationIds(h,state.registry)
+    : normalizeLocationIds(h.locationIds,state.registry);
   return state.fills.some(entry=>entry.fill.i !== c.i
-    && clusterFlexPairSavesTravel(myLocs,normalizeLocationIds(entry.fill.h.locationIds,state.registry),
+    && clusterFlexPairSavesTravel(myLocs,
+      typeof habitResolvedLocationIds === 'function' ? habitResolvedLocationIds(entry.fill.h,state.registry) : normalizeLocationIds(entry.fill.h.locationIds,state.registry),
       state.seedLocId,state.registry,state.mode));
 }
 

@@ -213,7 +213,7 @@ function missedPlannerFingerprint(data,settings){
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeFixedStart,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
-    h.allowedWeekdays,h.allowedMonthDays,h.allowedOrdinalWeekdays,h.preferredOrdinalWeekdays,h.locationIds,h.anywhereAllowed,h.logs,
+    h.allowedWeekdays,h.allowedMonthDays,h.allowedOrdinalWeekdays,h.preferredOrdinalWeekdays,h.locationIds,h.locationTypes,h.anywhereAllowed,h.logs,
     h.scheduleLinks,h.scheduleOptions,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId
   ]);
   const plannerSettings = {
@@ -1177,6 +1177,7 @@ function attachFreeTimeIndicator(header,day){
   pill.type = 'button';
   pill.className = 'free-pill';
   pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
+  pill.setAttribute('aria-label',`${pill.textContent}, view open time`);
   bindDayHeaderPill(pill,()=>openFreeTimeForDay(dateKey(day.dayBase)));
   dayHeaderContextHost(header)?.appendChild(pill);
 }

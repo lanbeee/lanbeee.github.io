@@ -660,7 +660,99 @@ $('blocked-time-list')?.addEventListener('click',e=>{
   else next.add(value);
   saveBlockedTimePatch(index,{days:normalizeAllowedWeekdays([...next])});
 });
-// ── Locations (settings sheet) ──
+// ── Locations (settings sheet + full-page Places Manager) ──
+$('open-locations-manager')?.addEventListener('click',()=>openLocationsManager());
+$('locations-manager-close')?.addEventListener('click',()=>closeLocationsManager());
+$('locations-manager-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget && !sheetBackdropArmed('locations-manager-sheet'))closeLocationsManager();
+});
+$('locations-manager-add')?.addEventListener('click',()=>openLocationPicker());
+$('locations-bulk-toggle')?.addEventListener('click',()=>setLocationsManagerBulkMode(!locManagerState.bulkMode));
+$('locations-bulk-all')?.addEventListener('click',()=>{
+  document.querySelectorAll('#location-list [data-location-id]').forEach(el=>{
+    if(el.dataset.locationId)locManagerState.selectedIds.add(el.dataset.locationId);
+  });
+  renderLocationControls();
+});
+$('locations-bulk-clear')?.addEventListener('click',()=>{
+  locManagerState.selectedIds.clear();
+  renderLocationControls();
+});
+$('locations-bulk-action')?.addEventListener('change',()=>{
+  const valWrap = $('locations-bulk-value');
+  if(valWrap)delete valWrap.dataset.actionKey;
+  renderLocationsBulkBar();
+});
+$('locations-bulk-apply')?.addEventListener('click',()=>applyLocationsBulkEdit());
+$('locations-manager-search')?.addEventListener('input',e=>{
+  locManagerState.search = e.target.value;
+  renderLocationControls();
+});
+$('locations-manager-search-clear')?.addEventListener('click',()=>{
+  locManagerState.search = '';
+  const el = $('locations-manager-search');
+  if(el){ el.value = ''; el.focus(); }
+  renderLocationControls();
+});
+$('locations-manager-sort')?.addEventListener('change',e=>{
+  locManagerState.sort = e.target.value || 'name';
+  renderLocationControls();
+});
+$('locations-manager-filters')?.addEventListener('click',e=>{
+  if(e.target.closest('[data-loc-f-reset]')){
+    locManagerState.scope = 'all';
+    locManagerState.env = 'all';
+    locManagerState.type = 'all';
+    locManagerState.status = 'all';
+    locManagerState.search = '';
+    const el = $('locations-manager-search');
+    if(el)el.value = '';
+    renderLocationControls();
+    return;
+  }
+  const scope = e.target.closest('[data-loc-f-scope]');
+  if(scope){
+    locManagerState.scope = scope.dataset.locFScope;
+    renderLocationControls();
+    return;
+  }
+  const env = e.target.closest('[data-loc-f-env]');
+  if(env){
+    const next = env.dataset.locFEnv;
+    locManagerState.env = locManagerState.env === next ? 'all' : next;
+    renderLocationControls();
+    return;
+  }
+  const status = e.target.closest('[data-loc-f-status]');
+  if(status){
+    const next = status.dataset.locFStatus;
+    locManagerState.status = locManagerState.status === next ? 'all' : next;
+    renderLocationControls();
+    return;
+  }
+  const type = e.target.closest('[data-loc-f-type]');
+  if(type){
+    const next = type.dataset.locFType;
+    locManagerState.type = locManagerState.type === next ? 'all' : next;
+    renderLocationControls();
+    return;
+  }
+});
+$('locations-temp-cleanup-btn')?.addEventListener('click',()=>cleanupUnusedTemporaryLocations());
+$('presence-manage-places')?.addEventListener('click',()=>{
+  closeSheet('presence-picker-sheet');
+  openLocationsManager();
+});
+$('picker-place-type')?.addEventListener('change',()=>{
+  pickerTypeSource = 'user';
+  if(typeof syncPickerEnvButtons === 'function')syncPickerEnvButtons();
+});
+$('picker-env-seg')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-picker-env]');
+  if(!btn)return;
+  pickerEnvValue = btn.dataset.pickerEnv || '';
+  if(typeof syncPickerEnvButtons === 'function')syncPickerEnvButtons();
+});
 $('loc-open-picker')?.addEventListener('click',()=>openLocationPicker());
 $('picker-search-btn')?.addEventListener('click',searchPickerLocations);
 $('picker-search')?.addEventListener('keydown',e=>{ if(e.key === 'Enter' && !e.isComposing){ e.preventDefault(); searchPickerLocations(); } });
@@ -690,10 +782,37 @@ $('location-picker-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget && !sheetBackdropArmed('location-picker-sheet'))closeLocationPicker();
 });
 $('location-list')?.addEventListener('change',e=>{
+  const sel = e.target.closest('[data-loc-select]');
+  if(sel){
+    const id = sel.dataset.locSelect;
+    if(sel.checked)locManagerState.selectedIds.add(id);
+    else locManagerState.selectedIds.delete(id);
+    renderLocationControls();
+    return;
+  }
   const name = e.target.closest('[data-loc-name]');
   if(name){ saveLocationPatch(parseInt(name.dataset.locName,10),{name:name.value}); return; }
   const addr = e.target.closest('[data-loc-address]');
   if(addr){ saveLocationPatch(parseInt(addr.dataset.locAddress,10),{address:addr.value}); return; }
+  const locType = e.target.closest('[data-loc-type]');
+  if(locType){
+    const idx = parseInt(locType.dataset.locType,10);
+    const nextType = normalizePlaceType(locType.value);
+    const existing = normalizeLocationRegistry(sortSettings.locations)[idx];
+    const patch = {placeType:nextType};
+    if(existing && !existing.emoji && nextType && typeof emojiForPlaceType === 'function'){
+      const em = emojiForPlaceType(nextType);
+      if(em)patch.emoji = em;
+    }
+    saveLocationPatch(idx,patch);
+    return;
+  }
+  const locEnv = e.target.closest('[data-loc-env]');
+  if(locEnv){
+    const idx = parseInt(locEnv.dataset.locEnv,10);
+    saveLocationPatch(idx,{environment:normalizeLocationEnvironment(locEnv.value)});
+    return;
+  }
   const start = e.target.closest('[data-loc-start]');
   const end = e.target.closest('[data-loc-end]');
   if(start || end){ commitLocationHours(parseInt((start?.dataset.locStart || end?.dataset.locEnd),10)); return; }
@@ -750,6 +869,21 @@ $('location-list')?.addEventListener('click',e=>{
     const idx = parseInt(editPin.dataset.locEditPin,10);
     const loc = normalizeLocationRegistry(sortSettings.locations)[idx];
     if(loc)openLocationPicker({index:idx,name:loc.name,address:loc.address,lat:loc.lat,lng:loc.lng});
+    return;
+  }
+  const promote = e.target.closest('[data-loc-promote]');
+  if(promote){
+    const idx = parseInt(promote.dataset.locPromote,10);
+    saveLocationPatch(idx,{temporary:false});
+    showToast('Saved to your places');
+    return;
+  }
+  const openMaps = e.target.closest('[data-loc-maps]');
+  if(openMaps){
+    const idx = parseInt(openMaps.dataset.locMaps,10);
+    const loc = normalizeLocationRegistry(sortSettings.locations)[idx];
+    const url = loc && typeof mapsDirectionsUrl === 'function' ? mapsDirectionsUrl(loc, sortSettings.defaultTravelMode) : '';
+    if(url)window.open(url,'_blank','noopener');
     return;
   }
   const remove = e.target.closest('[data-loc-remove]');
@@ -819,12 +953,20 @@ $('default-places-chips').addEventListener('click',e=>{
     updateDefaultProfile({anywhereAllowed:!profile.anywhereAllowed});
     return;
   }
+  const typeBtn = e.target.closest('[data-location-type]');
+  if(typeBtn){
+    const types = new Set(profile.locationTypes || []);
+    const key = typeBtn.dataset.locationType;
+    if(types.has(key))types.delete(key); else types.add(key);
+    updateDefaultProfile({locationTypes:[...types],anywhereAllowed:(profile.locationIds || []).length === 0 && types.size === 0});
+    return;
+  }
   const btn = e.target.closest('[data-location-id]');
   if(!btn)return;
   const ids = new Set(profile.locationIds);
   const id = btn.dataset.locationId;
   if(ids.has(id))ids.delete(id); else ids.add(id);
-  updateDefaultProfile({locationIds:[...ids],anywhereAllowed:ids.size === 0});
+  updateDefaultProfile({locationIds:[...ids],anywhereAllowed:ids.size === 0 && !(profile.locationTypes || []).length});
 });
 $('add-open-defaults').addEventListener('click',()=>openAddSettings('defaults'));
 $('add-open-busy').addEventListener('click',()=>openAddSettings('busy'));
@@ -1150,6 +1292,7 @@ $('home-tag-filter')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-open-home-filters]')){
+    if(typeof renderHomeTagFilter === 'function')renderHomeTagFilter(load());
     const groups = $('home-filter-groups');
     if(groups)groups.scrollTop = 0;
     openSheet('home-filter-sheet');

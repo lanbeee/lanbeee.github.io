@@ -470,7 +470,17 @@ body.minimal-mode .settings-full-only:has(#calendar-duplicate-review) { display:
 .appointment-editor .planning-field > span > small { display:inline; }
 
 .ordinal-editor{margin:8px 0;min-width:0;}
-.ordinal-editor summary{cursor:pointer;}
+/* App disclosure idiom, not the browser's ▶ marker: same +/− grammar as the
+   other <details> editors in this sheet. */
+.ordinal-editor summary{
+  cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:8px;
+  min-height:40px;
+}
+.ordinal-editor summary::-webkit-details-marker{display:none;}
+.ordinal-editor summary::after{
+  content:'+';margin-left:auto;font-size:16px;font-weight:400;color:var(--text3);
+}
+.ordinal-editor[open] summary::after{content:'−';}
 .ordinal-editor summary small{color:var(--text3);font-weight:400;}
 .ordinal-editor summary small::before{content:' · ';}
 .ordinal-editor[open] summary small{display:none;}

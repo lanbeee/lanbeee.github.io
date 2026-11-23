@@ -5,11 +5,17 @@
 //   - RENDER functions become React form components.
 //   - HANDLER functions become onPress/onChange callbacks that update the Zustand settings store.
 
+let addSessionTempLocationIds = [];
+
 // HANDLER: cancel add sheet and reset form. A batch with queued items asks
 // first — Back, Escape, backdrop and cancel all share this guard.
 function cancelAdd(){
   if(typeof bulkHandleCancelAdd === 'function' && bulkHandleCancelAdd())return;
   closeSheet('add-sheet');
+  if(addSessionTempLocationIds.length && typeof cleanupUnusedTemporaryLocations === 'function'){
+    cleanupUnusedTemporaryLocations(load(), {onlyIds:addSessionTempLocationIds, quiet:true});
+  }
+  addSessionTempLocationIds = [];
   applyAddDefaults();
 }
 
@@ -41,7 +47,7 @@ let addSettingsReturn = false;
 
 const ADD_SHARED_PROFILE_KEYS = [
   'durationMinutes','priority','breakable','minChunkMinutes',
-  'autoMarkMode','autoMarkMinutes','topics','locationIds',
+  'autoMarkMode','autoMarkMinutes','topics','locationIds','locationTypes',
   'locationPrefs','anywhereAllowed','weatherProfileValue',
   'weatherLocationId','showWeather','showWeatherAtLocation'
 ];
@@ -92,12 +98,13 @@ function syncDefaultProfileControls(){
   $('default-weekdays').innerHTML = WEEKDAY_LABELS.map((label,day)=>`<button type="button" class="schedule-chip${profile.allowedWeekdays.includes(day) ? ' on' : ''}" data-default-day="${day}" aria-pressed="${profile.allowedWeekdays.includes(day)}">${label}</button>`).join('');
   $('setting-default-time-start').value = profile.allowedTimeStart === null ? '' : minutesToTimeInput(profile.allowedTimeStart);
   $('setting-default-time-end').value = profile.allowedTimeEnd === null ? '' : minutesToTimeInput(profile.allowedTimeEnd);
-  renderTagChips('default-places-chips',[],profile.locationIds,null,null,profile.anywhereAllowed);
+  renderTagChips('default-places-chips',[],profile.locationIds,null,null,profile.anywhereAllowed,profile.locationTypes || []);
   renderDefaultTopicsChips();
 }
 
 function initialAddProfile(type,defaults = newItemDefaults(loadSortSettings(),type)){
   const places = normalizeLocationIds(defaults.locationIds,locationOptions());
+  const placeTypes = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(defaults.locationTypes) : [];
   return {
     defaults,
     repeatMode:'routine',
@@ -118,8 +125,9 @@ function initialAddProfile(type,defaults = newItemDefaults(loadSortSettings(),ty
     autoMarkMinutes:defaults.autoMarkMinutes,
     topics:defaults.topics.slice(),
     locationIds:places,
+    locationTypes:placeTypes,
     locationPrefs:{},
-    anywhereAllowed:defaults.anywhereAllowed || !places.length
+    anywhereAllowed:defaults.anywhereAllowed || (!places.length && !placeTypes.length)
   };
 }
 
@@ -238,6 +246,7 @@ function readAddProfile(){
     autoMarkMinutes:normalizeAutoMark($('ting-auto-mark').value),
     topics:selectedAddTopics(),
     locationIds:selectedLocationIds(),
+    locationTypes:typeof selectedLocationTypes === 'function' ? selectedLocationTypes() : [],
     locationPrefs:selectedLocationPrefs(),
     anywhereAllowed:selectedAnywhere()
   };
@@ -276,7 +285,7 @@ function applyAddProfile(profile){
     btn.classList.toggle('on',selected);
     btn.setAttribute('aria-pressed',String(selected));
   });
-  renderTagChips('ting-tag-chips',profile.topics,profile.locationIds,null,profile.locationPrefs,profile.anywhereAllowed);
+  renderTagChips('ting-tag-chips',profile.topics,profile.locationIds,null,profile.locationPrefs,profile.anywhereAllowed,profile.locationTypes || []);
   const days = profile.defaults.allowedWeekdays;
   const dayText = days.length ? days.map(day=>WEEKDAY_LABELS[day]).join(', ') : 'any day';
   const start = profile.defaults.allowedTimeStart;
@@ -352,6 +361,22 @@ function openAddSettings(section){
   // Leave the DOM draft intact, including weather, emoji and disclosure state.
   const kind = addDraftKind();
   captureAddDraftEdits();
+  if(section === 'busy'){
+    closeSheet('add-sheet');
+    openBusyManager({fromAdd:true,onClose:()=>openSheet('add-sheet')});
+    return;
+  }
+  if(section === 'weather' && typeof openWeatherManager === 'function'){
+    closeSheet('add-sheet');
+    openWeatherManager({
+      fromAdd:true,
+      onClose:()=>{
+        applyResolvedAddProfile(addDraftKind(),selectedType);
+        openSheet('add-sheet');
+      }
+    });
+    return;
+  }
   addSettingsReturn = true;
   defaultProfileKind = kind === 'task' ? 'task' : 'habit';
   closeSheet('add-sheet');

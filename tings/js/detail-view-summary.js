@@ -634,18 +634,21 @@ function detailSummaryOptionRows(item,facts,items,session){
 
 function detailSummaryPlaceChips(item,facts,session){
   if(typeof habitDisplayLocationIds !== 'function')return null;
-  const ids = habitDisplayLocationIds(item,facts.registry);
+  const directIds = normalizeLocationIds(item.locationIds,facts.registry);
+  const optionIds = typeof habitScheduleOptionLocationState === 'function'
+    ? habitScheduleOptionLocationState(item.scheduleOptions,facts.registry).locationIds : [];
+  const explicitIds = normalizeLocationIds([...directIds,...optionIds],facts.registry);
+  const typeKeys = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(item.locationTypes) : [];
+  const allIds = habitDisplayLocationIds(item,facts.registry);
   const anywhere = typeof habitDisplayAnywhereAllowed === 'function' && habitDisplayAnywhereAllowed(item,facts.registry);
-  // "Anywhere" with no places is the saved default, not a setting — mirrors
-  // the assistant summary, which skips the anywhere chip without places.
   const optionsAnywhere = anywhere && typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(item);
-  if(!ids.length && !optionsAnywhere)return null;
+  if(!allIds.length && !typeKeys.length && !optionsAnywhere)return null;
   const prefs = typeof normalizeLocationPrefs === 'function'
-    ? normalizeLocationPrefs(item.locationPrefs,ids,item.preferredLocationId) : {};
+    ? normalizeLocationPrefs(item.locationPrefs,allIds,item.preferredLocationId) : {};
   const prefDots = {high:'●●',little:'●',avoid:'⊘'};
   const prefWords = {high:'preferred',little:'slightly preferred',avoid:'marked avoid (still allowed)'};
   const canOpen = id => detailSummaryFieldSelector(id,session);
-  const chips = ids.map(id=>{
+  const chips = explicitIds.map(id=>{
     const name = facts.placeName(id);
     const level = prefs[id];
     const dots = level && prefDots[level] ? `<i class="detail-pref ${escapeHtml(level)}" aria-hidden="true">${prefDots[level]}</i>` : '';
@@ -655,17 +658,23 @@ function detailSummaryPlaceChips(item,facts,session){
       ? `<button type="button" class="assistant-chip focus-field detail-place-chip" data-summary-field="places" aria-label="${escapeHtml(`${name}${levelText}`)}">${body}</button>`
       : `<span class="assistant-chip detail-place-chip">${body}</span>`;
   });
-  if(ids.length || optionsAnywhere){
-    // Same information and editor route as the old anywhere pill; text states
-    // the saved meaning ("only the saved places" when anywhere is off).
+  for(const key of typeKeys){
+    const label = typeof locationTypeKeyLabel === 'function' ? `Any ${locationTypeKeyLabel(key).toLowerCase()}` : key;
+    const emoji = typeof locationTypeKeyEmoji === 'function' ? locationTypeKeyEmoji(key) : '';
+    const matchCount = (facts.registry || []).filter(loc=>!loc.temporary && locationMatchesTypeKey(loc, key)).length;
+    const text = `${emoji ? emoji + ' ' : ''}${label}${matchCount ? ` (${matchCount})` : ''}`;
+    const body = `<span class="focus-field-text">${escapeHtml(text)}</span>`;
+    chips.push(canOpen('places')
+      ? `<button type="button" class="assistant-chip focus-field detail-place-chip" data-summary-field="places" aria-label="${escapeHtml(text)}">${body}</button>`
+      : `<span class="assistant-chip detail-place-chip">${body}</span>`);
+  }
+  if(allIds.length || typeKeys.length || optionsAnywhere){
     const text = anywhere ? 'or anywhere' : 'only the saved places';
     const body = `<span class="focus-field-text">${escapeHtml(text)}</span>`;
     chips.push(canOpen('anywhereAllowed')
       ? `<button type="button" class="assistant-chip focus-field" data-summary-field="anywhereAllowed" aria-label="${escapeHtml(`${text}: open the setting`)}">${body}<i class="ti ti-chevron-right" aria-hidden="true"></i></button>`
       : `<span class="assistant-chip">${body}</span>`);
   }
-  // Preference dots ride on the place chips themselves; the places editor
-  // (one tap on any place chip) owns the ranking, so no separate pill.
   return chips.length ? chips.join('') : null;
 }
 

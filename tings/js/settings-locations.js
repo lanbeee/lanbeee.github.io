@@ -1,19 +1,95 @@
 // ─────────────────────────────────────────────────────────────────────────
-// LOCATIONS — registry CRUD + per-location hours editor (settings sheet).
-// Mirrors the blocked-time controls: an inline list of richly-structured
-// rows, each editable in place, persisted through updateSortSetting.
+// LOCATIONS — registry CRUD, full-page Places Manager (filter/search/bulk edit),
+// temporary one-off places, categorization (type + indoor/outdoor), and map picker.
 // ─────────────────────────────────────────────────────────────────────────
 
-// Tracks which location rows have their "per-day / best time" expander open, so
-// the state survives the list re-render that follows each patch.
 const expandedLocationMores = new Set();
-// Tracks locations where "24h" was just unchecked but a full custom window
-// hasn't been committed yet, so a patch elsewhere on the sheet (this row or
-// another) doesn't silently flip the checkbox back on and hide the inputs
-// out from under the user mid-edit.
 const pendingLocationHoursEdit = new Set();
 function clearLocationHoursEditing(index){
   pendingLocationHoursEdit.delete(index);
+}
+
+const locManagerState = {
+  search:'',
+  scope:'all',      // 'all' | 'saved' | 'temp'
+  env:'all',        // 'all' | 'indoor' | 'outdoor' | 'both' | 'unset'
+  type:'all',       // 'all' | group key | exact placeType
+  status:'all',     // 'all' | 'hours' | 'allday' | 'weather' | 'unused' | 'notype'
+  sort:'name',      // 'name' | 'used' | 'type' | 'env' | 'nearest'
+  bulkMode:false,
+  selectedIds:new Set(),
+  visibleIds:[]     // places currently shown (post search/filter) — drives the bulk "select all (N)" scope
+};
+
+let locationsManagerReturnSheet = null;
+
+function openLocationsManager(opts = {}){
+  locationsManagerReturnSheet = opts.returnSheet || null;
+  if(opts.scope)locManagerState.scope = opts.scope;
+  if(opts.search != null)locManagerState.search = String(opts.search);
+  const searchEl = $('locations-manager-search');
+  if(searchEl)searchEl.value = locManagerState.search;
+  const sortEl = $('locations-manager-sort');
+  if(sortEl)sortEl.value = locManagerState.sort;
+  renderLocationControls();
+  const sheet = $('locations-manager-sheet');
+  if(sheet){
+    sheet.inert = false;
+    openSheet('locations-manager-sheet',{reopen:()=>openLocationsManager(opts)});
+    const body = $('locations-manager-body');
+    if(body)body.scrollTop = 0;
+  }
+}
+
+function closeLocationsManager(){
+  if(locManagerState.bulkMode){
+    locManagerState.bulkMode = false;
+    locManagerState.selectedIds.clear();
+  }
+  closeSheet('locations-manager-sheet');
+  const sheet = $('locations-manager-sheet');
+  if(sheet)sheet.inert = true;
+  const ret = locationsManagerReturnSheet;
+  locationsManagerReturnSheet = null;
+  renderLocationControls();
+  if(typeof refreshOpenViews === 'function')refreshOpenViews();
+  if(ret && $(ret) && !$(ret).classList.contains('open'))openSheet(ret);
+}
+
+function setLocationsManagerBulkMode(on){
+  locManagerState.bulkMode = Boolean(on);
+  if(!locManagerState.bulkMode)locManagerState.selectedIds.clear();
+  renderLocationControls();
+}
+
+function placeTypeSelectOptionsHtml(selectedValue = '', includeUnchanged = false){
+  const cur = normalizePlaceType(selectedValue);
+  const opts = typeof PLACE_TYPE_PICKER_OPTIONS !== 'undefined' ? PLACE_TYPE_PICKER_OPTIONS : [{value:'',label:'None'}];
+  const hasCur = !cur || opts.some(o=>o.value === cur);
+  const rows = [];
+  if(includeUnchanged)rows.push('<option value="__clear__">Clear type (none)</option>');
+  for(const o of opts){
+    if(includeUnchanged && o.value === '')continue;
+    rows.push(`<option value="${escapeHtml(o.value)}"${o.value === cur ? ' selected' : ''}>${escapeHtml(o.label)}</option>`);
+  }
+  if(cur && !hasCur){
+    const label = typeof placeTypeLabel === 'function' ? placeTypeLabel(cur) : cur.replace(/_/g,' ');
+    rows.push(`<option value="${escapeHtml(cur)}" selected>${escapeHtml(label.charAt(0).toUpperCase() + label.slice(1))}</option>`);
+  }
+  return rows.join('');
+}
+
+function locationEnvironmentSelectOptionsHtml(loc){
+  const explicit = normalizeLocationEnvironment(loc && loc.environment);
+  const inferred = typeof inferredLocationEnvironment === 'function' ? inferredLocationEnvironment(loc && loc.placeType) : '';
+  const autoLabel = inferred ? `Auto (${locationEnvironmentLabel(inferred)})` : 'Auto';
+  return [
+    `<option value=""${explicit === '' ? ' selected' : ''}>${escapeHtml(autoLabel)}</option>`,
+    `<option value="indoor"${explicit === 'indoor' ? ' selected' : ''}>Indoor</option>`,
+    `<option value="outdoor"${explicit === 'outdoor' ? ' selected' : ''}>Outdoor</option>`,
+    `<option value="both"${explicit === 'both' ? ' selected' : ''}>Indoor &amp; outdoor</option>`,
+    `<option value="none"${explicit === 'none' ? ' selected' : ''}>Not specified</option>`
+  ].join('');
 }
 
 // PURE: keep a Set of row indices aligned with the locations array after a
@@ -26,50 +102,462 @@ function reindexSetAfterRemoval(set,removedIndex){
   shifted.forEach(i=>set.add(i));
 }
 
-// RENDER: the full location registry list.
+function locationReferencePoint(){
+  if(typeof currentCoord !== 'undefined' && currentCoord && Number.isFinite(currentCoord.lat) && Number.isFinite(currentCoord.lng)){
+    return {lat:currentCoord.lat,lng:currentCoord.lng};
+  }
+  const s = sortSettings || {};
+  if(Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng)){
+    return {lat:s.homeCityLat,lng:s.homeCityLng};
+  }
+  return null;
+}
+
+function locationUsageSummaryMap(locations, data){
+  const habits = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  const map = new Map();
+  for(const loc of locations)map.set(loc.id,{direct:[],viaType:[]});
+  for(const h of habits){
+    if(!h)continue;
+    const directSet = new Set([
+      ...normalizeLocationIds(h.locationIds),
+      ...(h.preferredLocationId ? [cleanLocationId(h.preferredLocationId)] : []),
+      ...(h.weatherLocationId ? [cleanLocationId(h.weatherLocationId)] : []),
+      ...((h.scheduleOptions || []).map(o=>cleanLocationId(o && o.locationId)).filter(Boolean)),
+      ...(h.locationPrefs && typeof h.locationPrefs === 'object' ? Object.keys(h.locationPrefs).map(cleanLocationId) : [])
+    ].filter(Boolean));
+    for(const id of directSet){
+      const entry = map.get(id);
+      if(entry)entry.direct.push(h);
+    }
+    const types = typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(h.locationTypes) : [];
+    if(types.length){
+      for(const loc of locations){
+        if(loc.temporary || directSet.has(loc.id))continue;
+        if(types.some(t=>locationMatchesTypeKey(loc, t))){
+          const entry = map.get(loc.id);
+          if(entry)entry.viaType.push(h);
+        }
+      }
+    }
+  }
+  return map;
+}
+
+function filteredManagerLocations(locations, usageMap){
+  const q = String(locManagerState.search || '').trim().toLocaleLowerCase();
+  const weatherProfiles = typeof normalizeWeatherProfiles === 'function'
+    ? normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles) : [];
+  const weatherById = new Map(weatherProfiles.map(p=>[p.id, p.name]));
+  const ref = locationReferencePoint();
+
+  const items = locations.map((loc, index)=>({loc, index})).filter(({loc})=>{
+    if(locManagerState.scope === 'saved' && loc.temporary)return false;
+    if(locManagerState.scope === 'temp' && !loc.temporary)return false;
+    const effEnv = typeof effectiveLocationEnvironment === 'function' ? effectiveLocationEnvironment(loc) : '';
+    if(locManagerState.env === 'indoor' && effEnv !== 'indoor' && effEnv !== 'both')return false;
+    if(locManagerState.env === 'outdoor' && effEnv !== 'outdoor' && effEnv !== 'both')return false;
+    if(locManagerState.env === 'both' && effEnv !== 'both')return false;
+    if(locManagerState.env === 'unset' && effEnv !== '')return false;
+    if(locManagerState.type !== 'all' && !locationMatchesTypeKey(loc, locManagerState.type))return false;
+    const usage = usageMap.get(loc.id) || {direct:[],viaType:[]};
+    const totalUsed = usage.direct.length + usage.viaType.length;
+    if(locManagerState.status === 'hours' && !hasLocationHours(loc))return false;
+    if(locManagerState.status === 'allday' && hasLocationHours(loc))return false;
+    if(locManagerState.status === 'weather' && !loc.weatherProfileId)return false;
+    if(locManagerState.status === 'unused' && totalUsed > 0)return false;
+    if(locManagerState.status === 'notype' && loc.placeType)return false;
+    if(q){
+      const hay = [
+        loc.name,
+        loc.address,
+        loc.placeType ? placeTypeLabel(loc.placeType) : '',
+        loc.placeType || '',
+        effEnv ? locationEnvironmentLabel(effEnv) : '',
+        loc.temporary ? 'temporary one-off' : 'saved',
+        loc.weatherProfileId ? (weatherById.get(loc.weatherProfileId) || '') : ''
+      ].join(' ').toLocaleLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  });
+
+  const sortBy = locManagerState.sort;
+  items.sort((a,b)=>{
+    if(sortBy === 'used'){
+      const ua = usageMap.get(a.loc.id);
+      const ub = usageMap.get(b.loc.id);
+      const ca = ua ? ua.direct.length + ua.viaType.length : 0;
+      const cb = ub ? ub.direct.length + ub.viaType.length : 0;
+      if(ca !== cb)return cb - ca;
+    }else if(sortBy === 'type'){
+      const ta = a.loc.placeType ? placeTypeLabel(a.loc.placeType) : '\uffff';
+      const tb = b.loc.placeType ? placeTypeLabel(b.loc.placeType) : '\uffff';
+      const cmp = ta.localeCompare(tb, undefined, {sensitivity:'base'});
+      if(cmp)return cmp;
+    }else if(sortBy === 'env'){
+      const rank = loc=>{
+        const e = effectiveLocationEnvironment(loc);
+        return e === 'indoor' ? 0 : e === 'outdoor' ? 1 : e === 'both' ? 2 : 3;
+      };
+      const d = rank(a.loc) - rank(b.loc);
+      if(d)return d;
+    }else if(sortBy === 'nearest' && ref && typeof haversineMetres === 'function'){
+      const da = haversineMetres(ref.lat, ref.lng, a.loc.lat, a.loc.lng);
+      const db = haversineMetres(ref.lat, ref.lng, b.loc.lat, b.loc.lng);
+      if(da !== db)return da - db;
+    }
+    return compareLocationNames(a.loc, b.loc);
+  });
+  return items;
+}
+
+function renderLocationsManagerFilters(locations, usageMap){
+  const wrap = $('locations-manager-filters');
+  if(!wrap)return;
+  const savedCount = locations.filter(l=>!l.temporary).length;
+  const tempCount = locations.length - savedCount;
+  const chips = [];
+  const chip = (attr, value, label, active, extraClass = '')=>
+    `<button type="button" class="manager-filter-chip${active ? ' on' : ''}${extraClass ? ' ' + extraClass : ''}" ${attr}="${escapeHtml(value)}" aria-pressed="${active}">${label}</button>`;
+
+  if(tempCount > 0){
+    chips.push(chip('data-loc-f-scope', 'all', `All (${locations.length})`, locManagerState.scope === 'all'));
+    chips.push(chip('data-loc-f-scope', 'saved', `Saved (${savedCount})`, locManagerState.scope === 'saved'));
+    chips.push(chip('data-loc-f-scope', 'temp', `One-off (${tempCount})`, locManagerState.scope === 'temp'));
+  }
+  const indoorCount = locations.filter(l=>{const e=effectiveLocationEnvironment(l);return e==='indoor'||e==='both';}).length;
+  const outdoorCount = locations.filter(l=>{const e=effectiveLocationEnvironment(l);return e==='outdoor'||e==='both';}).length;
+  const bothCount = locations.filter(l=>effectiveLocationEnvironment(l)==='both').length;
+  if(indoorCount)chips.push(chip('data-loc-f-env', 'indoor', `🏠 Indoor (${indoorCount})`, locManagerState.env === 'indoor'));
+  if(outdoorCount)chips.push(chip('data-loc-f-env', 'outdoor', `🌤️ Outdoor (${outdoorCount})`, locManagerState.env === 'outdoor'));
+  if(bothCount)chips.push(chip('data-loc-f-env', 'both', `Both (${bothCount})`, locManagerState.env === 'both'));
+
+  const unusedCount = locations.filter(l=>{const u=usageMap.get(l.id);return !u || (!u.direct.length && !u.viaType.length);}).length;
+  const hoursCount = locations.filter(l=>hasLocationHours(l)).length;
+  const weatherCount = locations.filter(l=>Boolean(l.weatherProfileId)).length;
+  const noTypeCount = locations.filter(l=>!l.placeType).length;
+  if(hoursCount)chips.push(chip('data-loc-f-status', 'hours', `Hours (${hoursCount})`, locManagerState.status === 'hours'));
+  if(weatherCount)chips.push(chip('data-loc-f-status', 'weather', `Weather (${weatherCount})`, locManagerState.status === 'weather'));
+  if(unusedCount)chips.push(chip('data-loc-f-status', 'unused', `Unused (${unusedCount})`, locManagerState.status === 'unused'));
+  if(noTypeCount && locations.length > 1)chips.push(chip('data-loc-f-status', 'notype', `No type (${noTypeCount})`, locManagerState.status === 'notype'));
+
+  // Dynamic place type category chips present in registry.
+  if(typeof PLACE_TYPE_GROUPS !== 'undefined'){
+    for(const group of PLACE_TYPE_GROUPS){
+      const count = locations.filter(l=>locationMatchesTypeKey(l, group.key)).length;
+      if(!count)continue;
+      chips.push(chip('data-loc-f-type', group.key, `${group.emoji} ${escapeHtml(group.label)} (${count})`, locManagerState.type === group.key));
+    }
+  }
+  const hasActiveFilter = locManagerState.scope !== 'all' || locManagerState.env !== 'all'
+    || locManagerState.type !== 'all' || locManagerState.status !== 'all' || Boolean(locManagerState.search);
+  if(hasActiveFilter){
+    chips.push('<button type="button" class="manager-filter-chip is-reset" data-loc-f-reset="1">Reset filters</button>');
+  }
+  wrap.innerHTML = chips.join('');
+  wrap.hidden = !chips.length;
+}
+
+function renderLocationsBulkBar(){
+  const bar = $('locations-bulk-bar');
+  const toggleBtn = $('locations-bulk-toggle');
+  if(toggleBtn){
+    toggleBtn.classList.toggle('on', locManagerState.bulkMode);
+    toggleBtn.setAttribute('aria-pressed', String(locManagerState.bulkMode));
+    toggleBtn.textContent = locManagerState.bulkMode ? 'done' : 'select';
+  }
+  if(!bar)return;
+  bar.hidden = !locManagerState.bulkMode;
+  if(!locManagerState.bulkMode)return;
+  const count = locManagerState.selectedIds.size;
+  const countEl = $('locations-bulk-count');
+  if(countEl)countEl.textContent = `${count} selected`;
+  // "select all" only takes the places currently shown (after search/filters);
+  // label it with that count so the scope is never a surprise.
+  const allBtn = $('locations-bulk-all');
+  if(allBtn){
+    const shown = (locManagerState.visibleIds || []).length;
+    allBtn.textContent = shown ? `select all (${shown})` : 'select all';
+    allBtn.disabled = shown === 0;
+  }
+  const applyBtn = $('locations-bulk-apply');
+  if(applyBtn)applyBtn.disabled = count === 0;
+  const action = $('locations-bulk-action')?.value || 'type';
+  const valWrap = $('locations-bulk-value');
+  if(!valWrap)return;
+  const prevKey = valWrap.dataset.actionKey || '';
+  if(prevKey === action)return;
+  valWrap.dataset.actionKey = action;
+  if(action === 'type'){
+    valWrap.innerHTML = `<select id="locations-bulk-type-val" class="settings-select" aria-label="place type">${placeTypeSelectOptionsHtml('', true)}</select>`;
+  }else if(action === 'env'){
+    valWrap.innerHTML = `<select id="locations-bulk-env-val" class="settings-select" aria-label="indoor or outdoor">
+      <option value="indoor">Indoor</option>
+      <option value="outdoor">Outdoor</option>
+      <option value="both">Indoor &amp; outdoor</option>
+      <option value="">Auto (from type)</option>
+      <option value="none">Not specified</option>
+    </select>`;
+  }else if(action === 'weather'){
+    const profiles = typeof normalizeWeatherProfiles === 'function'
+      ? normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles) : [];
+    valWrap.innerHTML = `<select id="locations-bulk-weather-val" class="settings-select" aria-label="weather profile">
+      <option value="">None (clear weather)</option>
+      ${profiles.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}
+    </select>`;
+  }else if(action === 'hours'){
+    valWrap.innerHTML = `<div class="manager-bulk-hours">
+      <input type="time" id="locations-bulk-start" step="300" value="09:00" aria-label="open from" />
+      <span>–</span>
+      <input type="time" id="locations-bulk-end" step="300" value="17:00" aria-label="open until" />
+      <label class="manager-bulk-check"><input type="checkbox" id="locations-bulk-allday" /> All day</label>
+    </div>`;
+  }else if(action === 'radius'){
+    valWrap.innerHTML = `<label class="manager-bulk-radius"><input type="number" id="locations-bulk-radius-val" min="10" max="2000" step="5" value="${DEFAULT_LOCATION_RADIUS_M}" aria-label="radius in metres" /><span>m</span></label>`;
+  }else{
+    valWrap.innerHTML = '';
+  }
+}
+
+function applyLocationsBulkEdit(){
+  const ids = new Set(locManagerState.selectedIds);
+  if(!ids.size)return;
+  const action = $('locations-bulk-action')?.value || 'type';
+  const locations = normalizeLocationRegistry(sortSettings.locations);
+  if(action === 'delete'){
+    let removedCount = 0;
+    let blockedCount = 0;
+    const kept = [];
+    const removedIds = new Set();
+    for(const loc of locations){
+      if(!ids.has(loc.id)){ kept.push(loc); continue; }
+      if(habitsUsingLocationId(loc.id).length){
+        blockedCount += 1;
+        kept.push(loc);
+      }else{
+        removedCount += 1;
+        removedIds.add(loc.id);
+      }
+    }
+    if(!removedCount){
+      showToast(blockedCount ? `${blockedCount} selected ${blockedCount === 1 ? 'place is' : 'places are'} still in use` : 'Nothing removed');
+      return;
+    }
+    const travel = {};
+    for(const [key, edge] of Object.entries(sortSettings.travel || {})){
+      if(!removedIds.has(edge.a) && !removedIds.has(edge.b))travel[key] = edge;
+    }
+    expandedLocationMores.clear();
+    pendingLocationHoursEdit.clear();
+    locManagerState.selectedIds.clear();
+    updateSortSetting({locations:kept, travel},{renderNow:false});
+    const {data,changed} = reconcileLocations(load(),{...sortSettings,locations:kept,travel});
+    if(changed)save(data);
+    for(const rid of removedIds){
+      if(typeof filterHasKey === 'function' && (filterHasKey(homeLocationFilter, rid) || filterHasKey(overviewLocationFilter, rid))){
+        removeSharedFilter('location', rid);
+      }
+    }
+    renderLocationControls();
+    if(typeof refreshOpenViews === 'function')refreshOpenViews();
+    showToast(blockedCount
+      ? `Removed ${removedCount} · skipped ${blockedCount} still in use`
+      : `Removed ${removedCount} ${removedCount === 1 ? 'place' : 'places'}`);
+    return;
+  }
+
+  let patchFn = null;
+  let weatherChanged = false;
+  if(action === 'type'){
+    const raw = $('locations-bulk-type-val')?.value || '';
+    const nextType = raw === '__clear__' ? '' : normalizePlaceType(raw);
+    patchFn = loc=>({
+      placeType:nextType,
+      ...(!loc.emoji && nextType && typeof emojiForPlaceType === 'function' && emojiForPlaceType(nextType) ? {emoji:emojiForPlaceType(nextType)} : {})
+    });
+  }else if(action === 'env'){
+    const env = normalizeLocationEnvironment($('locations-bulk-env-val')?.value || '');
+    patchFn = ()=>({environment:env});
+  }else if(action === 'weather'){
+    const wid = typeof cleanWeatherProfileId === 'function' ? cleanWeatherProfileId($('locations-bulk-weather-val')?.value || '') || null : null;
+    weatherChanged = true;
+    patchFn = ()=>({weatherProfileId:wid});
+  }else if(action === 'hours'){
+    const allDay = Boolean($('locations-bulk-allday')?.checked);
+    const s = allDay ? null : timeInputToMinutes($('locations-bulk-start')?.value || '');
+    const e = allDay ? null : timeInputToMinutes($('locations-bulk-end')?.value || '');
+    if(!allDay && (s == null || e == null)){ showToast('Enter open and close times, or check All day.'); return; }
+    patchFn = ()=>({allowedTimeStart:s, allowedTimeEnd:e});
+  }else if(action === 'radius'){
+    const raw = Number($('locations-bulk-radius-val')?.value);
+    const radiusM = Number.isFinite(raw) ? Math.max(10, Math.min(2000, Math.round(raw))) : DEFAULT_LOCATION_RADIUS_M;
+    patchFn = ()=>({radiusM});
+  }else if(action === 'save'){
+    patchFn = ()=>({temporary:false});
+  }else if(action === 'temp'){
+    patchFn = ()=>({temporary:true});
+  }
+  if(!patchFn)return;
+  let updated = 0;
+  const next = locations.map(loc=>{
+    if(!ids.has(loc.id))return loc;
+    updated += 1;
+    return {...loc, ...patchFn(loc)};
+  });
+  updateSortSetting({locations:next},{renderNow:false});
+  if(typeof bumpPlannerDataRevision === 'function')bumpPlannerDataRevision();
+  locManagerState.selectedIds.clear();
+  renderLocationControls();
+  render();
+  if(weatherChanged){
+    if(typeof renderWeatherControls === 'function')renderWeatherControls();
+    if(typeof syncWeatherGuidanceHints === 'function')syncWeatherGuidanceHints();
+    if(typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
+  }
+  showToast(`Updated ${updated} ${updated === 1 ? 'place' : 'places'}`);
+}
+
+// IMPURE: remove unused temporary locations (all, or restricted to onlyIds).
+function cleanupUnusedTemporaryLocations(data, {onlyIds = null, quiet = false} = {}){
+  const locations = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  const onlySet = Array.isArray(onlyIds) ? new Set(onlyIds.map(cleanLocationId).filter(Boolean)) : null;
+  const habits = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  const removedIds = new Set();
+  const kept = [];
+  for(const loc of locations){
+    if(loc.temporary && (!onlySet || onlySet.has(loc.id)) && habitsUsingLocationId(loc.id, habits).length === 0){
+      removedIds.add(loc.id);
+      continue;
+    }
+    kept.push(loc);
+  }
+  if(!removedIds.size)return 0;
+  const travel = {};
+  for(const [key, edge] of Object.entries((sortSettings || {}).travel || {})){
+    if(!removedIds.has(edge.a) && !removedIds.has(edge.b))travel[key] = edge;
+  }
+  updateSortSetting({locations:kept, travel},{renderNow:false});
+  for(const rid of removedIds){
+    locManagerState.selectedIds.delete(rid);
+    if(typeof filterHasKey === 'function' && (filterHasKey(homeLocationFilter, rid) || filterHasKey(overviewLocationFilter, rid))){
+      removeSharedFilter('location', rid);
+    }
+  }
+  renderLocationControls();
+  if(!quiet && typeof showToast === 'function'){
+    showToast(`Cleaned up ${removedIds.size} unused one-off ${removedIds.size === 1 ? 'place' : 'places'}`);
+  }
+  return removedIds.size;
+}
+
+// RENDER: the Settings summary card AND full Places Manager list.
 function renderLocationControls(){
+  const locations = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
+  const saved = locations.filter(l=>!l.temporary);
+  const temp = locations.filter(l=>l.temporary);
+  const usageMap = locationUsageSummaryMap(locations);
+
+  // Prune any selectedIds no longer in registry.
+  const idSet = new Set(locations.map(l=>l.id));
+  for(const id of [...locManagerState.selectedIds]){ if(!idSet.has(id))locManagerState.selectedIds.delete(id); }
+
+  const summaryText = !locations.length
+    ? 'No saved places'
+    : temp.length
+      ? `${saved.length} saved · ${temp.length} one-off`
+      : `${saved.length} saved ${saved.length === 1 ? 'place' : 'places'}`;
+  const summary = $('location-list-summary');
+  if(summary)summary.textContent = summaryText;
+  const mgrCount = $('locations-manager-count');
+  if(mgrCount)mgrCount.textContent = summaryText;
+
+  // Compact preview pills in Settings.
+  const preview = $('location-settings-preview');
+  if(preview){
+    const sortedSaved = saved.slice().sort(compareLocationNames);
+    const shown = sortedSaved.slice(0, 5);
+    const more = sortedSaved.length - shown.length;
+    preview.innerHTML = shown.map(loc=>{
+      const mark = loc.emoji || (typeof emojiForPlaceType === 'function' ? emojiForPlaceType(loc.placeType) : '') || '';
+      return `<span class="settings-preview-pill">${mark ? `<span>${escapeHtml(mark)}</span>` : ''}${escapeHtml(loc.name)}</span>`;
+    }).join('') + (more > 0 ? `<span class="settings-preview-pill is-more">+${more} more</span>` : '');
+    preview.hidden = !shown.length;
+  }
+
+  // Cleanup bar for unused temporary places.
+  const unusedTemp = temp.filter(l=>{
+    const u = usageMap.get(l.id);
+    return !u || !u.direct.length;
+  });
+  const cleanupBar = $('locations-temp-cleanup-bar');
+  const cleanupText = $('locations-temp-cleanup-text');
+  if(cleanupBar && cleanupText){
+    cleanupBar.hidden = unusedTemp.length === 0;
+    if(unusedTemp.length){
+      cleanupText.textContent = `${unusedTemp.length} unused one-off ${unusedTemp.length === 1 ? 'place' : 'places'}`;
+    }
+  }
+
+  const clearBtn = $('locations-manager-search-clear');
+  if(clearBtn)clearBtn.hidden = !locManagerState.search;
+
+  renderLocationsManagerFilters(locations, usageMap);
+
   const wrap = $('location-list');
   if(!wrap)return;
-  const locations = normalizeLocationRegistry(sortSettings.locations);
-  const displayLocations = locations
-    .map((loc,index)=>({loc,index}))
-    .sort((a,b)=>compareLocationNames(a.loc,b.loc));
+  const displayLocations = filteredManagerLocations(locations, usageMap);
+  locManagerState.visibleIds = displayLocations.map(({loc})=>loc.id);
   const empty = $('location-empty-hint');
-  if(empty)empty.hidden = locations.length > 0;
-  const summary = $('location-list-summary');
-  if(summary)summary.textContent = locations.length
-    ? `${locations.length} saved ${locations.length === 1 ? 'place' : 'places'}`
-    : 'No saved places';
-  wrap.innerHTML = displayLocations.map(({loc,index})=>locationRowMarkup(loc,index)).join('');
-  // Restore "more" expansion across re-renders.
+  if(empty){
+    empty.hidden = displayLocations.length > 0;
+    if(locations.length === 0){
+      empty.textContent = 'No places yet. Add a place to plan travel, hours, and weather — habits without a place can be done anywhere.';
+    }else if(displayLocations.length === 0){
+      // Places exist but none match — offer the one-tap way back.
+      empty.innerHTML = 'No places match your search or filters. '
+        + '<button type="button" class="mini-text-btn" data-loc-empty-reset>clear search &amp; filters</button>';
+    }else{
+      empty.textContent = '';
+    }
+  }
+  wrap.innerHTML = displayLocations.map(({loc,index})=>locationRowMarkup(loc,index,usageMap)).join('');
   expandedLocationMores.forEach(i=>{
     const body = wrap.querySelector(`[data-location-more="${i}"]`);
     if(body)body.hidden = false;
   });
+  renderLocationsBulkBar();
 }
 
-// RENDER: rebuild ONE location row in place. Used after every field-level
-// patch so editing location B can never disturb whatever the user is
-// mid-typing into location A (or into a different field on this same row —
-// expandedLocationMores / pendingLocationHoursEdit are consulted by
-// locationRowMarkup so that state survives the rebuild). Falls back to a
-// full-list render if the row isn't there yet, which should not normally
-// happen since add/remove already re-render the whole list themselves.
+// HANDLER: empty-state recovery — same reset as the "Reset filters" chip.
+document.addEventListener('click',event=>{
+  if(!event.target.closest('[data-loc-empty-reset]'))return;
+  locManagerState.search = '';
+  locManagerState.scope = 'all';
+  locManagerState.env = 'all';
+  locManagerState.type = 'all';
+  locManagerState.status = 'all';
+  const el = $('locations-manager-search');
+  if(el){ el.value = ''; }
+  renderLocationControls();
+});
+
+// RENDER: rebuild ONE location row in place.
 function rerenderLocationRow(index){
   const wrap = $('location-list');
   const row = wrap && wrap.querySelector(`[data-location-row="${index}"]`);
-  const loc = normalizeLocationRegistry(sortSettings.locations)[index];
+  const locations = normalizeLocationRegistry(sortSettings.locations);
+  const loc = locations[index];
   if(!wrap || !row || !loc){ renderLocationControls(); return; }
-  row.outerHTML = locationRowMarkup(loc,index);
+  const usageMap = locationUsageSummaryMap(locations);
+  row.outerHTML = locationRowMarkup(loc,index,usageMap);
 }
 
-// RENDER: one location row — name, pin, hours, radius always visible;
-// closed days + preferred/per-day hours live behind More.
-function locationRowMarkup(loc,i){
-  // hoursSaved: is there an actual saved window? Controls the values shown.
-  // hoursOpenUI: should the fields render enabled / checkbox unchecked? Also
-  // true while the user has unchecked "All day" but not yet committed a window,
-  // so a patch elsewhere on the sheet can't silently re-collapse this row.
+// RENDER: one location row — name, categorization (type + indoor/outdoor),
+// usage badge, temporary promote, hours, radius, and More options.
+// In bulk (select) mode every editor is disabled: the row becomes a pure
+// selection target, so taps can't silently edit a place while selecting.
+function locationRowMarkup(loc,i,usageMap = null){
   const hoursSaved = Number.isFinite(loc.allowedTimeStart) && Number.isFinite(loc.allowedTimeEnd);
   const hoursOpenUI = hoursSaved || pendingLocationHoursEdit.has(i);
   const startVal = hoursSaved ? minutesToTimeInput(loc.allowedTimeStart) : '';
@@ -81,64 +569,96 @@ function locationRowMarkup(loc,i){
   const moreOpen = expandedLocationMores.has(i);
   const radius = Number.isFinite(loc.radiusM) ? Math.round(loc.radiusM) : DEFAULT_LOCATION_RADIUS_M;
   const closedCount = closedSet.size;
-  const weatherProfiles=typeof normalizeWeatherProfiles==='function'
+  const weatherProfiles = typeof normalizeWeatherProfiles === 'function'
     ? normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles) : [];
-  const weatherProfile=weatherProfiles.find(profile=>profile.id===loc.weatherProfileId) || null;
-  const weatherOptions='<option value="">none</option>'+weatherProfiles.map(profile=>
+  const weatherProfile = weatherProfiles.find(profile=>profile.id===loc.weatherProfileId) || null;
+  const weatherOptions = '<option value="">none</option>'+weatherProfiles.map(profile=>
     `<option value="${escapeHtml(profile.id)}"${profile.id===loc.weatherProfileId?' selected':''}>${escapeHtml(profile.name)}</option>`
   ).join('');
+  const usage = usageMap ? (usageMap.get(loc.id) || {direct:[],viaType:[]}) : {direct:habitsUsingLocationId(loc.id),viaType:[]};
+  const totalUsed = usage.direct.length + usage.viaType.length;
+  const usageText = totalUsed
+    ? `${totalUsed} ${totalUsed === 1 ? 'item' : 'items'}`
+    : 'unused';
+  const usedNames = [...usage.direct, ...usage.viaType].map(h=>h && h.name).filter(Boolean);
   const moreSummary = [
     closedCount ? `closed ${closedCount}d` : null,
     prefSet ? 'preferred time' : null,
-    weatherProfile ? `${weatherProfile.name} weather` : null
+    weatherProfile ? `${weatherProfile.name} weather` : null,
+    usedNames.length ? `${usedNames.length} linked` : null
   ].filter(Boolean).join(' · ');
-  const typeLabel = loc.placeType ? placeTypeLabel(loc.placeType) : '';
-  return `<div class="location-row" data-location-row="${i}">
+  const iconMark = loc.emoji || (typeof emojiForPlaceType === 'function' ? emojiForPlaceType(loc.placeType) : '');
+  const selected = locManagerState.selectedIds.has(loc.id);
+  const bulk = locManagerState.bulkMode;
+  const dis = bulk ? ' disabled' : '';
+  const moreChevron = `<i class="ti ${moreOpen ? 'ti-chevron-down' : 'ti-chevron-right'}" aria-hidden="true"></i>`;
+  return `<div class="location-row${loc.temporary ? ' is-temporary' : ''}${selected ? ' is-selected' : ''}${bulk ? ' is-bulk' : ''}" data-location-row="${i}" data-location-id="${escapeHtml(loc.id)}">
     <div class="location-row-head">
-      <span class="location-row-icon" aria-hidden="true"><i class="ti ti-map-pin"></i></span>
-      <input type="text" class="location-name" data-loc-name="${i}" aria-label="place name" maxlength="48" value="${escapeHtml(loc.name)}" />
-      <button class="mini-text-btn location-remove-btn" type="button" data-loc-remove="${i}" aria-label="remove ${escapeHtml(loc.name)}"><i class="ti ti-trash" aria-hidden="true"></i><span>remove</span></button>
+      ${bulk ? `<label class="manager-row-check"><input type="checkbox" data-loc-select="${escapeHtml(loc.id)}" aria-label="select ${escapeHtml(loc.name)}"${selected ? ' checked' : ''} /></label>` : ''}
+      <span class="location-row-icon" aria-hidden="true">${iconMark ? escapeHtml(iconMark) : '<i class="ti ti-map-pin"></i>'}</span>
+      <input type="text" class="location-name" data-loc-name="${i}" aria-label="place name" maxlength="48" value="${escapeHtml(loc.name)}"${dis} />
+      <span class="location-usage-badge${totalUsed ? '' : ' is-unused'}" title="${escapeHtml(usedNames.slice(0,6).join(', ') || 'No items using this place')}">${escapeHtml(usageText)}</span>
+      <button class="mini-text-btn location-remove-btn" type="button" data-loc-remove="${i}" aria-label="remove ${escapeHtml(loc.name)}"${dis}><i class="ti ti-trash" aria-hidden="true"></i><span>remove</span></button>
     </div>
+    ${loc.temporary ? `<div class="location-temp-strip">
+      <span class="location-temp-badge"><i class="ti ti-clock-hour-4" aria-hidden="true"></i> One-off place</span>
+      <button class="mini-text-btn location-promote-btn" type="button" data-loc-promote="${i}"${dis}>save to places</button>
+    </div>` : ''}
     <div class="location-meta">
-      <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)" />
-      ${typeLabel ? `<span class="location-type-chip" title="place type from OpenStreetMap">${escapeHtml(typeLabel)}</span>` : ''}
-      <button class="mini-text-btn location-pin-btn" type="button" data-loc-edit-pin="${i}" title="edit pin on map">
+      <input type="text" class="location-address" data-loc-address="${i}" aria-label="address" maxlength="120" value="${escapeHtml(loc.address)}" placeholder="address (optional)"${dis} />
+      <button class="mini-text-btn location-pin-btn" type="button" data-loc-edit-pin="${i}" title="edit pin on map" aria-label="edit pin on map for ${escapeHtml(loc.name)}"${dis}>
         <i class="ti ti-map-pin" aria-hidden="true"></i> edit map
       </button>
+      <button class="mini-text-btn location-maps-btn" type="button" data-loc-maps="${i}" title="open directions in maps" aria-label="open directions to ${escapeHtml(loc.name)} in maps"${dis}>
+        <i class="ti ti-external-link" aria-hidden="true"></i>
+      </button>
+    </div>
+    <div class="location-categories">
+      <label class="loc-cat-select-wrap">
+        <span class="loc-field-label">type</span>
+        <select class="settings-select loc-type-select" data-loc-type="${i}" aria-label="place type for ${escapeHtml(loc.name)}"${dis}>${placeTypeSelectOptionsHtml(loc.placeType)}</select>
+      </label>
+      <label class="loc-cat-select-wrap">
+        <span class="loc-field-label">setting</span>
+        <select class="settings-select loc-env-select" data-loc-env="${i}" aria-label="indoor or outdoor setting for ${escapeHtml(loc.name)}"${dis}>${locationEnvironmentSelectOptionsHtml(loc)}</select>
+      </label>
     </div>
     <div class="location-hours">
       <span class="loc-field-label">hours</span>
-      <input type="time" step="300" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
-      <span class="loc-sep">–</span>
-      <input type="time" step="300" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
-      <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}">All day</button>
+      <span class="loc-hours-fields"${hoursOpenUI ? '' : ' hidden'}>
+        <input type="time" step="300" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'}${dis} />
+        <span class="loc-sep">–</span>
+        <input type="time" step="300" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'}${dis} />
+      </span>
+      <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}"${dis}>All day</button>
     </div>
     <div class="location-radius">
       <span class="loc-field-label">nearby</span>
-      <input type="number" data-loc-radius="${i}" aria-label="how close in metres" min="10" max="2000" step="5" inputmode="numeric" value="${radius}" />
+      <input type="number" data-loc-radius="${i}" aria-label="how close in metres" min="10" max="2000" step="5" inputmode="numeric" value="${radius}"${dis} />
       <span class="loc-unit">m</span>
       <span class="loc-hint">how close means you’re here</span>
     </div>
-    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} more options${moreSummary ? ` · ${moreSummary}` : ''}</button>
+    <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}" data-more-summary="${escapeHtml(moreSummary)}"${dis}>${moreChevron}<span>more options${moreSummary ? ` · ${escapeHtml(moreSummary)}` : ''}</span></button>
     <div class="location-more" data-location-more="${i}" ${moreOpen ? '' : 'hidden'}>
+      ${usedNames.length ? `<div class="loc-used-by"><span class="loc-field-label">used by</span><span class="field-hint">${escapeHtml(usedNames.slice(0,8).join(', '))}${usedNames.length > 8 ? ` +${usedNames.length - 8} more` : ''}</span></div>` : ''}
       <label class="loc-weather habit-option-field">
         <span class="loc-field-label">weather guidance</span>
-        <select class="settings-select" data-loc-weather="${i}" aria-label="weather guidance for ${escapeHtml(loc.name)}">${weatherOptions}</select>
+        <select class="settings-select" data-loc-weather="${i}" aria-label="weather guidance for ${escapeHtml(loc.name)}"${dis}>${weatherOptions}</select>
         <span class="field-hint">Applies automatically to items scheduled here unless an item or option overrides it.</span>
       </label>
       <div class="location-days">
         <span class="loc-field-label">closed</span>
         ${WEEKDAY_LABELS.map((label,day)=>{
           const on = closedSet.has(day);
-          return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-loc-closed-day="${day}" data-loc-index="${i}" aria-pressed="${on}">${label}</button>`;
+          return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-loc-closed-day="${day}" data-loc-index="${i}" aria-pressed="${on}"${dis}>${label}</button>`;
         }).join('')}
       </div>
       <div class="loc-pref">
         <span class="loc-field-label">prefer</span>
-        <input type="time" step="300" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}" />
+        <input type="time" step="300" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}"${dis} />
         <span class="loc-sep">–</span>
-        <input type="time" step="300" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}" />
-        <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}">clear</button>
+        <input type="time" step="300" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}"${dis} />
+        <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}"${dis}>clear</button>
       </div>
       <div class="loc-perday">
         <span class="loc-field-label">by day</span>
@@ -149,10 +669,10 @@ function locationRowMarkup(loc,i){
           const de = hd && Number.isFinite(hd.end) ? minutesToTimeInput(hd.end) : '';
           return `<div class="perday-row">
             <span class="perday-label">${label}</span>
-            <input type="time" step="300" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
+            <input type="time" step="300" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''}${dis} />
             <span class="loc-sep">–</span>
-            <input type="time" step="300" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
-            <label class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''} /> closed</label>
+            <input type="time" step="300" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''}${dis} />
+            <label class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''}${dis} /> closed</label>
           </div>`;
         }).join('')}
       </div>
@@ -160,19 +680,18 @@ function locationRowMarkup(loc,i){
   </div>`;
 }
 
-// HYBRID: patch one location and persist. Re-renders only that row — sibling
-// rows (and any mid-edit state on this one, like an unchecked-but-uncommitted
-// "24h" box) are left completely alone.
+// HYBRID: patch one location and persist.
 function saveLocationPatch(index,patch){
   const locations = normalizeLocationRegistry(sortSettings.locations);
   if(!locations[index])return;
   locations[index] = {...locations[index],...patch};
   updateSortSetting({locations},{renderNow:false});
-  const weatherChanged=Object.prototype.hasOwnProperty.call(patch,'weatherProfileId');
-  if(weatherChanged && typeof bumpPlannerDataRevision==='function')bumpPlannerDataRevision();
-  // A renamed row may move alphabetically. `change` fires after editing is
-  // complete, so a full list rebuild is safe and makes the order immediate.
-  if(Object.prototype.hasOwnProperty.call(patch,'name'))renderLocationControls();
+  const weatherChanged = Object.prototype.hasOwnProperty.call(patch,'weatherProfileId');
+  const categoryChanged = Object.prototype.hasOwnProperty.call(patch,'placeType')
+    || Object.prototype.hasOwnProperty.call(patch,'environment')
+    || Object.prototype.hasOwnProperty.call(patch,'temporary');
+  if((weatherChanged || categoryChanged) && typeof bumpPlannerDataRevision==='function')bumpPlannerDataRevision();
+  if(Object.prototype.hasOwnProperty.call(patch,'name') || categoryChanged)renderLocationControls();
   else rerenderLocationRow(index);
   render();
   if(weatherChanged){
@@ -184,12 +703,7 @@ function saveLocationPatch(index,patch){
 
 // HYBRID: add a location to the registry (called by the geocode pick, GPS, or a
 // manual entry). Generates a stable opaque id. Enforces MAX_LOCATIONS.
-// Returns the new id on success, or null on failure (so callers — e.g. the
-// detail-pane "+ new place" flow — can auto-select the freshly created place).
-// When no home city is set yet, infers one from the new place's coordinates.
-// Optional extras from the map picker: placeType, emoji, and prefilled hours
-// (allowedTimeStart/End, closedDays, hoursByDay) parsed from OSM opening hours.
-function addLocation({name,address,lat,lng,emoji,placeType,allowedTimeStart,allowedTimeEnd,closedDays,hoursByDay}){
+function addLocation({name,address,lat,lng,emoji,placeType,environment,temporary,allowedTimeStart,allowedTimeEnd,closedDays,hoursByDay}){
   const cleanName = String(name || '').trim().slice(0,48);
   if(!cleanName){ showToast('enter a name'); return null; }
   if(!Number.isFinite(lat) || !Number.isFinite(lng)){ showToast('missing coordinates'); return null; }
@@ -202,6 +716,8 @@ function addLocation({name,address,lat,lng,emoji,placeType,allowedTimeStart,allo
     lat, lng,
     emoji:String(emoji || '').slice(0,4),
     placeType:normalizePlaceType(placeType),
+    environment:typeof normalizeLocationEnvironment === 'function' ? normalizeLocationEnvironment(environment) : '',
+    temporary:Boolean(temporary),
     radiusM:DEFAULT_LOCATION_RADIUS_M,
     weatherProfileId:null
   };
@@ -215,8 +731,8 @@ function addLocation({name,address,lat,lng,emoji,placeType,allowedTimeStart,allo
   updateSortSetting({locations},{renderNow:false});
   renderLocationControls();
   render();
-  showToast(`added ${cleanName}`);
-  if(typeof maybeInferHomeCityFromPlace === 'function')maybeInferHomeCityFromPlace(lat,lng);
+  showToast(row.temporary ? `added one-off place ${cleanName}` : `added ${cleanName}`);
+  if(!row.temporary && typeof maybeInferHomeCityFromPlace === 'function')maybeInferHomeCityFromPlace(lat,lng);
   return id;
 }
 
@@ -322,8 +838,11 @@ function toggleLocationMore(index){
   body.hidden = !opening;
   if(opening)expandedLocationMores.add(index); else expandedLocationMores.delete(index);
   if(btn){
+    // Keep the summary ("closed 2d · Dry weather · 2 linked") in the collapsed
+    // label — it is the only place those facts are visible without expanding.
+    const summary = btn.dataset.moreSummary || '';
     btn.setAttribute('aria-expanded',String(opening));
-    btn.innerHTML = (opening ? '▾' : '▸') + ' hours by day &amp; preferred time';
+    btn.innerHTML = `<i class="ti ${opening ? 'ti-chevron-down' : 'ti-chevron-right'}" aria-hidden="true"></i><span>more options${summary ? ` · ${escapeHtml(summary)}` : ''}</span>`;
   }
 }
 
@@ -512,6 +1031,10 @@ function pickerSetCoords(lat,lng,{reverse = true, pan = true, hit = null} = {}){
     nameEl.value = (pin.name || '').slice(0,48);
     pickerNameSource = pin.name ? 'pick' : 'none';
   }
+  if(pickerTypeSource !== 'user'){
+    syncPickerTypeSelect(pin.placeType || '');
+  }
+  syncPickerEnvButtons();
   renderPickerPlaceFacts();
   if(!reverse)return;
   pickerReverseTimer = setTimeout(()=>{
@@ -614,6 +1137,7 @@ function addPickerSavedMarkers(){
   const locs = normalizeLocationRegistry(sortSettings && sortSettings.locations);
   locs.forEach((loc,index)=>{
     if(pickerEditIndex != null && index === pickerEditIndex)return;
+    if(loc.temporary)return;
     if(!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng))return;
     let marker = null;
     try{
@@ -674,11 +1198,41 @@ function pickerStreetTileFailed(){
 // once after a brand-new place is saved, so callers (e.g. the detail-pane
 // "+ new place" pill) can auto-select it on the habit they came from.
 let pickerOnCreated = null;
+let pickerTypeSource = 'none';
+let pickerEnvValue = '';
+let pickerAllowTemporary = false;
+
+function syncPickerTypeSelect(value){
+  const sel = $('picker-place-type');
+  if(!sel)return;
+  const clean = normalizePlaceType(value);
+  sel.innerHTML = placeTypeSelectOptionsHtml(clean);
+  sel.value = clean;
+}
+
+function syncPickerEnvButtons(){
+  const selType = $('picker-place-type')?.value || '';
+  const inferred = typeof inferredLocationEnvironment === 'function' ? inferredLocationEnvironment(selType) : '';
+  const seg = $('picker-env-seg');
+  if(!seg)return;
+  seg.querySelectorAll('[data-picker-env]').forEach(btn=>{
+    const val = btn.dataset.pickerEnv;
+    const on = val === pickerEnvValue;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    if(val === ''){
+      btn.textContent = inferred ? `Auto (${inferred === 'both' ? 'both' : inferred})` : 'Auto';
+    }
+  });
+}
+
 function openLocationPicker(opts = {}){
   leavePickerSearch();
   destroyLocationPickerMap();
   pickerEditIndex = Number.isInteger(opts.index) ? opts.index : null;
   pickerOnCreated = typeof opts.onCreated === 'function' ? opts.onCreated : null;
+  const existing = Number.isInteger(opts.index) ? normalizeLocationRegistry(sortSettings.locations)[opts.index] : null;
+  pickerAllowTemporary = Boolean(opts.allowTemporary) && pickerEditIndex == null;
   const title = $('location-picker-title');
   if(title)title.textContent = pickerEditIndex != null ? 'edit place' : 'add place';
   const saveBtn = $('picker-save');
@@ -688,6 +1242,15 @@ function openLocationPicker(opts = {}){
   if(nameEl)nameEl.value = opts.name || '';
   pickerNameSource = opts.name ? 'user' : 'none';
   if(searchEl)searchEl.value = '';
+  const tempRow = $('picker-temp-row');
+  const tempCheck = $('picker-temporary');
+  if(tempRow)tempRow.hidden = !pickerAllowTemporary;
+  if(tempCheck)tempCheck.checked = Boolean(opts.temporary);
+  pickerTypeSource = existing?.placeType || opts.placeType ? 'user' : 'none';
+  syncPickerTypeSelect(existing?.placeType || opts.placeType || '');
+  pickerEnvValue = existing ? normalizeLocationEnvironment(existing.environment) : normalizeLocationEnvironment(opts.environment);
+  if(pickerEnvValue === 'none')pickerEnvValue = '';
+  syncPickerEnvButtons();
   $('picker-save').disabled = false;
   document.querySelector('.picker-coords-details').open = false;
   setPickerSearchScope('near');
@@ -697,7 +1260,6 @@ function openLocationPicker(opts = {}){
   const lat = start.lat;
   const lng = start.lng;
   ensureLocationPickerMap(lat,lng);
-  const existing = Number.isInteger(opts.index) ? sortSettings.locations?.[opts.index] : null;
   const hit = opts.address || existing?.placeType ? {address:opts.address,placeType:existing?.placeType} : null;
   pickerSetCoords(lat,lng,{reverse:false,hit});
   pickerOpenAnchor = {lat, lng};
@@ -712,6 +1274,9 @@ function closeLocationPicker(){
   pickerEditIndex = null;
   pickerOnCreated = null;
   pickerOpenAnchor = null;
+  pickerAllowTemporary = false;
+  pickerTypeSource = 'none';
+  pickerEnvValue = '';
 }
 
 // Map camera only. The New York fallback is a blank map, never a search bias.
@@ -819,6 +1384,7 @@ function pickerSavedMatch(hit){
   if(!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lng))return null;
   const locs = normalizeLocationRegistry(sortSettings && sortSettings.locations);
   for(const loc of locs){
+    if(loc.temporary)continue;
     if(Number.isFinite(loc.lat) && Number.isFinite(loc.lng) && haversineMetres(loc.lat,loc.lng,hit.lat,hit.lng) < 80)return loc;
   }
   return null;
@@ -1020,7 +1586,13 @@ function refreshPickerPlaceDetails(){
   const applyDetails = details => {
     if(!details || !samePin())return;
     const cur = pickerCurrentHit;
-    if(details.placeType)cur.placeType = details.placeType;
+    if(details.placeType){
+      cur.placeType = details.placeType;
+      if(pickerTypeSource !== 'user'){
+        syncPickerTypeSelect(details.placeType);
+        syncPickerEnvButtons();
+      }
+    }
     if(details.openingHours)cur.openingHours = details.openingHours;
     renderPickerPlaceFacts();
   };
@@ -1191,10 +1763,19 @@ async function saveLocationPicker(){
         || $('picker-lng').value.trim() !== pickerCoordText(pin.lng))return;
   }
 
-  const patch = {name,address:pin.address || '',lat:pin.lat,lng:pin.lng,placeType:pin.placeType || ''};
+  const chosenType = $('picker-place-type') ? normalizePlaceType($('picker-place-type').value) : normalizePlaceType(pin.placeType);
+  const patch = {
+    name,
+    address:pin.address || '',
+    lat:pin.lat,
+    lng:pin.lng,
+    placeType:chosenType,
+    environment:normalizeLocationEnvironment(pickerEnvValue)
+  };
+  if(pickerAllowTemporary && $('picker-temporary')?.checked)patch.temporary = true;
   const hoursFill = pickerHoursAutofill(pin);
   if(hoursFill)Object.assign(patch,hoursFill);
-  const emoji = emojiForPlaceType(pin.placeType);
+  const emoji = emojiForPlaceType(chosenType);
   if(emoji)patch.emoji = emoji;
   if(pickerEditIndex != null){
     // Editing never overwrites windows the user configured earlier: hours

@@ -126,6 +126,7 @@ function normalizeNewItemDefaults(raw = {}){
     allowedTimeStart:normalizeTimeMinutes(raw.allowedTimeStart),
     allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
     locationIds:normalizeLocationIds(raw.locationIds),
+    locationTypes:typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(raw.locationTypes) : [],
     anywhereAllowed:raw.anywhereAllowed !== false
   };
 }
@@ -134,7 +135,7 @@ function newItemDefaults(settings,type){
   const habit = {};
   for(const key of ['target','priority','durationMinutes','earlyWindowDays','delayAllowanceDays',
     'breakable','minChunkMinutes','topics','autoMarkMode','autoMarkMinutes','allowedWeekdays',
-    'allowedTimeStart','allowedTimeEnd','locationIds','anywhereAllowed']){
+    'allowedTimeStart','allowedTimeEnd','locationIds','locationTypes','anywhereAllowed']){
     habit[key] = settings['default' + key[0].toUpperCase() + key.slice(1)];
   }
   const normalized = normalizeNewItemDefaults(habit);

@@ -210,6 +210,13 @@
   gap:8px;
 }
 .blocked-time-head input[type=text]{flex:1;min-width:0;}
+.busy-manager-sheet .blocked-time-row{border-radius:var(--radius-sm);background:var(--bg);}
+.busy-manager-sheet .blocked-time-row.is-selected{border-color:var(--teal-icon);}
+.busy-manager-sheet .ordinal-editor{grid-column:1 / -1;min-width:0;}
+.busy-manager-sheet .blocked-time-list.is-bulk :is(input,select,button):disabled{opacity:0.55;}
+.busy-manager-sheet .blocked-time-list.is-bulk details{pointer-events:none;}
+.busy-manager-sheet .blocked-time-head .manager-row-check{flex:0 0 auto;}
+.busy-manager-sheet .blocked-time-head input[type=checkbox]{width:18px;height:18px;}
 .blocked-time-row .habit-options-block,
 .blocked-time-row .native-busy-reminders{
   grid-column:1 / -1;

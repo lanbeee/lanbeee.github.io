@@ -287,11 +287,6 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) #location-picker-sheet{
 }
 .location-picker-actions .btn{min-height:46px;}
 .location-picker-sheet #picker-name,.location-picker-sheet .picker-coords-row input{font-size:16px;}
-.location-type-chip{
-  flex:0 0 auto;padding:3px 9px;border-radius:999px;
-  background:var(--teal-bg);color:var(--teal-text);font-size:11px;font-weight:700;
-  text-transform:capitalize;white-space:nowrap;
-}
 .picker-saved-popup{display:flex;flex-direction:column;gap:4px;min-width:130px;}
 .picker-saved-popup b{font-size:12.5px;}
 .picker-saved-popup small{color:var(--text3);font-size:10.5px;line-height:1.3;}
@@ -356,3 +351,283 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) #location-picker-sheet{
 .blocked-cancel-mark:active{background:color-mix(in srgb,var(--text3) 12%,var(--bg));}
 .loc-weather{display:flex;flex-direction:column;gap:5px;}
 .loc-weather .settings-select{width:100%;}
+
+/* Settings summary cards for Places & Weather Managers */
+.settings-manager-card{
+  display:flex;flex-direction:column;gap:10px;
+  margin:10px 0 12px;padding:12px;border-radius:14px;
+  border:0.5px solid var(--border);background:var(--bg2);
+}
+.settings-manager-card-top{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;
+}
+.settings-manager-card-meta{display:flex;flex-direction:column;gap:6px;flex:1 1 150px;min-width:0;}
+.settings-manager-card-count{font-size:13.5px;font-weight:700;color:var(--text);}
+.settings-manager-card-top > .btn{flex:0 0 auto;width:auto;min-width:0;max-width:100%;min-height:40px;padding:8px 14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;}
+.settings-manager-preview{display:flex;flex-wrap:wrap;gap:5px;}
+.settings-preview-pill{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:3px 8px;border-radius:999px;font-size:11.5px;font-weight:600;
+  background:var(--bg);color:var(--text2);border:0.5px solid var(--border);
+  max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.settings-preview-pill.is-more{color:var(--text3);background:transparent;}
+.settings-manager-card .location-add-actions{margin:0;}
+.settings-manager-card .weather-actions{margin:0;}
+
+/* Full-page Places & Weather Profiles Manager sheets */
+#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet{
+  bottom:auto;height:min(100%,var(--keyboard-viewport-bottom,100dvh));
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) :is(#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet){
+  top:var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height)));
+  height:calc(min(100dvh,var(--keyboard-viewport-bottom,100dvh)) - var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height))));
+}
+.manager-sheet{
+  display:flex;flex-direction:column;overflow:hidden;
+  width:100%;max-width:none;min-height:0;
+  height:min(100%,var(--keyboard-viewport-bottom,100dvh));
+  max-height:100%;
+  padding:0;
+}
+body[data-pane-count="1"] .manager-sheet{
+  height:min(100%,var(--keyboard-viewport-bottom,100dvh));min-height:0;max-height:100%;
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) .manager-sheet{
+  width:min(720px,calc(100vw - 48px));max-width:720px;
+  height:min(840px,calc(min(100dvh,var(--add-viewport-height,100dvh)) - var(--desktop-chrome-top,0px) - 48px));
+  max-height:calc(min(100dvh,var(--add-viewport-height,100dvh)) - var(--desktop-chrome-top,0px) - 48px);
+  border-radius:var(--sheet-radius,20px);
+  border:0.5px solid var(--border);
+  box-shadow:0 24px 60px rgba(0,0,0,0.22);
+}
+.manager-head{
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:calc(12px + var(--content-safe-top)) 14px 10px;
+  border-bottom:0.5px solid var(--border);background:var(--bg);
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) .manager-head{padding-top:14px;}
+.manager-head-copy{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.manager-head-copy .sheet-title{margin:0;font-size:17px;line-height:1.2;}
+.manager-head-sub{font-size:11.5px;color:var(--text3);font-weight:600;}
+.manager-head .btn{
+  flex:0 0 auto;width:auto;min-height:38px;padding:7px 12px;font-size:12.5px;
+  display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+}
+.manager-select-btn.on{background:var(--teal-bg);color:var(--teal-text);border-color:var(--teal-icon);}
+.manager-toolbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:10px 14px 6px;background:var(--bg);
+}
+.manager-search-row{
+  flex:1 1 auto;min-width:0;position:relative;display:flex;align-items:center;
+}
+.manager-search-row > i{
+  position:absolute;left:11px;color:var(--text3);font-size:15px;pointer-events:none;
+}
+.manager-search-row input[type="search"]{
+  width:100%;height:38px;margin:0;padding:0 34px 0 32px;border-radius:10px;
+  border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);
+  font:inherit;font-size:14px;
+}
+/* One clear affordance only: the custom ✕ button, like the filter/detail search. */
+.manager-search-row input[type="search"]::-webkit-search-cancel-button,
+.manager-search-row input[type="search"]::-webkit-search-decoration{
+  -webkit-appearance:none;appearance:none;display:none;
+}
+.manager-search-clear{
+  position:absolute;right:4px;width:30px !important;height:30px !important;min-width:30px;
+}
+.manager-sort-select{
+  flex:0 0 auto;width:auto !important;max-width:136px;height:38px;font-size:12.5px;
+}
+.manager-filters{
+  flex:0 0 auto;display:flex;align-items:center;gap:6px;
+  padding:4px 14px 8px;overflow-x:auto;overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;
+}
+.manager-filters::-webkit-scrollbar{display:none;}
+.manager-filter-chip{
+  flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;
+  height:32px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:650;
+  border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);
+  white-space:nowrap;cursor:pointer;
+}
+.manager-filter-chip.on{
+  background:var(--teal-icon);color:var(--teal-bg);border-color:var(--teal-icon);
+}
+.manager-filter-chip.is-reset{
+  background:transparent;color:var(--text3);border-style:dashed;
+}
+.manager-cleanup-bar{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:0 14px 8px;padding:8px 12px;border-radius:10px;
+  background:color-mix(in srgb,var(--amber-bg) 55%,var(--bg2));
+  border:0.5px solid color-mix(in srgb,var(--amber-text) 25%,var(--border));
+  font-size:12px;color:var(--text2);
+}
+.manager-body{
+  flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
+  padding:6px 14px calc(24px + var(--content-safe-bottom));
+}
+.manager-bulk-bar{
+  flex:0 0 auto;display:flex;flex-direction:column;gap:8px;
+  padding:10px 14px calc(12px + var(--content-safe-bottom));
+  border-top:1px solid var(--border);background:var(--bg2);
+}
+.manager-bulk-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.manager-bulk-count{font-size:13px;font-weight:700;color:var(--text);}
+.manager-bulk-top-actions{display:flex;align-items:center;gap:8px;}
+.manager-bulk-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.manager-bulk-controls > select{flex:1 1 150px;min-width:0;}
+.manager-bulk-value{flex:1 1 150px;min-width:0;display:flex;align-items:center;gap:6px;}
+.manager-bulk-value > select{width:100%;}
+.manager-bulk-controls > .btn{flex:0 0 auto;width:auto;min-height:38px;padding:8px 16px;}
+/* On phones the value select and apply button wrap; give apply the full row so
+   it never sits half-width next to a leftover select. */
+@media (max-width:520px){
+  .manager-bulk-controls > .btn{flex:1 1 100%;min-height:42px;}
+}
+.manager-bulk-hours{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.manager-bulk-hours input[type="time"]{height:36px;padding:0 6px;border-radius:8px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font:inherit;font-size:12.5px;}
+.manager-bulk-check{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text2);white-space:nowrap;}
+.manager-bulk-radius{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--text2);}
+.manager-bulk-radius input{width:76px;height:36px;padding:0 8px;border-radius:8px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font:inherit;}
+.manager-footer{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 14px calc(12px + var(--content-safe-bottom));
+  border-top:0.5px solid var(--border);background:var(--bg);
+}
+.manager-footer .field-hint{margin:0;flex:1 1 auto;min-width:0;}
+.manager-footer .btn{flex:0 0 auto;width:auto;min-height:38px;padding:7px 12px;font-size:12.5px;}
+.manager-row-check{
+  display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 auto;margin-right:2px;cursor:pointer;
+}
+.manager-row-check input{width:18px;height:18px;accent-color:var(--teal-icon);cursor:pointer;}
+
+/* Enhanced Place rows inside Places Manager */
+.location-row.is-selected,.weather-profile-card.is-selected{
+  border-color:var(--teal-icon);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--teal-icon) 40%,transparent);
+}
+.location-row.is-temporary{
+  border-style:dashed;
+}
+.location-usage-badge{
+  flex:0 0 auto;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;
+  background:var(--teal-bg);color:var(--teal-text);white-space:nowrap;
+}
+.location-usage-badge.is-unused{
+  background:var(--bg3);color:var(--text3);font-weight:600;
+}
+.location-temp-strip{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:5px 8px;border-radius:8px;
+  background:color-mix(in srgb,var(--amber-bg) 55%,var(--bg2));
+  font-size:11.5px;
+}
+.location-temp-badge{
+  display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--amber-text);
+}
+.location-categories{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px;
+}
+.loc-cat-select-wrap{
+  display:inline-flex;align-items:center;gap:5px;flex:1 1 130px;min-width:0;
+}
+/* Type names are long ("Cafe / Coffee shop"); let the type select take the
+   larger share so neither select truncates at phone width. */
+.loc-cat-select-wrap:has([data-loc-type]){flex:1.3 1 150px;}
+.loc-cat-select-wrap .settings-select{flex:1 1 auto;min-width:0;height:34px;font-size:12.5px;}
+.loc-used-by{display:flex;flex-direction:column;gap:2px;margin-bottom:6px;}
+.loc-used-by .field-hint{margin:0;}
+.location-maps-btn{
+  flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+  min-height:34px;min-width:34px;padding:0 8px;
+}
+.location-hours .loc-hours-fields{display:flex;align-items:center;gap:8px;min-width:0;}
+.location-hours .loc-hours-fields[hidden]{display:none;}
+/* Select mode turns a row into a selection target: its editors are disabled
+   in markup and dimmed so taps can't silently edit while selecting. */
+.location-row.is-bulk :is(input:not([type=checkbox]),select,button):disabled{
+  opacity:0.55;
+}
+.manager-empty-actions{margin:10px 0 4px;}
+.manager-empty-actions .mini-text-btn{min-height:36px;padding:8px 12px;}
+
+/* Weather Manager templates + summary */
+.weather-templates-bar{
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:4px 14px 8px;overflow-x:auto;scrollbar-width:none;
+}
+.weather-templates-bar::-webkit-scrollbar{display:none;}
+.weather-templates-label{
+  flex:0 0 auto;font-size:11px;font-weight:750;text-transform:uppercase;
+  letter-spacing:0.05em;color:var(--text3);
+}
+.weather-templates-chips{display:flex;align-items:center;gap:6px;}
+.weather-template-chip{
+  flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;
+  height:30px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:650;
+  border:0.5px dashed var(--border2);background:var(--bg);color:var(--text2);
+  cursor:pointer;white-space:nowrap;
+}
+.weather-template-chip:hover{border-color:var(--teal-icon);color:var(--teal-text);}
+.weather-profile-summary{
+  font-size:12px;color:var(--text2);line-height:1.35;
+  padding:6px 9px;border-radius:8px;background:var(--bg);border:0.5px solid var(--border);
+  margin:4px 0;
+}
+
+/* Map Picker: temporary toggle & categorization controls */
+.picker-temp-row{
+  display:flex;align-items:flex-start;gap:9px;
+  margin:8px 0 4px;padding:8px 10px;border-radius:10px;
+  background:var(--bg2);border:0.5px solid var(--border);cursor:pointer;
+}
+.picker-temp-row input[type="checkbox"]{
+  margin-top:2px;width:17px;height:17px;accent-color:var(--teal-icon);flex:0 0 auto;
+}
+.picker-temp-row span{display:flex;flex-direction:column;gap:1px;}
+.picker-temp-row strong{font-size:12.5px;color:var(--text);font-weight:700;}
+.picker-temp-row small{font-size:11px;color:var(--text3);line-height:1.3;}
+.picker-categorize-row{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:8px;
+  margin:6px 0 2px;align-items:end;
+}
+.picker-cat-field{display:flex;flex-direction:column;gap:3px;min-width:0;}
+.picker-cat-field .field-label{margin:0;}
+.picker-cat-field .settings-select{height:36px;font-size:12.5px;width:100%;}
+.picker-env-seg{margin:0;min-height:36px;}
+.picker-env-seg .seg-opt{font-size:11.5px;padding:4px 4px;min-height:32px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media (max-width:380px){
+  .picker-categorize-row{grid-template-columns:1fr;}
+}
+
+/* Place type / category chips & temporary chip badges inside item pickers */
+.location-type-chip-btn{
+  display:inline-flex;align-items:center;gap:4px;
+  color:var(--text2);background:var(--bg2);
+  border:0.5px dashed color-mix(in srgb,var(--teal-icon) 45%,var(--border2));
+}
+.location-type-chip-btn.is-env{
+  border-color:color-mix(in srgb,var(--amber-text) 45%,var(--border2));
+}
+.location-type-chip-btn.on{
+  background:color-mix(in srgb,var(--teal-icon) 18%,var(--teal-bg));
+  color:var(--teal-text);border-style:solid;border-color:var(--teal-icon);font-weight:700;
+}
+.location-type-chip-btn .loc-type-emoji{font-size:12px;line-height:1;}
+.location-type-chip-btn .place-type-count{opacity:0.75;font-size:10.5px;}
+.location-chip.is-temp-place{border-style:dashed;}
+.place-temp-tag{
+  font-size:9.5px;font-weight:750;text-transform:uppercase;letter-spacing:0.03em;
+  opacity:0.85;padding:1px 4px;border-radius:4px;background:rgba(0,0,0,0.08);
+}
+.appt-place-control{display:inline-flex;align-items:center;gap:6px;min-width:0;}
+.appt-place-control select{flex:1 1 auto;min-width:0;}
+.presence-picker-footer{
+  display:flex;justify-content:flex-end;margin-top:4px;
+}

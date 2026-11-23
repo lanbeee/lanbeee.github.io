@@ -105,12 +105,14 @@
 .overview-pane-row .overview-pane{
   min-width:0;max-width:none;padding:9px 5px;border:0;border-radius:10px;background:transparent;text-overflow:ellipsis;
 }
-.overview-pane-row .overview-pane.on{background:var(--text);color:var(--bg);}
+/* Selected pane uses the app's accent selection (same as .seg-opt.on) instead
+   of the old inverted --text pill, so one selection language spans the screen. */
+.overview-pane-row .overview-pane.on{background:var(--teal-bg);color:var(--teal-text);}
 .overview-pane-row .overview-pane-count{margin-left:3px;}
 .overview-pane-row .overview-pane.on .overview-pane-count,
 .overview-pane-row .overview-pane[data-overview-pane="care"].on .overview-pane-count{
-  background:color-mix(in srgb,var(--bg) 22%,transparent);
-  color:var(--bg);
+  background:color-mix(in srgb,var(--teal-text) 16%,transparent);
+  color:var(--teal-text);
 }
 .overview-list{gap:7px;padding-bottom:0;}
 .overview-list .overview-section-title{padding:0 2px;margin:2px 0 1px;}
@@ -638,7 +640,9 @@ input[type="time"].time-step-picker-target{
 .overview-week-switch{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:40px;padding:0 10px;border:1px solid var(--border);border-radius:11px;background:var(--bg2);color:var(--text);font:inherit;font-size:12px;font-weight:650;white-space:nowrap;cursor:pointer;}
 .overview-week-switch i{font-size:16px;}
 .overview-week-switch:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
-.overview-create-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:40px;padding:0 11px;border:0;border-radius:11px;background:var(--text);color:var(--bg);font:inherit;font-size:12px;font-weight:680;white-space:nowrap;cursor:pointer;}
+/* Calendar "+ Add" matches the other create actions (nav / app bar): accent
+   fill, green in the default palette via palettes.css. */
+.overview-create-btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:40px;padding:0 11px;border:0;border-radius:11px;background:var(--teal-bg);color:var(--teal-text);font:inherit;font-size:12px;font-weight:680;white-space:nowrap;cursor:pointer;}
 .overview-create-btn i{font-size:15px;}
 .overview-create-btn:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
 @media (max-width:360px){

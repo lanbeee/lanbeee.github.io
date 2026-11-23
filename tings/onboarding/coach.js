@@ -33,7 +33,7 @@
   const OVERVIEW_STAGES = new Set(['eOverview','aOverview','aOverviewDay','aOverviewTools']);
   // Sheets each stage group may keep open. Anything else that appears is closed
   // by reconcile(): the coach decides what page is on screen, wander included.
-  const PICKER_SHEETS = ['location-picker-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet','background-location-disclosure-sheet'];
+  const PICKER_SHEETS = ['location-picker-sheet','locations-manager-sheet','weather-manager-sheet','busy-manager-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet','background-location-disclosure-sheet'];
   const SHEET_ALLOWANCES = new Map([
     [new Set(['eConditions']),['add-sheet','settings-sheet',...PICKER_SHEETS]],
     [ADD_STAGES,['add-sheet',...PICKER_SHEETS]],
@@ -334,6 +334,10 @@
         target:['#location-picker-sheet .sheet'],action:'Add place',command:'conditionsPlace',
         disabled:Boolean($('picker-save')?.disabled),back:'eConditions',locked:true
       };
+      if(sheetOpen('weather-manager-sheet'))return {
+        progress:p,title:'Set up your conditions',copy:'Save weather rules here, then return to your habit.',
+        target:['#weather-manager-sheet .sheet'],action:'Back to habit',command:'conditionsReturn',locked:true
+      };
       if(sheetOpen('settings-sheet'))return {
         progress:p,title:'Set up your conditions',copy:'Save weather rules or set your city here, then return to your habit.',
         target:['#settings-sheet .sheet'],action:'Back to habit',command:'conditionsReturn',locked:true
@@ -591,7 +595,7 @@
 
       aLocations:{title:'Teach Tings about places',copy:'Add a place by address, map pin, GPS, or coordinates; edit its radius, hours, and closed days. Live location or Home’s Current Place sets where today starts. Travel can use an estimate or your own minutes, with drive, walk, bike, and transit modes. Topics sit just above for grouping and filters.',target:['#settings-locations-head'],action:'Next',next:'aBusy',back:'aIntro'},
       aBusy:{title:'Busy times create the real gaps',copy:'Block sleep, work, meals, school, and commutes. A block can repeat, change for one date, or follow daily times such as sunrise or sunset. Tings plans and inserts travel around what remains.',target:['#settings-blocked-head'],action:'Next',next:'aWeather',back:'aLocations'},
-      aWeather:{title:'Create a reusable weather profile',copy:'A profile groups the weather rules for a kind of outdoor work. Create one now; you can keep up to four, such as Running, Gardening, or Air quality.',target:['#weather-profile-add'],hint:'Tap add profile',locked:true,back:'aBusy'},
+      aWeather:{title:'Create a reusable weather profile',copy:'A profile groups the weather rules for a kind of outdoor work. Create one now; you can keep up to ten, such as Running, Gardening, or Air quality.',target:['#weather-profile-add'],hint:'Tap add profile',locked:true,back:'aBusy'},
       aWeatherRule:{title:'Preferences steer; hard limits reject',copy:'Choose temperature, rain chance or amount, snow, wind, daylight, UV, or air quality. Prefer lower or higher nudges the best time. Min and max set bounds; Hard rejects flexible times outside them. Missing forecast data never blocks a plan.',target:['.weather-profile-card .weather-rule'],action:'Attach to a Ting',next:'aWeatherAttach',back:'aWeather'},
       aWeatherAttach:{title:'Attach it on Weather',copy:'Profiles do nothing until a Ting uses one. On the Weather tab, choose Outdoor. Home-city weather is the default; a saved forecast place is only for work far from home.',target:['#detail-weather-profile'],hint:'Choose Outdoor',locked:true,back:'aWeatherRule'},
       aPrayer:{title:'Relative times follow your city',copy:'Set a city under Locations to use dawn, sunrise, noon, afternoon, sunset, and night. These daily events work in general windows, specific options, and dynamic busy times; they are calculated on your device.',target:['#settings-prayer-head'],action:'Finish chapter',command:'chapterDone',back:'aWeatherAttach'},
@@ -838,6 +842,7 @@
       lifecyclePinStart = false;
     }
     if(next === 'aWeatherAttach'){
+      if(sheetOpen('weather-manager-sheet') && typeof closeWeatherManager === 'function')closeWeatherManager();
       closeGuidedSheet('settings-sheet');
       if(!sheetOpen('detail-sheet')){
         const idx = trackedIndex();
@@ -854,6 +859,11 @@
     if(next === 'aOverviewTools')closeGuidedDayLogs();
     if(SETTINGS_STAGES.has(next)){
       if(!sheetOpen('settings-sheet'))openSettings();
+      if((next === 'aWeather' || next === 'aWeatherRule') && typeof openWeatherManager === 'function'){
+        if(!sheetOpen('weather-manager-sheet'))openWeatherManager();
+      }else if(sheetOpen('weather-manager-sheet') && typeof closeWeatherManager === 'function'){
+        closeWeatherManager();
+      }
       const settingsTargets = {
         eMinimal:'[data-setting-toggle="minimalMode"]',aFullMode:'[data-setting-toggle="minimalMode"]',aLocations:'#settings-locations-head',aBusy:'#settings-blocked-head',
         // Scroll the actual required action into view. On a shorter viewport,
@@ -1200,7 +1210,8 @@
     if(m.command === 'conditionsPlace'){document.activeElement?.blur();$('picker-save')?.click();return;}
     if(m.command === 'conditionsReturn'){
       document.activeElement?.blur();
-      if(typeof closeSettingsSheet === 'function')closeSettingsSheet();
+      if(sheetOpen('weather-manager-sheet') && typeof closeWeatherManager === 'function')closeWeatherManager();
+      else if(typeof closeSettingsSheet === 'function')closeSettingsSheet();
       render();
       return;
     }
@@ -1565,6 +1576,19 @@
     if(!active || !bubble || !spotlight)return;
     const m = model();
     let target = firstTarget(m.target);
+    // A tab can have a box while sitting outside its horizontal scrollport or
+    // underneath sticky Summary. Sheet entry and the browser's automatic
+    // scroll-to-click can move that strip after the stage first reveals it.
+    // Keep the actual requested tab exposed before placing the click guards.
+    const tabs = target?.closest('.detail-dots');
+    if(tabs && !target.hasAttribute('data-detail-pinned')){
+      const bar = tabs.getBoundingClientRect();
+      const pinned = tabs.querySelector('[data-detail-pinned]');
+      const left = bar.left + (pinned ? pinned.offsetWidth + 2 : 0);
+      const rect = target.getBoundingClientRect();
+      if(rect.left < left)tabs.scrollLeft += rect.left - left;
+      else if(rect.right > bar.right)tabs.scrollLeft += rect.right - bar.right;
+    }
     const view = coachViewport();
     view.right = view.left + view.width;
     view.bottom = view.top + view.height;
@@ -1579,7 +1603,7 @@
     const margin = 10;
     const gap = 14;
     bubble.style.maxHeight = `${Math.max(150,view.height - margin * 2)}px`;
-    const editor = stage === 'eConditions' ? firstTarget(['#location-picker-sheet.open .sheet','#settings-sheet.open .sheet']) : null;
+    const editor = stage === 'eConditions' ? firstTarget(['#location-picker-sheet.open .sheet','#weather-manager-sheet.open .sheet','#locations-manager-sheet.open .sheet','#settings-sheet.open .sheet']) : null;
     const addRail = mode === 'essentials' && ADD_STAGES.has(stage) && view.width <= 520 && (editor || sheetOpen('add-sheet'));
     root.dataset.addRail = String(addRail);
     if(restViewportWidth !== view.width){restViewportWidth = view.width;restViewportHeight = view.height;}
@@ -1610,7 +1634,7 @@
       // highlighted field in that remaining area when the keyboard/size changes.
       // The location picker scrolls inside .picker-content; the sheet itself
       // is overflow:hidden, so scroll there, not on the sheet.
-      const scroller = editor?.querySelector('.settings-stack') || editor?.querySelector('.picker-content') || editor || content;
+      const scroller = editor?.querySelector('.settings-stack') || editor?.querySelector('.manager-body') || editor?.querySelector('.picker-content') || editor || content;
       const fieldTarget = typing && stage === 'eConditions' ? document.activeElement : target;
       if(fieldTarget && fieldTarget !== scroller && scroller?.contains(fieldTarget)){
         const bounds = scroller.getBoundingClientRect();

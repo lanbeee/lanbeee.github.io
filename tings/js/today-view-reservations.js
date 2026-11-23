@@ -81,7 +81,9 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill.h);
   const candidateLocIds = optionMode
     ? habitLocationIdsForDay(fill.h,dayBase,registry)
-    : normalizeLocationIds(fill.h.locationIds,registry);
+    : (typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds(fill.h,registry)
+      : normalizeLocationIds(fill.h.locationIds,registry));
   const anywhereToday = optionMode
     ? (typeof habitHasAnywhereForDay === 'function'
       ? habitHasAnywhereForDay(fill.h,dayBase,registry)
@@ -573,7 +575,11 @@ function placementRangeFits(state,rangeStart,rangeEnd,durMin){
 function awayTravelMinutesFromSequence(c,state){
   const seq = typeof todaySequencingLocationId === 'function'
     ? todaySequencingLocationId(state) : null;
-  const ids = c && c.h && Array.isArray(c.h.locationIds) ? c.h.locationIds : [];
+  const ids = c && c.h
+    ? (typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds(c.h,state.registry)
+      : (Array.isArray(c.h.locationIds) ? c.h.locationIds : []))
+    : [];
   if(!seq || !ids.length || typeof travelEdgeBetweenIds !== 'function')return 20;
   let best = Infinity;
   for(const id of ids){
@@ -1389,7 +1395,9 @@ function committedFillLocationChoices(entry,state){
     // the row to another allowed place (which could carry different guidance).
     return option ? [option.locationId || null] : [fit.locId || null];
   }
-  const ids = normalizeLocationIds(h.locationIds,state.registry);
+  const ids = typeof habitResolvedLocationIds === 'function'
+    ? habitResolvedLocationIds(h,state.registry)
+    : normalizeLocationIds(h.locationIds,state.registry);
   if(Object.prototype.hasOwnProperty.call(entry.fill,'locationId')
     && entry.fill.locationId !== undefined){
     // Explicit null is legal only for genuinely anywhere/locationless work.
