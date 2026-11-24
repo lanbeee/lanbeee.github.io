@@ -253,3 +253,4 @@ places-refinement-test.js	integrations	once
 busy-manager-test.js	ui	once
 assistant-field-help-coverage-test.js	assistant	once
 typing-smoothness-test.js	ui	once
+navigation-smoothness-test.js	ui	once

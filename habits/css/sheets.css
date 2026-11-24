@@ -5,9 +5,14 @@
   -webkit-tap-highlight-color:transparent;
   padding-top:var(--content-safe-top);
   opacity:0;pointer-events:none;
+  contain:layout style;
   transition:opacity var(--dur-med) ease;
 }
 .sheet-wrap.open{opacity:1;pointer-events:auto;}
+.sheet-wrap:not(.open){contain:layout style paint;}
+body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#week-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#feedback-sheet,#home-filter-sheet,#calendar-filter-sheet,#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet,#bulk-edit-sheet,#bulk-batch-sheet){
+  transition:none;
+}
 /* Desktop modals cover the columns, not the wordmark / search / add bar. */
 body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap{
   top:var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height)));
@@ -53,7 +58,6 @@ body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
   transform:translateY(16px) scale(0.985);
   transition:transform var(--dur-slow) var(--ease-snappy),opacity var(--dur-med) ease;
   opacity:0;
-  will-change:transform,opacity;
 }
 .sheet-wrap.open .sheet{transform:translateY(0) scale(1);opacity:1;}
 #add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#home-filter-sheet,#calendar-filter-sheet,#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet{

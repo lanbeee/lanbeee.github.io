@@ -200,26 +200,31 @@ function openDetail(i){
     detailVizMode = 'calendar';
   }
   detailIdx = i;
-  syncDetailSearchAssistant(h);
-  detailUnsavedCreate = null;
-  detailUnsavedReminders = null;
-  paintDetailFields(h);
-  detailTuneOriginal = detailTuneSnapshot(h);
-  // Reset disclosures before painting chrome: the section renderers force some
-  // disclosures open (device personalization reveals the emoji editor), and a
-  // later reset would close them again and hide their controls.
-  if(changedHabit)resetDetailDisclosures(h);
-  paintDetailChrome(h,items);
-  setDetailDirty(false,h);
-  renderDetailSummary(h,items);
-  if(typeof invalidateDetailSearchCache === 'function')invalidateDetailSearchCache();
-  if(changedHabit){
-    $('detail-search-input').value = '';
-    setDetailSearchOpen(false,false);
-  }else if(!$('detail-search-panel').hidden){
-    renderDetailSearch();
+  if(typeof _detailOpeningBatch !== 'undefined')_detailOpeningBatch = true;
+  try{
+    syncDetailSearchAssistant(h);
+    detailUnsavedCreate = null;
+    detailUnsavedReminders = null;
+    paintDetailFields(h);
+    detailTuneOriginal = detailTuneSnapshot(h);
+    // Reset disclosures before painting chrome: the section renderers force some
+    // disclosures open (device personalization reveals the emoji editor), and a
+    // later reset would close them again and hide their controls.
+    if(changedHabit)resetDetailDisclosures(h);
+    paintDetailChrome(h,items);
+    setDetailDirty(false,h);
+    renderDetailSummary(h,items);
+    if(typeof invalidateDetailSearchCache === 'function')invalidateDetailSearchCache();
+    if(changedHabit){
+      $('detail-search-input').value = '';
+      setDetailSearchOpen(false,false);
+    }else if(!$('detail-search-panel').hidden){
+      renderDetailSearch();
+    }
+  }finally{
+    if(typeof _detailOpeningBatch !== 'undefined')_detailOpeningBatch = false;
   }
-  openSheet('detail-sheet');
+  openSheet('detail-sheet',{detailHid:h.hid});
   if(changedHabit){
     const inner = getSheetInner('detail-sheet');
     const pager = inner?.querySelector('.detail-pager');

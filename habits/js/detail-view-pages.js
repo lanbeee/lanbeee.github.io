@@ -68,6 +68,7 @@ const DETAIL_MINIMAL_NAV = {
 let detailNavigationRevision = 0;
 let detailPanelMotion = null;
 let detailDockMotion = null;
+let _detailOpeningBatch = false;
 
 function cancelDetailNavigationMotion(){
   detailPanelMotion?.cancel();
@@ -375,6 +376,7 @@ function syncWeatherDetailPage(){
 }
 
 function updateDetailPagerDots(){
+  if(_detailOpeningBatch)return;
   const inner = getSheetInner('detail-sheet');
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');

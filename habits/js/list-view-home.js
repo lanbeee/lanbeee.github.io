@@ -241,115 +241,56 @@ const renderTagChipsSigs = new WeakMap();
 function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null,anywhereAllowed = null,selectedLocTypes = null){
   const wrap = $(containerId);
   if(!wrap)return;
-  const resolvedLocTypes = selectedLocTypes === null
-    ? selectedLocationTypesFrom(containerId)
-    : (typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(selectedLocTypes) : []);
-  const allLocations = locationOptions();
+  const content = wrap.dataset.tagContent;
+  const needPlaces = content !== 'topics';
+  const needTopics = content !== 'places';
+  const allLocations = needPlaces ? locationOptions() : [];
+  const resolvedLocTypes = !needPlaces ? []
+    : selectedLocTypes === null
+      ? selectedLocationTypesFrom(containerId)
+      : (typeof normalizeLocationTypes === 'function' ? normalizeLocationTypes(selectedLocTypes) : []);
   const signature = JSON.stringify([
-    selectedTopics,selectedLocIds,resolvedLocTypes,preferredLocId,locationPrefs,anywhereAllowed,
-    wrap.dataset.anywhereAllowed,wrap.dataset.locationChoiceMode,wrap.dataset.tagContent,
+    needTopics ? selectedTopics : null,
+    needPlaces ? selectedLocIds : null,
+    needPlaces ? resolvedLocTypes : null,
+    needPlaces ? preferredLocId : null,
+    needPlaces ? locationPrefs : null,
+    needPlaces ? anywhereAllowed : null,
+    needPlaces ? wrap.dataset.anywhereAllowed : null,
+    needPlaces ? wrap.dataset.locationChoiceMode : null,
+    content,
     selectedType,$('ting-repeat-mode')?.value || '',
     // The condition trigger rewrites chips after render (ranking marks, the
     // anywhere chip), so its state is part of the visible result.
-    String(isLocationConditionControl(wrap)),
-    topicOptions().join('\u0002'),
-    allLocations.map(loc=>`${loc.id}\u0001${loc.name}\u0001${loc.placeType || ''}\u0001${loc.environment || ''}\u0001${loc.temporary ? 1 : 0}`).join('\u0002')
+    needPlaces ? String(isLocationConditionControl(wrap)) : '',
+    needTopics ? topicOptions().join('\u0002') : '',
+    needPlaces ? allLocations.map(loc=>`${loc.id}\u0001${loc.name}\u0001${loc.placeType || ''}\u0001${loc.environment || ''}\u0001${loc.temporary ? 1 : 0}`).join('\u0002') : ''
   ]);
   if(renderTagChipsSigs.get(wrap) === signature)return;
   renderTagChipsSigs.set(wrap,signature);
-  const placeQuery = wrap.querySelector('.tag-row-places .tag-search')?.value || '';
-  const topicQuery = wrap.querySelector('.tag-row-topics .tag-search')?.value || '';
-  const placesExpanded = wrap.querySelector('.tag-row-places')?.classList.contains('is-expanded') || false;
-  const topicsExpanded = wrap.querySelector('.tag-row-topics')?.classList.contains('is-expanded') || false;
-  const placeScroll = wrap.querySelector('.tag-row-places')?.scrollLeft || 0;
-  const topicScroll = wrap.querySelector('.tag-row-topics')?.scrollLeft || 0;
+  const placeQuery = needPlaces ? (wrap.querySelector('.tag-row-places .tag-search')?.value || '') : '';
+  const topicQuery = needTopics ? (wrap.querySelector('.tag-row-topics .tag-search')?.value || '') : '';
+  const placesExpanded = needPlaces ? (wrap.querySelector('.tag-row-places')?.classList.contains('is-expanded') || false) : false;
+  const topicsExpanded = needTopics ? (wrap.querySelector('.tag-row-topics')?.classList.contains('is-expanded') || false) : false;
+  const placeScroll = needPlaces ? (wrap.querySelector('.tag-row-places')?.scrollLeft || 0) : 0;
+  const topicScroll = needTopics ? (wrap.querySelector('.tag-row-topics')?.scrollLeft || 0) : 0;
   const focusedSearch = document.activeElement?.matches('.tag-search')
     ? document.activeElement.closest('.tag-row') : null;
   const restoreSearch = focusedSearch && wrap.contains(focusedSearch)
     ? (focusedSearch.classList.contains('tag-row-places') ? '.tag-row-places' : '.tag-row-topics') : null;
   const activeChip = wrap.contains(document.activeElement) ? document.activeElement : null;
-  const placeFocus = activeChip?.hasAttribute('data-anywhere') ? '[data-anywhere]'
+  const placeFocus = !needPlaces ? '' : (activeChip?.hasAttribute('data-anywhere') ? '[data-anywhere]'
     : activeChip?.dataset.locationId ? `[data-location-id="${CSS.escape(activeChip.dataset.locationId)}"]`
-    : activeChip?.dataset.locationType ? `[data-location-type="${CSS.escape(activeChip.dataset.locationType)}"]` : '';
-  const prevTopicOpen = wrap.querySelector('.add-topic-disclosure')?.open || false;
-  // The registry and an item's saved topics each have their own size limit.
-  // Merging must not truncate saved selections when the registry is full.
-  const topics = [...new Map([...normalizeTopics(selectedTopics),...topicOptions()]
-    .map(topic=>[topic.toLowerCase(),topic])).values()];
-  const selectedLocs = normalizeLocationIds(selectedLocIds,allLocations);
-  // Only show saved places + temporary places already attached to THIS item.
-  const locations = selectableLocationOptions(selectedLocs);
-  const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
-  const selectedTypeSet = new Set(resolvedLocTypes);
-  const resolvedPrefIds = typeof habitResolvedLocationIds === 'function'
-    ? habitResolvedLocationIds({locationIds:selectedLocs,locationTypes:resolvedLocTypes},allLocations)
-    : selectedLocs;
-  const prefs = normalizeLocationPrefs(locationPrefs,resolvedPrefIds,preferredLocId);
-  const anywhereOn = anywhereAllowed == null
-    ? (wrap.dataset.anywhereAllowed ? wrap.dataset.anywhereAllowed === '1' : (selectedLocs.length === 0 && resolvedLocTypes.length === 0))
-    : Boolean(anywhereAllowed);
-  wrap.dataset.anywhereAllowed = anywhereOn ? '1' : '0';
-  const selectedLocSet = new Set(selectedLocs);
-  const orderedLocations = locations.slice().sort((a,b)=>{
-    const aOn = selectedLocSet.has(a.id) ? 0 : 1;
-    const bOn = selectedLocSet.has(b.id) ? 0 : 1;
-    if(aOn !== bOn)return aOn - bOn;
-    return compareLocationNames(a,b);
-  });
-  const orderedTopics = topics.slice().sort((a,b)=>{
-    const aOn = selectedSet.has(String(a).toLowerCase()) ? 0 : 1;
-    const bOn = selectedSet.has(String(b).toLowerCase()) ? 0 : 1;
-    if(aOn !== bOn)return aOn - bOn;
-    return String(a).localeCompare(String(b),undefined,{sensitivity:'base',numeric:true});
-  });
-  const categoryChoices = typeof locationCategoryChoices === 'function'
-    ? locationCategoryChoices(allLocations, resolvedLocTypes).sort((a,b)=>{
-      const aOn = selectedTypeSet.has(a.key) ? 0 : 1;
-      const bOn = selectedTypeSet.has(b.key) ? 0 : 1;
-      return aOn - bOn;
-    })
-    : [];
-  const anywhereHtml = locations.length > 0 || categoryChoices.length > 0 || wrap.closest('.opportunity-mode')
-    ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="Not tied to one place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
-    : '';
-  const showPlaceRanks = !isLocationConditionControl(wrap);
-  const locHtml = orderedLocations.map(loc=>{
-    const on = selectedLocSet.has(loc.id);
-    const level = prefs[loc.id] || '';
-    const title = !on ? (loc.temporary ? 'one-off place' : 'place')
-      : level === 'high' ? 'high preference'
-      : level === 'little' ? 'little preference'
-      : level === 'avoid' ? 'avoid if possible'
-      : 'allowed';
-    const effEnv = typeof effectiveLocationEnvironment === 'function' ? effectiveLocationEnvironment(loc) : '';
-    const searchText = [
-      loc.name,
-      loc.placeType && typeof placeTypeLabel === 'function' ? placeTypeLabel(loc.placeType) : loc.placeType,
-      effEnv && typeof locationEnvironmentLabel === 'function' ? locationEnvironmentLabel(effEnv) : ''
-    ].filter(Boolean).join(' ');
-    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}${loc.temporary ? ' is-temp-place' : ''}" data-location-name="${escapeHtml(loc.name)}" data-search-text="${escapeHtml(searchText)}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ${loc.temporary ? 'ti-clock-hour-4' : 'ti-map-pin'}" aria-hidden="true"></i><span class="location-chip-name">${escapeHtml(loc.name)}</span>${loc.temporary ? '<small class="place-temp-tag">one-off</small>' : ''}${on && showPlaceRanks ? `<small class="place-rank">${title}</small>` : ''}</button>`;
-  }).join('');
-  const typeHtml = categoryChoices.map(choice=>{
-    const on = selectedTypeSet.has(choice.key);
-    const countLabel = choice.count ? ` · ${choice.count}` : '';
-    return `<button type="button" class="topic-chip location-type-chip-btn ${on ? 'on' : ''}${choice.kind === 'env' ? ' is-env' : ''}" data-location-type="${escapeHtml(choice.key)}" data-search-text="${escapeHtml(`${choice.label} ${choice.key.replace(/^env:/,'')}`)}" aria-pressed="${on}" title="Allow ${escapeHtml(choice.label.toLowerCase())} (${choice.count} saved ${choice.count === 1 ? 'place' : 'places'})"><span class="loc-type-emoji" aria-hidden="true">${escapeHtml(choice.emoji)}</span><span class="location-chip-name">${escapeHtml(choice.label)}</span><small class="place-type-count">${escapeHtml(countLabel)}</small></button>`;
-  }).join('');
-  const topicHtml = orderedTopics.map(topic=>{
-    const on = selectedSet.has(topic.toLowerCase());
-    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}" aria-pressed="${on}">${escapeHtml(topic)}</button>`;
-  }).join('');
+    : activeChip?.dataset.locationType ? `[data-location-type="${CSS.escape(activeChip.dataset.locationType)}"]` : '');
+  const prevTopicOpen = needTopics ? (wrap.querySelector('.add-topic-disclosure')?.open || false) : false;
+  const selectedLocs = needPlaces ? normalizeLocationIds(selectedLocIds,allLocations) : [];
+  const selectedSet = needTopics ? new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase())) : null;
   // Keep the search, choices, and create action in keyboard reading order.
   wrap.innerHTML = '';
   const locRow = document.createElement('div');
   locRow.className = 'tag-row tag-row-places';
-  locRow.insertAdjacentHTML('beforeend',anywhereHtml + locHtml + typeHtml);
-  locRow.appendChild(createAddLocationPill());
   const topicRow = document.createElement('div');
   topicRow.className = 'tag-row tag-row-topics';
-  topicRow.insertAdjacentHTML('beforeend',topicHtml);
-  if(containerId !== 'default-topics-chips')topicRow.appendChild(createAddTopicPill());
-  addTagSearch(locRow,'places',containerId,placeQuery,placesExpanded);
-  addTagSearch(topicRow,'topics',containerId,topicQuery,topicsExpanded);
   // Scroll guard: prevents accidental chip taps while scrolling the sheet.
   // Sets a flag on the row as soon as touch displacement (finger movement)
   // is detected. The flag lingers for 500ms to cover the synthetic click
@@ -377,10 +318,84 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     // cycling a place through allowed / preferred / avoid.
     row.addEventListener('scroll',function(){ if(moved)arm(); },{passive:true});
   }
-  addScrollGuard(locRow);
-  addScrollGuard(topicRow);
+  if(needPlaces){
+    // Only show saved places + temporary places already attached to THIS item.
+    const locations = selectableLocationOptions(selectedLocs);
+    const selectedTypeSet = new Set(resolvedLocTypes);
+    const resolvedPrefIds = typeof habitResolvedLocationIds === 'function'
+      ? habitResolvedLocationIds({locationIds:selectedLocs,locationTypes:resolvedLocTypes},allLocations)
+      : selectedLocs;
+    const prefs = normalizeLocationPrefs(locationPrefs,resolvedPrefIds,preferredLocId);
+    const anywhereOn = anywhereAllowed == null
+      ? (wrap.dataset.anywhereAllowed ? wrap.dataset.anywhereAllowed === '1' : (selectedLocs.length === 0 && resolvedLocTypes.length === 0))
+      : Boolean(anywhereAllowed);
+    wrap.dataset.anywhereAllowed = anywhereOn ? '1' : '0';
+    const selectedLocSet = new Set(selectedLocs);
+    const orderedLocations = locations.slice().sort((a,b)=>{
+      const aOn = selectedLocSet.has(a.id) ? 0 : 1;
+      const bOn = selectedLocSet.has(b.id) ? 0 : 1;
+      if(aOn !== bOn)return aOn - bOn;
+      return compareLocationNames(a,b);
+    });
+    const categoryChoices = typeof locationCategoryChoices === 'function'
+      ? locationCategoryChoices(allLocations, resolvedLocTypes).sort((a,b)=>{
+        const aOn = selectedTypeSet.has(a.key) ? 0 : 1;
+        const bOn = selectedTypeSet.has(b.key) ? 0 : 1;
+        return aOn - bOn;
+      })
+      : [];
+    const anywhereHtml = locations.length > 0 || categoryChoices.length > 0 || wrap.closest('.opportunity-mode')
+      ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="Not tied to one place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
+      : '';
+    const showPlaceRanks = !isLocationConditionControl(wrap);
+    const locHtml = orderedLocations.map(loc=>{
+      const on = selectedLocSet.has(loc.id);
+      const level = prefs[loc.id] || '';
+      const title = !on ? (loc.temporary ? 'one-off place' : 'place')
+        : level === 'high' ? 'high preference'
+        : level === 'little' ? 'little preference'
+        : level === 'avoid' ? 'avoid if possible'
+        : 'allowed';
+      const effEnv = typeof effectiveLocationEnvironment === 'function' ? effectiveLocationEnvironment(loc) : '';
+      const searchText = [
+        loc.name,
+        loc.placeType && typeof placeTypeLabel === 'function' ? placeTypeLabel(loc.placeType) : loc.placeType,
+        effEnv && typeof locationEnvironmentLabel === 'function' ? locationEnvironmentLabel(effEnv) : ''
+      ].filter(Boolean).join(' ');
+      return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}${loc.temporary ? ' is-temp-place' : ''}" data-location-name="${escapeHtml(loc.name)}" data-search-text="${escapeHtml(searchText)}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ${loc.temporary ? 'ti-clock-hour-4' : 'ti-map-pin'}" aria-hidden="true"></i><span class="location-chip-name">${escapeHtml(loc.name)}</span>${loc.temporary ? '<small class="place-temp-tag">one-off</small>' : ''}${on && showPlaceRanks ? `<small class="place-rank">${title}</small>` : ''}</button>`;
+    }).join('');
+    const typeHtml = categoryChoices.map(choice=>{
+      const on = selectedTypeSet.has(choice.key);
+      const countLabel = choice.count ? ` · ${choice.count}` : '';
+      return `<button type="button" class="topic-chip location-type-chip-btn ${on ? 'on' : ''}${choice.kind === 'env' ? ' is-env' : ''}" data-location-type="${escapeHtml(choice.key)}" data-search-text="${escapeHtml(`${choice.label} ${choice.key.replace(/^env:/,'')}`)}" aria-pressed="${on}" title="Allow ${escapeHtml(choice.label.toLowerCase())} (${choice.count} saved ${choice.count === 1 ? 'place' : 'places'})"><span class="loc-type-emoji" aria-hidden="true">${escapeHtml(choice.emoji)}</span><span class="location-chip-name">${escapeHtml(choice.label)}</span><small class="place-type-count">${escapeHtml(countLabel)}</small></button>`;
+    }).join('');
+    locRow.insertAdjacentHTML('beforeend',anywhereHtml + locHtml + typeHtml);
+    locRow.appendChild(createAddLocationPill());
+    addTagSearch(locRow,'places',containerId,placeQuery,placesExpanded);
+    addScrollGuard(locRow);
+  }
+  if(needTopics){
+    // The registry and an item's saved topics each have their own size limit.
+    // Merging must not truncate saved selections when the registry is full.
+    const topics = [...new Map([...normalizeTopics(selectedTopics),...topicOptions()]
+      .map(topic=>[topic.toLowerCase(),topic])).values()];
+    const orderedTopics = topics.slice().sort((a,b)=>{
+      const aOn = selectedSet.has(String(a).toLowerCase()) ? 0 : 1;
+      const bOn = selectedSet.has(String(b).toLowerCase()) ? 0 : 1;
+      if(aOn !== bOn)return aOn - bOn;
+      return String(a).localeCompare(String(b),undefined,{sensitivity:'base',numeric:true});
+    });
+    const topicHtml = orderedTopics.map(topic=>{
+      const on = selectedSet.has(topic.toLowerCase());
+      return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}" aria-pressed="${on}">${escapeHtml(topic)}</button>`;
+    }).join('');
+    topicRow.insertAdjacentHTML('beforeend',topicHtml);
+    if(containerId !== 'default-topics-chips')topicRow.appendChild(createAddTopicPill());
+    addTagSearch(topicRow,'topics',containerId,topicQuery,topicsExpanded);
+    addScrollGuard(topicRow);
+  }
   wrap.appendChild(locRow);
-  if(containerId === 'ting-tag-chips' && selectedType === 'keepup'
+  if(needTopics && containerId === 'ting-tag-chips' && selectedType === 'keepup'
     && $('ting-repeat-mode')?.value === 'opportunity'){
     const disclosure = document.createElement('details');
     disclosure.className = 'add-topic-disclosure';
@@ -390,17 +405,16 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     disclosure.append(summary,topicRow);
     wrap.appendChild(disclosure);
   }else wrap.appendChild(topicRow);
-  applyTagChipLocationMode(wrap,selectedLocs);
-  const content = wrap.dataset.tagContent;
-  if(content === 'places')topicRow.hidden = true;
-  if(content === 'topics')locRow.hidden = true;
-  if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip(containerId);
-  filterTagChoices(locRow);
-  filterTagChoices(topicRow);
+  if(needPlaces)applyTagChipLocationMode(wrap,selectedLocs);
+  if(!needTopics)topicRow.hidden = true;
+  if(!needPlaces)locRow.hidden = true;
+  if(needPlaces && typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip(containerId);
+  if(needPlaces)filterTagChoices(locRow);
+  if(needTopics)filterTagChoices(topicRow);
   // Fresh rows already rest at 0; only a kept scroll position needs writing
   // (each scrollLeft write forces a layout pass).
-  if(!placesExpanded && placeScroll)locRow.scrollLeft = placeScroll;
-  if(!topicsExpanded && topicScroll)topicRow.scrollLeft = topicScroll;
+  if(needPlaces && !placesExpanded && placeScroll)locRow.scrollLeft = placeScroll;
+  if(needTopics && !topicsExpanded && topicScroll)topicRow.scrollLeft = topicScroll;
   if(placeFocus){
     const chip = locRow.querySelector(placeFocus);
     (chip && !chip.hidden ? chip : locRow.querySelector('.tag-picker-toggle')).focus({preventScroll:true});
@@ -1461,16 +1475,28 @@ function renderHomeTagFilterEmpty(wrap,groups){
   if(groups)groups.innerHTML = '';
 }
 
+let _homeTagFilterRenderedKey = '';
 function renderHomeTagFilter(data,precomputedIndices = null){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
   const groups = $('home-filter-groups');
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(minimal){
+    _homeTagFilterRenderedKey = '';
     renderHomeTagFilterEmpty(wrap,groups);
     return;
   }
   const registry = locationOptions();
+  const selection = homeFilterSelection();
+  const query = filterSheetQuery('home-filter');
+  const presence = registry.length && typeof locationPresence === 'function' ? locationPresence(registry) : null;
+  const anchor = typeof currentLocationId === 'function' ? currentLocationId() : null;
+  const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
+  const rawLen = (()=>{ try{ return (localStorage.getItem(KEY) || '').length; }catch(_){ return data.length; } })();
+  const cacheKey = `${rev}|${rawLen}|${data.length}|${Math.floor(Date.now() / 60000)}|${JSON.stringify(selection)}|${query}|${sortSettings?.pinnedLocationId || ''}|${anchor || ''}|${presence ? `${presence.kind}:${presence.name}:${presence.gps ? 1 : 0}` : ''}|${registry.map(l=>`${l.id}:${l.name}:${l.placeType || ''}`).join(',')}|${(sortSettings?.topics || []).join(',')}`;
+  if(cacheKey === _homeTagFilterRenderedKey && wrap.childElementCount > 0 && (!groups || groups.childElementCount > 0)){
+    return;
+  }
   // "Real" usage = at least one habit carries this dimension. Without this
   // gate, the row shows filler like "all places" + "anywhere" even when no
   // habit has any location, which is just visual noise.
@@ -1493,13 +1519,14 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   if(hasLocs)locChoices = orderFilterChoices(locChoices);
   const baseIndices = precomputedIndices || visibleIndices(data,sortSettings);
   const items = baseIndices.map(i=>data[i]).filter(Boolean);
-  const selection = homeFilterSelection();
-  syncHomeFilterSelection(selection);
+  const prunedSelection = homeFilterSelection();
+  syncHomeFilterSelection(prunedSelection);
   const view = libraryFilterView({
-    prefix:'home-filter', attrPrefix:'home', items, selection, topicChoices, locationChoices:locChoices,
-    searchQuery:filterSheetQuery('home-filter')
+    prefix:'home-filter', attrPrefix:'home', items, selection:prunedSelection, topicChoices, locationChoices:locChoices,
+    searchQuery:query
   });
   if(!view.hasAnyGroup && !hasPresence){
+    _homeTagFilterRenderedKey = '';
     if(!items.length){
       renderHomeTagFilterEmpty(wrap,groups);
       return;
@@ -1511,9 +1538,7 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   }
   wrap.hidden = false;
   let statusHtml = '';
-  if(hasPresence && typeof locationPresence === 'function'){
-    const presence = locationPresence(registry);
-    const anchor = typeof currentLocationId === 'function' ? currentLocationId() : null;
+  if(hasPresence && presence){
     const anchorLoc = anchor ? locationById(anchor,registry) : null;
     let label = 'set place';
     let kind = presence.kind || 'away';
@@ -1542,6 +1567,7 @@ function renderHomeTagFilter(data,precomputedIndices = null){
     </button>`;
 
   syncFilterSheetChrome({prefix:'home-filter', view, surfaceLabel:'list'});
+  _homeTagFilterRenderedKey = cacheKey;
 }
 
 // RENDER: keep the wide-layout app-bar chrome in step with the shared filter

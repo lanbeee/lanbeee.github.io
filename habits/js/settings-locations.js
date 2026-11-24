@@ -31,7 +31,7 @@ function openLocationsManager(opts = {}){
   if(searchEl)searchEl.value = locManagerState.search;
   const sortEl = $('locations-manager-sort');
   if(sortEl)sortEl.value = locManagerState.sort;
-  renderLocationControls();
+  renderLocationControls({ includeManager: true });
   const sheet = $('locations-manager-sheet');
   if(sheet){
     sheet.inert = false;
@@ -51,7 +51,7 @@ function closeLocationsManager(){
   if(sheet)sheet.inert = true;
   const ret = locationsManagerReturnSheet;
   locationsManagerReturnSheet = null;
-  renderLocationControls();
+  renderLocationControls({ includeManager: false });
   if(typeof refreshOpenViews === 'function')refreshOpenViews();
   if(ret && $(ret) && !$(ret).classList.contains('open'))openSheet(ret);
 }
@@ -452,11 +452,11 @@ function cleanupUnusedTemporaryLocations(data, {onlyIds = null, quiet = false} =
 }
 
 // RENDER: the Settings summary card AND full Places Manager list.
-function renderLocationControls(){
+function renderLocationControls(opts = {}){
+  const includeManager = opts.includeManager !== false;
   const locations = normalizeLocationRegistry((sortSettings || loadSortSettings()).locations);
   const saved = locations.filter(l=>!l.temporary);
   const temp = locations.filter(l=>l.temporary);
-  const usageMap = locationUsageSummaryMap(locations);
 
   // Prune any selectedIds no longer in registry.
   const idSet = new Set(locations.map(l=>l.id));
@@ -484,6 +484,9 @@ function renderLocationControls(){
     }).join('') + (more > 0 ? `<span class="settings-preview-pill is-more">+${more} more</span>` : '');
     preview.hidden = !shown.length;
   }
+
+  if(!includeManager)return;
+  const usageMap = locationUsageSummaryMap(locations);
 
   // Cleanup bar for unused temporary places.
   const unusedTemp = temp.filter(l=>{

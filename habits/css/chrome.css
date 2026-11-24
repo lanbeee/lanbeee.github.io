@@ -275,8 +275,9 @@ body.nav-suppressed .bottom-nav{
   pointer-events:none;opacity:0.48;
 }
 body.fullpage-open .bottom-nav{
-  pointer-events:none;opacity:0;
+  pointer-events:none;opacity:0;visibility:hidden;
   transform:translate(-50%,-100%) translateY(12px) scale(0.96);
+  transition:none;
 }
 .bottom-nav .icon-btn{
   flex:0 0 44px;

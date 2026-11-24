@@ -1161,6 +1161,7 @@ $('overview-create')?.addEventListener('click',()=>{
 $('overview-filter')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
   if(e.target.closest('[data-open-overview-filters]')){
+    if(typeof ensureOverviewFilterSheetReady === 'function')ensureOverviewFilterSheetReady();
     const groups = $('calendar-filter-groups');
     if(groups)groups.scrollTop = 0;
     openSheet('calendar-filter-sheet');

@@ -426,7 +426,7 @@ function openWeatherManager(opts = {}){
   weatherManagerOnClose = typeof opts.onClose === 'function' ? opts.onClose : null;
   const searchEl = $('weather-manager-search');
   if(searchEl)searchEl.value = weatherManagerState.search;
-  renderWeatherControls();
+  renderWeatherControls({ includeManager: true });
   const sheet = $('weather-manager-sheet');
   if(sheet){
     sheet.inert = false;
@@ -448,7 +448,7 @@ function closeWeatherManager(){
   const cb = weatherManagerOnClose;
   weatherManagerReturnSheet = null;
   weatherManagerOnClose = null;
-  renderWeatherControls();
+  renderWeatherControls({ includeManager: false });
   if(typeof cb === 'function')cb();
   if(ret && $(ret) && !$(ret).classList.contains('open'))openSheet(ret);
 }
@@ -637,12 +637,11 @@ function applyWeatherBulkEdit(){
   showToast(`Updated ${updated} ${updated === 1 ? 'profile' : 'profiles'}`);
 }
 
-function renderWeatherControls(){
+function renderWeatherControls(opts = {}){
+  const includeManager = opts.includeManager !== false;
   syncWeatherUnitControls();
   const settings=sortSettings || loadSortSettings();
   const profiles=normalizeWeatherProfiles(settings.weatherProfiles);
-  const habits=load();
-  const usagesById = new Map(profiles.map(p=>[p.id, weatherProfileUsages(p.id, habits, settings)]));
 
   // Prune stale selections.
   const idSet = new Set(profiles.map(p=>p.id));
@@ -666,102 +665,107 @@ function renderWeatherControls(){
     preview.hidden = !shown.length;
   }
 
-  const clearBtn = $('weather-manager-search-clear');
-  if(clearBtn)clearBtn.hidden = !weatherManagerState.search;
-  renderWeatherManagerFilters(profiles, usagesById);
-  renderWeatherTemplates(profiles);
+  if(includeManager){
+    const habits=load();
+    const usagesById = new Map(profiles.map(p=>[p.id, weatherProfileUsages(p.id, habits, settings)]));
 
-  const list=$('weather-profile-list');
-  if(list){
-    const q = String(weatherManagerState.search || '').trim().toLocaleLowerCase();
-    const visible = profiles.map((profile, profileIndex)=>({profile, profileIndex})).filter(({profile})=>{
-      const usages = usagesById.get(profile.id) || [];
-      if(weatherManagerState.filter === 'used' && !usages.length)return false;
-      if(weatherManagerState.filter === 'unused' && usages.length)return false;
-      if(weatherManagerState.filter === 'hard' && !(profile.rules || []).some(r=>r.hard))return false;
-      if(weatherManagerState.filter === 'inactive' && !(profile.rules || []).some(r=>!weatherRuleActive(r)))return false;
-      if(q){
-        const metricsText = (profile.rules || []).map(r=>(WEATHER_METRICS[r.metric]?.label || r.metric)).join(' ');
-        const usageText = usages.map(u=>u.label).join(' ');
-        const hay = `${profile.name} ${metricsText} ${usageText}`.toLocaleLowerCase();
-        if(!hay.includes(q))return false;
-      }
-      return true;
-    });
+    const clearBtn = $('weather-manager-search-clear');
+    if(clearBtn)clearBtn.hidden = !weatherManagerState.search;
+    renderWeatherManagerFilters(profiles, usagesById);
+    renderWeatherTemplates(profiles);
 
-    const emptyHint = $('weather-empty-hint');
-    if(emptyHint){
-      emptyHint.hidden = visible.length > 0;
-      if(profiles.length === 0){
-        emptyHint.textContent = `No weather profiles yet. Pick a quick start above or tap add profile (up to ${MAX_WEATHER_PROFILES}).`;
-      }else if(visible.length === 0){
-        // Profiles exist but none match — offer the one-tap way back.
-        emptyHint.innerHTML = 'No weather profiles match your search or filter. '
-          + '<button type="button" class="mini-text-btn" data-weather-empty-reset>clear search &amp; filter</button>';
-      }else{
-        emptyHint.textContent = '';
+    const list=$('weather-profile-list');
+    if(list){
+      const q = String(weatherManagerState.search || '').trim().toLocaleLowerCase();
+      const visible = profiles.map((profile, profileIndex)=>({profile, profileIndex})).filter(({profile})=>{
+        const usages = usagesById.get(profile.id) || [];
+        if(weatherManagerState.filter === 'used' && !usages.length)return false;
+        if(weatherManagerState.filter === 'unused' && usages.length)return false;
+        if(weatherManagerState.filter === 'hard' && !(profile.rules || []).some(r=>r.hard))return false;
+        if(weatherManagerState.filter === 'inactive' && !(profile.rules || []).some(r=>!weatherRuleActive(r)))return false;
+        if(q){
+          const metricsText = (profile.rules || []).map(r=>(WEATHER_METRICS[r.metric]?.label || r.metric)).join(' ');
+          const usageText = usages.map(u=>u.label).join(' ');
+          const hay = `${profile.name} ${metricsText} ${usageText}`.toLocaleLowerCase();
+          if(!hay.includes(q))return false;
+        }
+        return true;
+      });
+
+      const emptyHint = $('weather-empty-hint');
+      if(emptyHint){
+        emptyHint.hidden = visible.length > 0;
+        if(profiles.length === 0){
+          emptyHint.textContent = `No weather profiles yet. Pick a quick start above or tap add profile (up to ${MAX_WEATHER_PROFILES}).`;
+        }else if(visible.length === 0){
+          // Profiles exist but none match — offer the one-tap way back.
+          emptyHint.innerHTML = 'No weather profiles match your search or filter. '
+            + '<button type="button" class="mini-text-btn" data-weather-empty-reset>clear search &amp; filter</button>';
+        }else{
+          emptyHint.textContent = '';
+        }
       }
+
+      // In bulk (select) mode the profile cards are selection targets: their
+      // editors are disabled so taps can't silently change rules while selecting.
+      const bulk=weatherManagerState.bulkMode;
+      const dis=bulk ? ' disabled' : '';
+      list.innerHTML=visible.map(({profile,profileIndex})=>{
+        const usages=usagesById.get(profile.id) || [];
+        const attached=usages.map(usage=>usage.label).slice(0,5);
+        const summary = weatherProfileRuleSummary(profile);
+        const selected = weatherManagerState.selectedIds.has(profile.id);
+        return `
+        <div class="weather-profile-card${selected ? ' is-selected' : ''}${bulk ? ' is-bulk' : ''}" data-weather-profile-index="${profileIndex}" data-weather-profile-id="${escapeHtml(profile.id)}">
+          <div class="weather-profile-head">
+            ${bulk ? `<label class="manager-row-check"><input type="checkbox" data-weather-select="${escapeHtml(profile.id)}" aria-label="select ${escapeHtml(profile.name)}"${selected ? ' checked' : ''} /></label>` : ''}
+            <input class="settings-text-input" data-weather-profile-name value="${escapeHtml(profile.name)}" maxlength="32" aria-label="weather profile name"${dis} />
+            <button class="mini-text-btn" type="button" data-weather-profile-duplicate title="duplicate profile"${profiles.length >= MAX_WEATHER_PROFILES || bulk ? ' disabled' : ''}>duplicate</button>
+            <button class="mini-text-btn" type="button" data-weather-profile-remove${dis}>remove</button>
+          </div>
+          ${summary ? `<div class="weather-profile-summary">${escapeHtml(summary)}</div>` : ''}
+          <div class="weather-profile-used">${attached.length ? `used by ${escapeHtml(attached.join(', '))}${usages.length>attached.length?` +${usages.length-attached.length}`:''}` : 'not attached yet'}</div>
+          <div class="weather-rule-list">
+            ${profile.rules.map((rule,ruleIndex)=>{
+              const meta=WEATHER_METRICS[rule.metric] || {};
+              const percentile=rule.boundMode==='percentile';
+              const boundValue=v=>v==null ? '' : (percentile ? v : weatherMetricDisplayValue(rule.metric,v));
+              return `
+              <div class="weather-rule" data-weather-rule-index="${ruleIndex}">
+                <select class="settings-select" data-weather-rule-metric aria-label="weather metric"${dis}>${weatherMetricOptions(rule.metric)}</select>
+                <label class="weather-bound-mode">limits
+                  <select class="settings-select" data-weather-rule-bound-mode aria-label="weather limit type"${dis}>
+                    <option value="absolute"${!percentile?' selected':''}>fixed values</option>
+                    <option value="percentile"${percentile?' selected':''}>percentiles</option>
+                  </select>
+                </label>
+                <label class="weather-min">min${percentile?' %':''} <input type="number" inputmode="decimal" data-weather-rule-min value="${boundValue(rule.min)}"${percentile?' min="0" max="100"':''} placeholder="${percentile?'0':escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}"${dis} /></label>
+                <label class="weather-max">max${percentile?' %':''} <input type="number" inputmode="decimal" data-weather-rule-max value="${boundValue(rule.max)}"${percentile?' min="0" max="100"':''} placeholder="${percentile?'100':escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}"${dis} /></label>
+                <select class="settings-select" data-weather-rule-relative aria-label="relative preference"${dis}>
+                  <option value="none"${rule.relative==='none'?' selected':''}>no preference</option>
+                  <option value="low"${rule.relative==='low'?' selected':''}>prefer lower</option>
+                  <option value="high"${rule.relative==='high'?' selected':''}>prefer higher</option>
+                </select>
+                <label class="weather-importance">priority
+                  <select class="settings-select" data-weather-rule-importance aria-label="weather rule priority"${dis}>
+                    <option value="low"${rule.importance==='low'?' selected':''}>low</option>
+                    <option value="medium"${rule.importance==='medium'?' selected':''}>medium</option>
+                    <option value="high"${rule.importance==='high'?' selected':''}>high</option>
+                  </select>
+                </label>
+                <label class="weather-hard"><input type="checkbox" data-weather-rule-hard${rule.hard?' checked':''}${dis} /> hard</label>
+                <button class="mini-nav" type="button" data-weather-rule-remove aria-label="remove weather rule"${dis}><i class="ti ti-x" aria-hidden="true"></i></button>
+                <div class="weather-rule-hint">${escapeHtml(weatherRuleHintText(rule))}</div>
+              </div>`;}).join('')}
+          </div>
+          <button class="mini-text-btn" type="button" data-weather-rule-add${dis}>add rule</button>
+        </div>`;}).join('');
+      weatherManagerState.visibleIds = visible.map(v=>v.profile.id);
     }
-
-    // In bulk (select) mode the profile cards are selection targets: their
-    // editors are disabled so taps can't silently change rules while selecting.
-    const bulk=weatherManagerState.bulkMode;
-    const dis=bulk ? ' disabled' : '';
-    list.innerHTML=visible.map(({profile,profileIndex})=>{
-      const usages=usagesById.get(profile.id) || [];
-      const attached=usages.map(usage=>usage.label).slice(0,5);
-      const summary = weatherProfileRuleSummary(profile);
-      const selected = weatherManagerState.selectedIds.has(profile.id);
-      return `
-      <div class="weather-profile-card${selected ? ' is-selected' : ''}${bulk ? ' is-bulk' : ''}" data-weather-profile-index="${profileIndex}" data-weather-profile-id="${escapeHtml(profile.id)}">
-        <div class="weather-profile-head">
-          ${bulk ? `<label class="manager-row-check"><input type="checkbox" data-weather-select="${escapeHtml(profile.id)}" aria-label="select ${escapeHtml(profile.name)}"${selected ? ' checked' : ''} /></label>` : ''}
-          <input class="settings-text-input" data-weather-profile-name value="${escapeHtml(profile.name)}" maxlength="32" aria-label="weather profile name"${dis} />
-          <button class="mini-text-btn" type="button" data-weather-profile-duplicate title="duplicate profile"${profiles.length >= MAX_WEATHER_PROFILES || bulk ? ' disabled' : ''}>duplicate</button>
-          <button class="mini-text-btn" type="button" data-weather-profile-remove${dis}>remove</button>
-        </div>
-        ${summary ? `<div class="weather-profile-summary">${escapeHtml(summary)}</div>` : ''}
-        <div class="weather-profile-used">${attached.length ? `used by ${escapeHtml(attached.join(', '))}${usages.length>attached.length?` +${usages.length-attached.length}`:''}` : 'not attached yet'}</div>
-        <div class="weather-rule-list">
-          ${profile.rules.map((rule,ruleIndex)=>{
-            const meta=WEATHER_METRICS[rule.metric] || {};
-            const percentile=rule.boundMode==='percentile';
-            const boundValue=v=>v==null ? '' : (percentile ? v : weatherMetricDisplayValue(rule.metric,v));
-            return `
-            <div class="weather-rule" data-weather-rule-index="${ruleIndex}">
-              <select class="settings-select" data-weather-rule-metric aria-label="weather metric"${dis}>${weatherMetricOptions(rule.metric)}</select>
-              <label class="weather-bound-mode">limits
-                <select class="settings-select" data-weather-rule-bound-mode aria-label="weather limit type"${dis}>
-                  <option value="absolute"${!percentile?' selected':''}>fixed values</option>
-                  <option value="percentile"${percentile?' selected':''}>percentiles</option>
-                </select>
-              </label>
-              <label class="weather-min">min${percentile?' %':''} <input type="number" inputmode="decimal" data-weather-rule-min value="${boundValue(rule.min)}"${percentile?' min="0" max="100"':''} placeholder="${percentile?'0':escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}"${dis} /></label>
-              <label class="weather-max">max${percentile?' %':''} <input type="number" inputmode="decimal" data-weather-rule-max value="${boundValue(rule.max)}"${percentile?' min="0" max="100"':''} placeholder="${percentile?'100':escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}"${dis} /></label>
-              <select class="settings-select" data-weather-rule-relative aria-label="relative preference"${dis}>
-                <option value="none"${rule.relative==='none'?' selected':''}>no preference</option>
-                <option value="low"${rule.relative==='low'?' selected':''}>prefer lower</option>
-                <option value="high"${rule.relative==='high'?' selected':''}>prefer higher</option>
-              </select>
-              <label class="weather-importance">priority
-                <select class="settings-select" data-weather-rule-importance aria-label="weather rule priority"${dis}>
-                  <option value="low"${rule.importance==='low'?' selected':''}>low</option>
-                  <option value="medium"${rule.importance==='medium'?' selected':''}>medium</option>
-                  <option value="high"${rule.importance==='high'?' selected':''}>high</option>
-                </select>
-              </label>
-              <label class="weather-hard"><input type="checkbox" data-weather-rule-hard${rule.hard?' checked':''}${dis} /> hard</label>
-              <button class="mini-nav" type="button" data-weather-rule-remove aria-label="remove weather rule"${dis}><i class="ti ti-x" aria-hidden="true"></i></button>
-              <div class="weather-rule-hint">${escapeHtml(weatherRuleHintText(rule))}</div>
-            </div>`;}).join('')}
-        </div>
-        <button class="mini-text-btn" type="button" data-weather-rule-add${dis}>add rule</button>
-      </div>`;}).join('');
-    weatherManagerState.visibleIds = visible.map(v=>v.profile.id);
+    renderWeatherBulkBar();
+    const add=$('weather-profile-add');
+    if(add)add.disabled=profiles.length>=MAX_WEATHER_PROFILES;
   }
-  renderWeatherBulkBar();
-  const add=$('weather-profile-add');
-  if(add)add.disabled=profiles.length>=MAX_WEATHER_PROFILES;
   const cache=weatherCacheRead();
   let statusText = '';
   if(!profiles.length)statusText='No saved weather yet.';

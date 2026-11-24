@@ -952,16 +952,34 @@ function weekViewCancelAlign(){
 // (settle, align, nudge) never forces a layout read after the board's style
 // writes. `board` guards staleness: a re-render builds a fresh board.
 let _weekViewColStep = null;
+let _weekViewLastGeom = { width: 0, gutterW: 0, gap: 0 };
+let _weekViewLastSized = null;
+const _weekViewShortDateFmt = typeof Intl !== 'undefined'
+  ? new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric'}) : null;
+const _weekViewDayTitleFmt = typeof Intl !== 'undefined'
+  ? new Intl.DateTimeFormat(undefined,{weekday:'short',month:'short',day:'numeric'}) : null;
+
+function weekViewPrecomputedGrid(scrollerWidth,visible,span){
+  if(!(scrollerWidth > 0) || !(_weekViewLastGeom.gutterW > 0))return null;
+  const gutterW = _weekViewLastGeom.gutterW;
+  const gap = _weekViewLastGeom.gap;
+  const area = Math.max(1,scrollerWidth - gutterW);
+  const col = Math.max(1,(area - gap * Math.max(0,visible - 1)) / visible);
+  const width = gutterW + col * span + gap * Math.max(0,span - 1);
+  return { template:`repeat(${span},${col}px)`, widthPx:`${width}px`, step:col + gap };
+}
 
 function weekViewSizeBoard(scroller){
   const board = scroller && scroller.querySelector('.wv-board');
   if(!board || !scroller.clientWidth)return;
+  const scrollerW = scroller.clientWidth;
   const visible = Number(board.dataset.visible) || 1;
   const span = Number(board.dataset.span) || visible;
   const gutter = scroller.parentElement && scroller.parentElement.querySelector('.wv-rail .wv-gutter');
   const gutterW = gutter ? gutter.getBoundingClientRect().width : 13;
   const gap = parseFloat(getComputedStyle(board).getPropertyValue('--wv-col-gap')) || 0;
-  const area = Math.max(1,scroller.clientWidth - gutterW);
+  _weekViewLastGeom = { width: scrollerW, gutterW, gap };
+  const area = Math.max(1,scrollerW - gutterW);
   const col = Math.max(1,(area - gap * Math.max(0,visible - 1)) / visible);
   const template = `repeat(${span},${col}px)`;
   const width = gutterW + col * span + gap * Math.max(0,span - 1);
@@ -975,6 +993,7 @@ function weekViewSizeBoard(scroller){
     if(el.style.gridTemplateColumns !== template)el.style.gridTemplateColumns = template;
   });
   _weekViewColStep = {board,step:col + gap};
+  _weekViewLastSized = {board,width:scrollerW,visible,span};
   weekViewSyncRail();
 }
 
@@ -1010,16 +1029,21 @@ function weekViewSyncRail(){
     const rail = host.querySelector('.wv-rail');
     const track = host.querySelector('.wv-rail .wv-gutter');
     const cover = host.querySelector('.wv-corner-cover');
+    // Batch all layout reads before any style writes so scroll ticks never thrash.
     const headH = host.querySelector('.wv-board-head')?.offsetHeight || 0;
-    if(rail)rail.style.top = `${headH}px`;
-    if(cover)cover.style.height = `${headH}px`;
-    // The now tag overhangs the gutter onto the clock, so it rides in its own
-    // unclipped layer next to the clipped hour labels.
-    const nowrail = host.querySelector('.wv-nowrail');
+    const scrollTop = y ? y.scrollTop : 0;
+    const headPx = `${headH}px`;
+    if(host._wvLastHeadH !== headH){
+      host._wvLastHeadH = headH;
+      if(rail)rail.style.top = headPx;
+      if(cover)cover.style.height = headPx;
+      const nowrail = host.querySelector('.wv-nowrail');
+      if(nowrail)nowrail.style.top = headPx;
+    }
     const nowtrack = host.querySelector('.wv-nowtrack');
-    if(nowrail){nowrail.style.top = `${headH}px`;}
-    if(y && nowtrack)nowtrack.style.transform = `translateY(${-y.scrollTop}px)`;
-    if(y && track)track.style.transform = `translateY(${-y.scrollTop}px)`;
+    const tf = `translate3d(0,${-scrollTop}px,0)`;
+    if(y && nowtrack && nowtrack.style.transform !== tf)nowtrack.style.transform = tf;
+    if(y && track && track.style.transform !== tf)track.style.transform = tf;
   });
 }
 
@@ -1130,7 +1154,7 @@ function weekViewRestoreMinute(scroller,minute){
 // PURE: "Nov 15 – 21"
 function weekViewRangeLabel(days){
   const start = new Date(days[0].dayBase), end = new Date(days[days.length-1].dayBase);
-  const fmt = date=>date.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  const fmt = date=>_weekViewShortDateFmt ? _weekViewShortDateFmt.format(date) : date.toLocaleDateString(undefined,{month:'short',day:'numeric'});
   return start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()
     ? `${fmt(start)}–${end.getDate()}` : `${fmt(start)}–${fmt(end)}`;
 }
@@ -1831,8 +1855,9 @@ function weekViewPaintSelection(){
   }else if(next)host.insertAdjacentHTML('beforeend',next);
 }
 
-function weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount){
-  const columns = weekViewGridColumns(days);
+function weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount,preGrid = null){
+  const columns = preGrid ? preGrid.template : weekViewGridColumns(days);
+  const widthStyle = preGrid ? ` style="width:${preGrid.widthPx}"` : '';
   const desktop = _weekViewLayout === 'desktop';
   const flat = listMode && visibleCount <= 3;
   const head = `<div class="wv-days-head${desktop ? '' : ' is-split'}" style="grid-template-columns:${columns}">${weekViewDaysHeadHtml(days,todayKey,weekViewDaySel,layoutByDay,visibleCount)}</div>`;
@@ -1855,7 +1880,7 @@ function weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,vis
   // touch drag to one axis instead of sliding both. The hour rail and the
   // head corner are painted from outside the scrollers — sticky-left cannot
   // pin inside the inner scroller — and follow the clock via weekViewSyncRail.
-  return `<div class="wv-clock"><div class="wv-scroller" data-visible="${visibleCount}"><div class="wv-yscroll"><div class="wv-board${listMode && !flat ? ' is-aligned-grid' : ''}${flat ? ' is-flat' : ''}" data-visible="${visibleCount}" data-span="${days.length}"><div class="wv-board-head"><div class="wv-corner" aria-hidden="true"></div><div class="wv-board-head-main">${head}${markers}</div></div><div class="wv-cols" style="height:${trackHeight};grid-template-columns:${columns}">${cols}</div></div></div></div><div class="wv-rail" aria-hidden="true"><div class="wv-gutter" style="height:${trackHeight}">${gutter}</div></div><div class="wv-nowrail" aria-hidden="true"><div class="wv-nowtrack" style="height:${trackHeight}">${nowtag}</div></div><div class="wv-corner-cover" aria-hidden="true"></div></div>`;
+  return `<div class="wv-clock"><div class="wv-scroller" data-visible="${visibleCount}"><div class="wv-yscroll"${widthStyle}><div class="wv-board${listMode && !flat ? ' is-aligned-grid' : ''}${flat ? ' is-flat' : ''}" data-visible="${visibleCount}" data-span="${days.length}"${widthStyle}><div class="wv-board-head"><div class="wv-corner" aria-hidden="true"></div><div class="wv-board-head-main">${head}${markers}</div></div><div class="wv-cols" style="height:${trackHeight};grid-template-columns:${columns}">${cols}</div></div></div></div><div class="wv-rail" aria-hidden="true"><div class="wv-gutter" style="height:${trackHeight}">${gutter}</div></div><div class="wv-nowrail" aria-hidden="true"><div class="wv-nowtrack" style="height:${trackHeight}">${nowtag}</div></div><div class="wv-corner-cover" aria-hidden="true"></div></div>`;
 }
 
 function renderWeekView(){
@@ -1983,7 +2008,8 @@ function renderWeekView(){
   body.classList.toggle('is-multi',visibleCount > 1);
   body.classList.toggle('is-flat',listMode && visibleCount <= 3);
   body.dataset.days = String(visibleCount);
-  body.innerHTML = weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount)
+  const preGrid = weekViewPrecomputedGrid((prior && prior.clientWidth) || _weekViewLastGeom.width,visibleCount,days.length);
+  body.innerHTML = weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount,preGrid)
     + weekViewUnplacedHtml(rowsByDay.get(selectedDay.dayKey),selectedDay.dayKey);
   body.setAttribute('aria-busy',String(loading));
   // The old scroller is gone: an ease aimed at it must not steer selection
@@ -2394,7 +2420,11 @@ function weekViewCleanup(){
   _weekViewStrip = [];
   _weekViewRowsByDay = new Map();
   _weekViewScrollAt = 0;
+  _weekViewColStep = null;
+  _weekViewLastSized = null;
   _weekHorizonSeq += 1;
+  const body = $('week-view-body');
+  if(body && !weekSheetOpen())body.innerHTML = '';
 }
 
 function openWeekView(){
@@ -2404,8 +2434,14 @@ function openWeekView(){
   _weekViewOpener = document.activeElement;
   weekViewLoadPreferences();
   weekViewGen += 1;
-  renderWeekView();
-  openSheet('week-sheet');
+  const sheet = $('week-sheet');
+  sheet?.classList.add('is-preparing');
+  try{
+    renderWeekView();
+    openSheet('week-sheet');
+  }finally{
+    sheet?.classList.remove('is-preparing');
+  }
   $('week-view-close').focus({preventScroll:true});
   if(!_weekViewTimer)_weekViewTimer = setInterval(weekViewTick,60000);
 }
@@ -2628,6 +2664,8 @@ function bindWeekView(){
       }
       const scroller = body.querySelector('.wv-scroller');
       if(!scroller)return;
+      const board = scroller.querySelector('.wv-board');
+      if(_weekViewLastSized && _weekViewLastSized.board === board && _weekViewLastSized.width === scroller.clientWidth)return;
       const y = weekViewYScroller(scroller);
       const top = y ? y.scrollTop : 0;
       weekViewSizeBoard(scroller);

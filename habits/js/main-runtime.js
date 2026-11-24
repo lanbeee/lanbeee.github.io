@@ -548,9 +548,14 @@ bindCompactNumber('detail-min-gap',clampMinGapMinutes,{maxLength:3});
 function openDayLogsAfterCalendarGesture(key,{refreshOverview = false,hideAgenda = false} = {}){
   if(!key)return;
   dayLogsKey = key;
+  if(typeof _dayLogsOpenedRev !== 'undefined' && typeof plannerDataRevision === 'function'){
+    _dayLogsOpenedRev = plannerDataRevision();
+  }
   $('day-logs-sheet').dataset.hideAgenda = hideAgenda ? '1' : '0';
   resetDayLogsStep(); // clears habit scope — overview shows all matching items
-  if(refreshOverview)renderOverview();
+  if(refreshOverview){
+    if(typeof syncOverviewSelectedDay !== 'function' || !syncOverviewSelectedDay(key))renderOverview();
+  }
   renderDayLogs(key);
   // WebKit may synthesize its click after pointerup/touchend. Mounting the
   // backdrop during pointerup makes that tail click land on the new backdrop

@@ -1182,8 +1182,11 @@ function renderDetailSummaryGuides(){
   else input.removeAttribute('aria-describedby');
   const layoutSig = tray.hidden ? '' : `${guiding?1:0}|${labelText}|${hint}|${canRevise?1:0}|${signature}`;
   if(tray.dataset.layoutSig !== layoutSig){
-    tray.dataset.layoutSig = layoutSig;
-    detailSummaryGuidesHeight(inner,tray.hidden ? 0 : tray.offsetHeight);
+    const h = tray.hidden ? 0 : tray.offsetHeight;
+    if(tray.hidden || h > 0){
+      tray.dataset.layoutSig = layoutSig;
+      detailSummaryGuidesHeight(inner,h);
+    }
   }
 }
 

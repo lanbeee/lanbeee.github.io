@@ -50,11 +50,12 @@ function syncAssistantChrome(){
   const on = assistantEnabled();
   document.body.classList.toggle('assistant-on', on);
   document.body.classList.toggle('assistant-debug-on', on && assistantDebugOn());
-  if(typeof syncDetailSearchAssistant === 'function'){
+  const detailVisible = Boolean($('detail-sheet')?.classList.contains('open') || (typeof getPane === 'function' && getPane()?.dataset.activeSheet === 'detail-sheet'));
+  if(detailVisible && typeof syncDetailSearchAssistant === 'function'){
     if($('detail-search-panel').hidden)syncDetailSearchAssistant();
     else renderDetailSearch();
   }
-  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
+  if(detailVisible && typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
   const needle = typeof assistantSettings === 'function' && assistantSettings().provider === 'needle';
   ['open-assistant','bar-open-assistant'].forEach(id => {
     const btn = $(id);
@@ -104,10 +105,14 @@ function syncLocalAssistantControls(){
   syncAssistantFocusBar();
 }
 
+let _assistantOriginHelpSig = '';
 function syncAssistantOriginHelp(){
   const publicOrigin = typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '';
   const origin = typeof assistantGuideOrigin === 'function' ? assistantGuideOrigin() : (publicOrigin || 'https://lanbeee.github.io');
   const platform = typeof assistantHostPlatform === 'function' ? assistantHostPlatform() : 'mac';
+  const sig = `${publicOrigin}|${origin}|${platform}`;
+  if(sig === _assistantOriginHelpSig)return;
+  _assistantOriginHelpSig = sig;
   const cmd = typeof assistantOllamaSetupCommands === 'function'
     ? assistantOllamaSetupCommands(origin, platform)
     : (typeof assistantOllamaOriginsAllowText === 'function' ? assistantOllamaOriginsAllowText(origin, platform) : '');

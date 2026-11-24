@@ -329,6 +329,10 @@ html{overscroll-behavior-y:none;}
   position:relative;overflow:hidden;border-radius:var(--card-radius);
   touch-action:pan-y;
 }
+#list > .swipe-row{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 76px;
+}
 /* Collapsed at rest (width:0). Inline width during swipe still reveals actions;
    without this, content-sized actions sit under the card and peek on fast scroll. */
 .swipe-actions{
@@ -338,7 +342,6 @@ html{overscroll-behavior-y:none;}
   overflow:hidden;
   pointer-events:none;
   transition:width var(--dur-med) var(--ease-tight),opacity var(--dur-fast) ease;
-  will-change:width;
 }
 .swipe-row[data-swipe-open]{touch-action:auto;}
 .swipe-action-strip{
@@ -432,9 +435,9 @@ html{overscroll-behavior-y:none;}
   display:flex;align-items:center;gap:12px;
   position:relative;z-index:1;
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-fast) ease,background var(--dur-fast) ease,padding var(--dur-fast) var(--ease-tight),gap var(--dur-fast) var(--ease-tight);
-  will-change:transform;
   user-select:none;-webkit-user-select:none;
 }
+.swipe-row[data-swipe-open] .ting-card{will-change:transform;}
 /* Inside white surfaces (sheets, detail/overview panes) the card flips to the
    recessed page tone so the tonal step still separates it without a border. */
 .sheet .ting-card,

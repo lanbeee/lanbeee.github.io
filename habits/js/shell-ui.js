@@ -702,9 +702,12 @@ function updateKeyboardLift(){
   if(nativeResized){
     const width = document.documentElement.clientWidth;
     if(width !== nativeKeyboardLayoutWidth){nativeKeyboardRestHeight = 0;nativeKeyboardRestSafeBottom = 0;nativeKeyboardLayoutWidth = width;}
+    const prevRest = nativeKeyboardRestHeight;
     nativeKeyboardRestHeight = Math.max(nativeKeyboardRestHeight,layoutHeight);
-    if(layoutHeight === nativeKeyboardRestHeight)nativeKeyboardRestSafeBottom = Math.max(nativeKeyboardRestSafeBottom,
-      parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--content-safe-bottom')) || 0);
+    if(layoutHeight === nativeKeyboardRestHeight && (nativeKeyboardRestSafeBottom === 0 || nativeKeyboardRestHeight !== prevRest)){
+      nativeKeyboardRestSafeBottom = Math.max(nativeKeyboardRestSafeBottom,
+        parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--content-safe-bottom')) || 0);
+    }
   }
   const visibleBottom = needsLift && !nativeResized
     ? Math.min(layoutHeight,window.visualViewport.height + window.visualViewport.offsetTop) : layoutHeight;
@@ -752,8 +755,8 @@ function updateKeyboardLift(){
     const detailSafeBottom = `max(0px,calc(100dvh - ${nativeKeyboardRestHeight}px + ${nativeKeyboardRestSafeBottom}px))`;
     if(style.getPropertyValue('--detail-footer-safe-bottom') !== detailSafeBottom)style.setProperty('--detail-footer-safe-bottom',detailSafeBottom);
   }else{
-    style.removeProperty('--keyboard-dock-safe-bottom');
-    style.removeProperty('--detail-footer-safe-bottom');
+    if(style.getPropertyValue('--keyboard-dock-safe-bottom'))style.removeProperty('--keyboard-dock-safe-bottom');
+    if(style.getPropertyValue('--detail-footer-safe-bottom'))style.removeProperty('--detail-footer-safe-bottom');
   }
   // Native layout already follows both keyboard directions. A pixel snapshot
   // would hold the old height for a frame as the keyboard closes.
@@ -763,11 +766,17 @@ function updateKeyboardLift(){
   // a percentage would resolve inside the wide modal's padded container.
   const addHeight = nativeResized ? '100dvh' : bottom;
   if(style.getPropertyValue('--add-viewport-height') !== addHeight)style.setProperty('--add-viewport-height',addHeight);
-  if(nativeResized && layoutHeight < nativeKeyboardRestHeight)style.setProperty('--add-footer-safe-bottom','0px');
-  else style.removeProperty('--add-footer-safe-bottom');
+  if(nativeResized && layoutHeight < nativeKeyboardRestHeight){
+    if(style.getPropertyValue('--add-footer-safe-bottom') !== '0px')style.setProperty('--add-footer-safe-bottom','0px');
+  }else if(style.getPropertyValue('--add-footer-safe-bottom'))style.removeProperty('--add-footer-safe-bottom');
   const value = `${keyboard}px`;
   if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
-  if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome();
+  if(typeof syncDetailEditingChrome === 'function'){
+    const detailInner = detailOpen ? null : getSheetInner('detail-sheet');
+    if(detailOpen || detailInner?.classList.contains('detail-editing') || detailInner?.classList.contains('detail-field-editing')){
+      syncDetailEditingChrome();
+    }
+  }
 }
 
 // The IME can emit resize and scroll several times in one frame. Apply the
@@ -981,21 +990,31 @@ function browserSamePages(a,b){
   return a.length === b.length && a.every((page,i)=>page.key === b[i].key);
 }
 
+const BROWSER_SCROLL_HOST_SELECTOR = '.detail-pager,.detail-page,.detail-minimal-settings,.detail-dots,.settings-stack,.add-content,.manager-body,.wv-scroller,.wv-yscroll,.assistant-messages,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll,.picker-content,.home-filter-groups,.day-logs-list,.detail-search-results';
 function rememberBrowserPageScroll(pages = browserNavigationEntries[browserNavigationIndex]){
+  if(window.Capacitor?.isNativePlatform?.())return;
   for(const page of pages || []){
     const inner = getSheetInner(page.id);
     if(!inner)continue;
-    page.scroll = [inner,...inner.querySelectorAll('*')]
-      .filter(el=>el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)
-      .map(el=>({el,top:el.scrollTop,left:el.scrollLeft}));
+    const saved = [];
+    const seen = new Set();
+    const record = el=>{
+      if(!el || seen.has(el))return;
+      seen.add(el);
+      const top = el.scrollTop, left = el.scrollLeft;
+      if(top || left)saved.push({el,top,left});
+    };
+    record(inner);
+    inner.querySelectorAll(BROWSER_SCROLL_HOST_SELECTOR).forEach(record);
+    page.scroll = saved;
   }
 }
 
-function registerBrowserPage(id,reopen,fromAdd = false){
+function registerBrowserPage(id,reopen,fromAdd = false,detailHid = null){
   if(window.Capacitor?.isNativePlatform?.())return;
   let key = id;
   if(id === 'detail-sheet'){
-    const hid = load()[detailIdx]?.hid;
+    const hid = detailHid || load()[detailIdx]?.hid;
     key += ':' + hid;
     reopen = ()=>{
       const index = load().findIndex(h=>h.hid === hid);
@@ -1426,7 +1445,7 @@ document.addEventListener('focusin',event=>{
 function openSheet(id,opts = {}){
   const wasOpen = $(id).classList.contains('open');
   if(edgeBack || edgeBackSettling)edgeBackAbort();
-  registerBrowserPage(id,opts.reopen,Boolean(opts.fromAdd));
+  registerBrowserPage(id,opts.reopen,Boolean(opts.fromAdd),opts.detailHid || null);
   $(id).dataset.backSequence = String(++sheetOpenSequence);
   ensureSheetExit(id);
   if(id === 'about-sheet' && typeof syncInstallGuideVisibility === 'function'){
@@ -1467,10 +1486,18 @@ function openSheet(id,opts = {}){
   if(!wasOpen && !paneTierActive() && !browserNavigationApplying && !window.TingsCoach?.state().active
     && (id === 'add-sheet' || isFullPageSheet(id))
     && !matchMedia('(prefers-reduced-motion: reduce)').matches){
-    sheetEnterMotions.get($(id))?.cancel();
-    sheetEnterMotions.set($(id),getSheetInner(id).animate([
-      {transform:'translateX(100%)'},{transform:'translateX(0)'}
-    ],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'}));
+    const inner = getSheetInner(id);
+    if(inner){
+      sheetEnterMotions.get($(id))?.cancel();
+      inner.style.willChange = 'transform';
+      const anim = inner.animate([
+        {transform:'translate3d(100%,0,0)'},{transform:'translate3d(0,0,0)'}
+      ],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
+      const clearWillChange = ()=>{ if(sheetEnterMotions.get($(id)) === anim)inner.style.willChange = ''; };
+      anim.addEventListener('finish',clearWillChange,{once:true});
+      anim.addEventListener('cancel',clearWillChange,{once:true});
+      sheetEnterMotions.set($(id),anim);
+    }
   }
 }
 

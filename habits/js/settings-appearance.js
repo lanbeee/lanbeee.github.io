@@ -46,28 +46,38 @@ function syncHeaderBrand(){
 
 headerBrandDarkMedia.addEventListener('change',syncHeaderBrand);
 
+let _lastAppearanceSig = '';
 function applyAppearanceSettings(){
   const s = sortSettings || {};
-  document.body.classList.toggle('compact-mode', !!s.compactMode);
-  document.body.classList.toggle('minimal-mode', !!s.minimalMode);
-  if(s.minimalMode && typeof setSettingsSearchOpen === 'function')setSettingsSearchOpen(false,false);
-  document.documentElement.dataset.fontScale = s.fontScale || 'medium';
+  const compact = Boolean(s.compactMode);
+  const minimal = Boolean(s.minimalMode);
+  const fontScale = s.fontScale || 'medium';
   const mode = s.themeMode || 'system';
+  const palette = s.colorPalette || 'default';
   const root = document.documentElement;
-  root.dataset.palette = s.colorPalette || 'default';
+  const sig = `${compact ? 1 : 0}|${minimal ? 1 : 0}|${fontScale}|${mode}|${palette}`;
+  if(document.body.classList.contains('compact-mode') !== compact)document.body.classList.toggle('compact-mode', compact);
+  if(document.body.classList.contains('minimal-mode') !== minimal)document.body.classList.toggle('minimal-mode', minimal);
+  if(minimal && typeof setSettingsSearchOpen === 'function')setSettingsSearchOpen(false,false);
+  if(root.dataset.fontScale !== fontScale)root.dataset.fontScale = fontScale;
+  if(root.dataset.palette !== palette)root.dataset.palette = palette;
   if(mode === 'system'){
-    root.removeAttribute('data-theme');
-    root.style.removeProperty('color-scheme');
+    if(root.hasAttribute('data-theme'))root.removeAttribute('data-theme');
+    if(root.style.getPropertyValue('color-scheme'))root.style.removeProperty('color-scheme');
   }else{
-    root.dataset.theme = mode;
-    root.style.colorScheme = mode;
+    if(root.dataset.theme !== mode)root.dataset.theme = mode;
+    if(root.style.colorScheme !== mode)root.style.colorScheme = mode;
   }
   const meta = document.querySelector('meta[name="color-scheme"]');
-  if(meta)meta.content = mode === 'system' ? 'light dark' : mode;
+  const metaVal = mode === 'system' ? 'light dark' : mode;
+  if(meta && meta.content !== metaVal)meta.content = metaVal;
   syncHeaderBrand();
-  if(typeof invalidateCrownRidgeCache === 'function')invalidateCrownRidgeCache();
-  if(typeof applyDetailMinimalMode === 'function')applyDetailMinimalMode();
-  applyAddMinimalMode();
+  if(_lastAppearanceSig !== sig){
+    _lastAppearanceSig = sig;
+    if(typeof invalidateCrownRidgeCache === 'function')invalidateCrownRidgeCache();
+    if(typeof applyDetailMinimalMode === 'function')applyDetailMinimalMode();
+    applyAddMinimalMode();
+  }
 }
 
 // Keep optional add controls out of minimal mode; duration stays in the main flow.

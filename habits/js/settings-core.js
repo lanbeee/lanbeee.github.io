@@ -396,7 +396,7 @@ function closeSettingsSheet(){
   // City setup leaves the item draft mounted. Refresh its clock previews on
   // every return path, including backdrop dismissal, without re-rendering it.
   // On desktop Details lives in a permanent pane, without .sheet-wrap.open.
-  if(detailIdx != null){
+  if(detailIdx != null && ($('detail-sheet')?.classList.contains('open') || getPane()?.dataset.activeSheet === 'detail-sheet')){
     document.querySelectorAll('#detail-sheet .time-endpoint.is-dynamic').forEach(endpoint=>{
       if(endpoint.closest('.habit-option-row'))refreshHabitScheduleOptionEndpoint(endpoint);
       else refreshTimeResolvedFor(endpoint);
@@ -452,9 +452,9 @@ function syncSettingsControls(){
   updateSortSampleCount();
   renderTopicList();
   renderIgnoredCalendarItems();
-  renderBlockedTimeControls();
-  renderLocationControls();
-  if(typeof renderWeatherControls === 'function')renderWeatherControls();
+  renderBlockedTimeControls({ includeManager: Boolean($('busy-manager-sheet')?.classList.contains('open')) });
+  renderLocationControls({ includeManager: Boolean($('locations-manager-sheet')?.classList.contains('open')) });
+  if(typeof renderWeatherControls === 'function')renderWeatherControls({ includeManager: Boolean($('weather-manager-sheet')?.classList.contains('open')) });
   if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);

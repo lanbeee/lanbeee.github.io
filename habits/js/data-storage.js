@@ -4,7 +4,51 @@
 // the rest of the file (pure helpers below) ports verbatim.
 // ─────────────────────────────────────────────────────────────────────────
 
+const _defaultStorageRead = typeof Storage !== 'undefined' ? Storage.read : null;
+let _loadCache = { raw: undefined, data: null };
+let _sortSettingsCache = { raw: undefined, forcedFast: undefined, base: null };
+let _agendaOptimizerPreloaded = false;
+
+function _cloneJson(value){
+  if(value === null || typeof value !== 'object')return value;
+  if(Array.isArray(value)){
+    const len = value.length;
+    const out = new Array(len);
+    for(let i = 0; i < len; i++)out[i] = _cloneJson(value[i]);
+    return out;
+  }
+  const out = {};
+  const keys = Object.keys(value);
+  for(let i = 0; i < keys.length; i++){
+    const k = keys[i];
+    out[k] = _cloneJson(value[k]);
+  }
+  return out;
+}
+
 function load(){
+  const canCache = typeof localStorage !== 'undefined'
+    && typeof Storage !== 'undefined' && Storage.read === _defaultStorageRead;
+  if(canCache){
+    let raw;
+    try{ raw = localStorage.getItem(KEY); }catch(_){ raw = undefined; }
+    if(raw !== undefined && raw === _loadCache.raw && _loadCache.data){
+      return _cloneJson(_loadCache.data);
+    }
+    const stored = Storage.read(KEY) || [];
+    const data = normalize(stored);
+    // Legacy records need a saved ID before a retained agenda can follow them
+    // across edits. Persist only that migration; leave other raw fields intact.
+    if(stored.some(h=>!cleanHabitId(h.hid))){
+      try{
+        Storage.write(KEY,stored.map((h,i)=>cleanHabitId(h.hid) ? h : {...h,hid:data[i].hid}));
+        bumpPlannerDataRevision();
+        raw = localStorage.getItem(KEY);
+      }catch(_){ raw = undefined; }
+    }
+    if(raw !== undefined)_loadCache = { raw, data };
+    return _cloneJson(data);
+  }
   const stored = Storage.read(KEY) || [];
   const data = normalize(stored);
   // Legacy records need a saved ID before a retained agenda can follow them
@@ -200,6 +244,19 @@ function normalizeCardDetails(settings){
 
 function loadSortSettings(){
   try{
+    const forcedFast = agendaPlannerForcedFast();
+    const canCache = typeof localStorage !== 'undefined'
+      && typeof Storage !== 'undefined' && Storage.read === _defaultStorageRead;
+    let raw;
+    if(canCache){
+      try{ raw = localStorage.getItem(SORT_SETTINGS_KEY); }catch(_){ raw = undefined; }
+      if(raw !== undefined && raw === _sortSettingsCache.raw
+        && forcedFast === _sortSettingsCache.forcedFast && _sortSettingsCache.base){
+        const cached = _cloneJson(_sortSettingsCache.base);
+        if(typeof weatherPlannerContext === 'function')cached._weatherContext = weatherPlannerContext(cached);
+        return cached;
+      }
+    }
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
     const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
     const merged = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...migrated,preset:'todayFirst'};
@@ -339,13 +396,17 @@ function loadSortSettings(){
     delete merged._plannerCurrentCoord;
     delete merged._plannerLiveLocationId;
     delete merged._weatherContext;
+    normalizeCardDetails(merged);
+    if(canCache && raw !== undefined){
+      _sortSettingsCache = { raw, forcedFast, base: _cloneJson(merged) };
+    }
     if(typeof weatherPlannerContext === 'function')merged._weatherContext = weatherPlannerContext(merged);
     // Prefer worker-side GLPK warm. Main-thread preload only when workers cannot run.
-    if(merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'
+    if(!_agendaOptimizerPreloaded && merged.agendaOptimizer && typeof preloadAgendaOptimizer === 'function'
       && typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable()){
+      _agendaOptimizerPreloaded = true;
       try{ preloadAgendaOptimizer(); }catch(_){}
     }
-    normalizeCardDetails(merged);
     return merged;
   }catch{
     return {

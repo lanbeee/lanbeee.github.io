@@ -73,7 +73,7 @@ function openBusyManager(opts = {}){
   if(opts.fromAdd && $('add-sheet').classList.contains('open'))closeSheet('add-sheet');
   busyManagerOnClose = typeof opts.onClose === 'function' ? opts.onClose : null;
   $('busy-manager-search').value = busyManagerState.search;
-  renderBlockedTimeControls();
+  renderBlockedTimeControls({ includeManager: true });
   $('busy-manager-sheet').inert = false;
   openSheet('busy-manager-sheet',{reopen:()=>openBusyManager(opts),fromAdd:opts.fromAdd});
 }
@@ -85,7 +85,7 @@ function closeBusyManager(){
   busyManagerOnClose = null;
   closeSheet('busy-manager-sheet');
   $('busy-manager-sheet').inert = true;
-  renderBlockedTimeControls();
+  renderBlockedTimeControls({ includeManager: false });
   if(onClose)onClose();
 }
 
@@ -200,15 +200,27 @@ function applyBusyManagerBulk(){
   });
 }
 
-function renderBlockedTimeControls(){
+function renderBlockedTimeControls(opts = {}){
+  const includeManager = opts.includeManager !== false;
   const wrap = $('blocked-time-list');
   if(!wrap)return;
   if(typeof nativeEnsureBusyReminderIds === 'function')nativeEnsureBusyReminderIds();
+  const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
+  if(!includeManager){
+    const count = blocks.length;
+    const summaryEl = $('busy-times-summary');
+    if(summaryEl)summaryEl.textContent = count ? `${count} busy ${count === 1 ? 'time' : 'times'}` : 'No busy times';
+    const previewEl = $('busy-times-preview');
+    if(previewEl){
+      previewEl.innerHTML = blocks.slice(0,3).map(b=>`<span class="settings-preview-pill">${escapeHtml(b.label)}</span>`).join('')
+        + (count > 3 ? `<span class="settings-preview-pill is-more">+${count-3} more</span>` : '');
+    }
+    return;
+  }
   const disclosureState = new Map([...wrap.querySelectorAll('.time-advanced')].map(el=>{
     const endpoint = el.closest('.blocked-endpoint');
     return [`${endpoint.dataset.blockedIndex}:${endpoint.dataset.blockedField}`,el.open];
   }));
-  const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
   const locs = typeof selectableLocationOptions === 'function'
     ? selectableLocationOptions(blocks.map(b=>b.locationId).filter(Boolean))
     : (typeof locationOptions === 'function' ? locationOptions() : []);

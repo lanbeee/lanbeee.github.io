@@ -72,22 +72,88 @@ const OVERVIEW_RANGES = [
   {key:'all',label:'all time'}
 ];
 
+const _overviewCellDateFmt = typeof Intl !== 'undefined'
+  ? new Intl.DateTimeFormat(undefined,{weekday:'long',month:'long',day:'numeric'}) : null;
+const _overviewShortDateFmt = typeof Intl !== 'undefined'
+  ? new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric'}) : null;
+let _overviewFilterCacheKey = '';
+let _overviewFilterSheetBuilt = false;
+let _dayLogsOpenedRev = -1;
+
+function ensureOverviewFilterSheetReady(){
+  if(_overviewFilterSheetBuilt)return;
+  const library = load();
+  settleCalendarFilterChoices(library);
+  const allData = library.filter(h=>!isCalendarIgnored(h));
+  renderOverviewFilters(allData,library,{includeSheet:true});
+}
+
+function syncOverviewSelectedDay(key){
+  const grid = $('overview-calendar');
+  if(!grid || !grid.childElementCount)return false;
+  grid.querySelectorAll('.cal-day.selected').forEach(el=>{
+    if(el.dataset.logDay !== key)el.classList.remove('selected');
+  });
+  if(key){
+    const next = grid.querySelector(`.cal-day[data-log-day="${CSS.escape(key)}"]`);
+    if(next)next.classList.add('selected');
+  }
+  return true;
+}
+
 // HYBRID: compact view switcher + active filter summary. The full filter
 // library lives in a dedicated full-page sheet so the calendar header stays clean.
-function renderOverviewFilters(data,library){
+function renderOverviewFilters(data,library,opts = {}){
   const wrap = $('overview-filter');
   if(!wrap)return;
   if(!OVERVIEW_RANGES.some(r=>r.key === overviewRangeFilter))overviewRangeFilter = 'recent';
+  const includeSheet = opts.includeSheet ?? Boolean($('calendar-filter-sheet')?.classList.contains('open'));
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  const selection = overviewFilterSelection();
+  const query = filterSheetQuery('calendar-filter');
+  const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
+  const rawLen = (()=>{ try{ return (localStorage.getItem(KEY) || '').length; }catch(_){ return library.length; } })();
+  const locsSig = (sortSettings?.locations || []).map(l=>`${l.id}:${l.name}:${l.placeType || ''}`).join(',');
+  const topicsSig = (sortSettings?.topics || []).join(',');
+  const cacheKey = `${rev}|${rawLen}|${library.length}|${data.length}|${minimal ? 1 : 0}|${JSON.stringify(selection)}|${query}|${locsSig}|${topicsSig}`;
+  if(cacheKey === _overviewFilterCacheKey && (!includeSheet || _overviewFilterSheetBuilt) && wrap.querySelector('.overview-range-option')){
+    wrap.hidden = false;
+    wrap.querySelectorAll('.overview-range-option').forEach(btn=>{
+      const on = btn.dataset.overviewRange === overviewRangeFilter;
+      btn.classList.toggle('on',on);
+      btn.setAttribute('aria-pressed',String(on));
+    });
+    return;
+  }
+  const activeCountFast = typeof countActiveFilters === 'function' ? countActiveFilters(selection) : 0;
+  if(!includeSheet && !minimal && activeCountFast === 0 && !query && data.length > 0){
+    syncOverviewFilterSelection(selection);
+    const rangeHtml = OVERVIEW_RANGES.map(r=>`
+      <button type="button" class="overview-range-option ${r.key === overviewRangeFilter ? 'on' : ''}" data-overview-range="${r.key}" aria-pressed="${r.key === overviewRangeFilter}">${escapeHtml(r.label)}</button>
+    `).join('');
+    wrap.hidden = false;
+    wrap.innerHTML = `
+      <div class="overview-range-seg" role="group" aria-label="calendar period">${rangeHtml}</div>
+      <div class="overview-filter-summary-row">
+        <div class="overview-active-filters" aria-label="active calendar filters">
+          <span>Showing every item</span>
+        </div>
+        <button type="button" class="home-filter-trigger" data-open-overview-filters="1" aria-label="open calendar filters">
+          <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i><span>Filters</span>
+        </button>
+      </div>`;
+    _overviewFilterCacheKey = cacheKey;
+    _overviewFilterSheetBuilt = false;
+    return;
+  }
   // The shared selection can refer to items excluded from the calendar.
   // Keep those choices available while computing counts from calendar items.
   const topicChoices = minimal ? [] : orderFilterChoices(overviewTopicChoices(library));
   const locChoices = minimal ? [] : orderFilterChoices(overviewLocationChoices(library));
-  const selection = overviewFilterSelection();
   syncOverviewFilterSelection(selection);
   const view = minimal ? {groupsHtml:'', chipsHtml:'', sheetChipsHtml:'', activeCount:0, matchedCount:0, totalCount:0, hasAnyGroup:false} : libraryFilterView({
     prefix:'calendar-filter', attrPrefix:'overview', items:data, selection, topicChoices, locationChoices:locChoices,
-    searchQuery:filterSheetQuery('calendar-filter')
+    searchQuery:query
   });
   const activeCount = view.activeCount;
   const rangeHtml = OVERVIEW_RANGES.map(r=>`
@@ -107,6 +173,8 @@ function renderOverviewFilters(data,library){
     </div>` : ''}`;
 
   syncFilterSheetChrome({prefix:'calendar-filter', view, surfaceLabel:'calendar'});
+  _overviewFilterCacheKey = cacheKey;
+  _overviewFilterSheetBuilt = true;
 }
 
 // PURE: scheduled / due / plan-by markers for a habit (not yet in logs)
@@ -219,7 +287,7 @@ function cellMarkup(key,date,entries,extraSpans = '',opts = {}){
   ].filter(Boolean).join(' ');
   const dayAttr = opts.entryDay ? 'data-entry-day' : 'data-log-day';
   const eligible = opts.eligible instanceof Set && !entries.length && opts.eligible.has(key) ? 'eligible' : '';
-  const dateLabel = date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  const dateLabel = _overviewCellDateFmt ? _overviewCellDateFmt.format(date) : date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   const itemLabel = entries.length ? `, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}` : ', no items';
   return `<button type="button" class="cal-day ${cls}${eligible ? ` ${eligible}` : ''}" ${dayAttr}="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}${more}</span></button>`;
 }
@@ -894,7 +962,7 @@ function recentRangeLabel(start,end,aroundToday = overviewRecentOffset === 0){
   if(aroundToday)return 'around today';
   const first = new Date(start);
   const last = new Date(end - 86400000);
-  const fmt = d => d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  const fmt = d => _overviewShortDateFmt ? _overviewShortDateFmt.format(d) : d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
   return `${fmt(first)} – ${fmt(last)}`;
 }
 
@@ -977,8 +1045,8 @@ function overviewToneLabel(tone){
 }
 
 // PURE: collect day rows; when dayLogsScopeIndex is set, only that habit
-function collectDayLogRows(key){
-  const data = load();
+function collectDayLogRows(key,dataOverride = null){
+  const data = Array.isArray(dataOverride) ? dataOverride : load();
   const rows = [];
   const scoped = Number.isInteger(dayLogsScopeIndex);
   data.forEach((h,i)=>{
@@ -1340,7 +1408,7 @@ function renderDayLogs(key){
 // RENDER: list step — agenda / planned / activity (overview only)
 function renderDayLogsListStep(key){
   const data = typeof load === 'function' ? load() : [];
-  const rows = collectDayLogRows(key);
+  const rows = collectDayLogRows(key,data);
   const journal = splitDayLogJournal(rows);
   const ts = new Date(`${key}T12:00:00`).getTime();
   const pastDay = key < todayIso();
@@ -1789,6 +1857,11 @@ function closeDayLogsSheet({refreshOverview = false} = {}){
   dayLogsKey = null;
   resetDayLogsStep();
   closeSheet('day-logs-sheet');
-  if(refreshOverview && typeof renderOverview === 'function')renderOverview();
-  else if(typeof refreshOpenViews === 'function')refreshOpenViews();
+  const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : -2;
+  if(refreshOverview){
+    if(rev === _dayLogsOpenedRev && syncOverviewSelectedDay(null))return;
+    if(typeof renderOverview === 'function')renderOverview();
+  }else if(rev !== _dayLogsOpenedRev && typeof refreshOpenViews === 'function'){
+    refreshOpenViews();
+  }
 }
