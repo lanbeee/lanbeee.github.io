@@ -31,7 +31,10 @@ applyAppearanceSettings();
 if(typeof syncAssistantChrome === 'function')syncAssistantChrome();
 try{
   const params = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  // The launch build has no shared displays: an old display link opens the
+  // planner instead of forwarding to agenda-display.html.
   if(params.get('feed') && params.get('key') && params.get('viewer')
+    && !(window.TingsNative?.sharingEnabled === false)
     && typeof isAgendaDisplayPage === 'function' && !isAgendaDisplayPage()){
     location.replace(typeof agendaDisplayHref === 'function'
       ? agendaDisplayHref(location.hash)
@@ -41,10 +44,11 @@ try{
 if(typeof maybeClaimItemShareFromHash === 'function'){
   void maybeClaimItemShareFromHash().catch(()=>{});
 }
-// Native (Capacitor/Play) builds ship without sharing: remove every Share
-// item / shared display entry point from the detail pane. Inbound claim links
-// and publish loops already no-op through shareConfigured().
-if(window.Capacitor?.isNativePlatform?.()){
+// Launch (Play) builds ship without sharing: remove every Share item /
+// shared display entry point from the detail pane. Personal native builds
+// keep the controls; inbound claim links and publish loops already no-op
+// through shareConfigured().
+if(window.TingsNative?.sharingEnabled === false){
   const shareWrap = document.querySelector('#detail-share-item')?.closest('.habit-action-with-leave');
   if(shareWrap)shareWrap.style.display = 'none';
   const displayCtl = document.querySelector('.detail-shared-display-control');

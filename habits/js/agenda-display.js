@@ -1617,6 +1617,16 @@ async function bootAgendaDisplay(){
 // on displays configured for the true-dark theme.
 applyAgendaAppearance(readAgendaAppearance());
 
+// The launch build has no shared displays. Direct navigation (a saved
+// bookmark, an old pairing link, or a clone enrollment's full-app hop) returns
+// to the local planner without forwarding query or fragment, and none of the
+// lifecycle below installs: no enrollment purge, no cached-display render, no
+// pairing start, no relay polling. index.html never sends this page back, so
+// a saved clone cannot cause a redirect loop.
+if(globalThis.TingsNative?.sharingEnabled === false){
+  location.replace('./index.html');
+}else{
+
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState === 'visible') void refreshDisplay();
 });
@@ -1724,3 +1734,5 @@ document.addEventListener('DOMContentLoaded',()=>{
   void bootAgendaDisplay();
 });
 document.addEventListener('fullscreenchange',syncDisplayFullscreenMenu);
+
+}

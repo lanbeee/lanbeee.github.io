@@ -900,6 +900,9 @@ function scheduleNativeAgendaForecast(week,data,settings,prefs,revision){
     void reconcileNativeReminders();
   },400);
 }
+function nativeBackgroundSharingOff(){
+  return window.TingsNative?.sharingEnabled === false;
+}
 function nativeBackgroundSnapshot(){
   const storage = {};
   for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,MISSED_HIDDEN_KEY,WEATHER_CACHE_KEY,RESTORED_DEVICE_CALENDAR_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
@@ -922,7 +925,12 @@ function nativeBackgroundSnapshot(){
   // the raw overrides so new/moved occurrences inherit without stale completion.
   const calendarOverrides=Object.fromEntries(Object.entries(rawPrefs.items).filter(([owner])=>owner.startsWith('calendar-series:') || owner.startsWith('item:device:')));
   const prefs={...saved,calendarOverrides,items:Object.fromEntries(Object.entries(saved.items).filter(([owner])=>owners.has(owner) || owner.startsWith('calendar-series:')))};
-  return {storage,prefs,sync:{shareState:localStorage.getItem(SHARE_STATE_KEY),enrollment:localStorage.getItem(AGENDA_DISPLAY_KEY)},quiet:compileNativeQuietSchedule(data,sortSettings,rawPrefs),week:compatible ? leanAgendaWeek(mounted) : null,
+  // Sharing off ships no pairing credentials in the snapshot: the Android
+  // completion worker reads them here to schedule paired-device work, and an
+  // empty sync object keeps that job unscheduled. The key mirrors the same
+  // effective inputs so relay-side churn cannot re-upload the snapshot.
+  const sync=nativeBackgroundSharingOff() ? {} : {shareState:localStorage.getItem(SHARE_STATE_KEY),enrollment:localStorage.getItem(AGENDA_DISPLAY_KEY)};
+  return {storage,prefs,sync,quiet:compileNativeQuietSchedule(data,sortSettings,rawPrefs),week:compatible ? leanAgendaWeek(mounted) : null,
     widgets:compileNativeWidgetSnapshot(compatible ? mounted : null,data,sortSettings),
     weatherRevision:sortSettings?._weatherContext?.revision || '',
     coord:typeof currentCoordLocation === 'function' ? currentCoordLocation() : null};
@@ -931,9 +939,10 @@ function nativeBackgroundSnapshotKey(){
   const data=typeof load==='function'?load():[];
   const prefs=nativeReminderPreferences();
   const mounted=typeof _homeRenderedWeek!=='undefined'?_homeRenderedWeek:null;
+  const sharingOff=nativeBackgroundSharingOff();
   return [
     typeof homePlannerDirtyKey==='function'?homePlannerDirtyKey(data):'',
-    localStorage.getItem(SHARE_STATE_KEY),localStorage.getItem(AGENDA_DISPLAY_KEY),
+    sharingOff?'':localStorage.getItem(SHARE_STATE_KEY),sharingOff?'':localStorage.getItem(AGENDA_DISPLAY_KEY),
     prefs.enabled,JSON.stringify([prefs.daily,prefs.weekly]),
     missedHideSignature(),
     JSON.stringify(loadTodaySuggested()),

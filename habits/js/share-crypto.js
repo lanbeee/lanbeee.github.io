@@ -5,6 +5,10 @@ const SHARE_NONCE_BYTES = 12;
 const AGENDA_PAIR_PROTOCOL_VERSION = 2;
 
 function shareConfigured(){
+  // The Play launch build compiles sharing out: no relay request may leave
+  // the app, even when saved pairing records from a personal build exist.
+  // An absent bridge or older shim without the member keeps prior behavior.
+  if(globalThis.TingsNative?.sharingEnabled === false) return false;
   // Native personal clones use the same authenticated, encrypted relay as
   // the PWA. The local WebView origin never grants access by itself.
   const url = typeof shareWorkerBaseUrl === 'function'

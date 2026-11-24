@@ -75,7 +75,10 @@ document.addEventListener('click', e=>{
 });
 
 function shareInvitationUrl(secrets){
-  const page = new URL(location.href);
+  // A native personal build invites from the public owner origin: the local
+  // WebView origin is unreachable from the recipient's device. Web builds
+  // keep inviting from the current page.
+  const page = new URL(globalThis.TingsNative?.isNative ? sharePairingDirectoryUrl() : location.href);
   page.hash = `share=${secrets.id}&key=${secrets.contentKey}&claim=${secrets.claimSecret}`;
   return page.href;
 }

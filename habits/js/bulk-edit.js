@@ -467,6 +467,9 @@ function bulkOpVisible(op){
   if(!op)return false;
   if(op.nativeOnly && !window.TingsNative?.isNative)return false;
   if(op.requiresQuiet && !window.TingsNative?.quiet)return false;
+  // The launch build exposes no shared-display controls in bulk edit either;
+  // both operations are independent of the detail pane.
+  if(window.TingsNative?.sharingEnabled === false && (op.id === 'sharedDisplay' || op.id === 'sharedCompletion'))return false;
   return true;
 }
 

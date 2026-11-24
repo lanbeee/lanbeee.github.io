@@ -1751,6 +1751,9 @@ async function revokeHouseholdAgendaFeed(){
 }
 
 function rejectExternalHouseholdAgendaPairingHash(){
+  // The launch build never opens the scanner, including from an #agendaPair=
+  // link on startup or hashchange; the link simply opens the planner.
+  if(window.TingsNative?.sharingEnabled === false) return;
   const pairing = parseHouseholdAgendaPairingHash(location.hash);
   if(pairing){
     clearHouseholdAgendaPairingHash();
@@ -1763,6 +1766,9 @@ function rejectExternalHouseholdAgendaPairingHash(){
 
 window.addEventListener('hashchange',rejectExternalHouseholdAgendaPairingHash);
 document.addEventListener('DOMContentLoaded',()=>{
+  // Skip share-specific startup listeners and publish polling entirely in the
+  // launch build; the scanner controls stay unbound and no interval runs.
+  if(window.TingsNative?.sharingEnabled === false)return;
   if(window.TingsNative?.isHeadless)return;
   rejectExternalHouseholdAgendaPairingHash();
   $('settings-agenda-scan-qr')?.addEventListener('click',()=>{

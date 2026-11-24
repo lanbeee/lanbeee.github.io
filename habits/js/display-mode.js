@@ -49,6 +49,8 @@ function replicaDisplayQueryRequested(){
 // Installed PWAs launch manifest start_url without ?display=1. Enrollment on
 // this origin means this device is the paired display, not the owner phone.
 function replicaDisplayRequested(){
+  // Checked before ?display=1 so the launch build never enters display mode.
+  if(globalThis.TingsNative?.sharingEnabled === false) return false;
   return replicaEnrollmentActive() || replicaDisplayQueryRequested();
 }
 
@@ -62,6 +64,9 @@ function ensureReplicaDisplayQuery(){
 }
 
 function replicaEnrollment(){
+  // The launch build treats saved enrollment as absent without reading it;
+  // the stored record survives for a later personal build.
+  if(globalThis.TingsNative?.sharingEnabled === false) return null;
   try{ return JSON.parse(localStorage.getItem(AGENDA_DISPLAY_KEY) || 'null'); }
   catch(_){ return null; }
 }
@@ -1237,6 +1242,9 @@ async function acknowledgeReplicaOperations(enrolled,operationIds){
 }
 
 function mountReplicaDisplayMode(){
+  // Guard before the ?display=1 check below: the launch build never mounts
+  // display mode, never redirects, and leaves saved enrollment in place.
+  if(globalThis.TingsNative?.sharingEnabled === false)return;
   if(window.TingsNative?.isHeadless)return;
   const enrolled = replicaEnrollment();
   if(!replicaEnrollmentActive() && !replicaDisplayQueryRequested()) return;

@@ -173,7 +173,7 @@ function detailSearchEntries(){
     if(optional && (target.id === 'detail-times'
       || target.closest('#detail-flexibility-disclosure') || label === 'Place preferences'))return;
     // Platform-only controls are deliberately absent, including native sharing.
-    if(target.closest('.detail-shared-display-control') && window.TingsNative?.isNative)return;
+    if(target.closest('.detail-shared-display-control') && window.TingsNative?.sharingEnabled === false)return;
     if(target.id === 'detail-share-item' && typeof shareConfigured === 'function' && !shareConfigured())return;
     if(target.id === 'detail-export' && target.hidden)return;
     if(target.id === 'detail-order-block' && target.hidden)return;

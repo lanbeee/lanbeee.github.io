@@ -23,6 +23,10 @@ function saveShareState(state){
 }
 
 function agendaFeedRecord(){
+  // The launch build has no sharing: saved owner records stay untouched on
+  // disk for a later personal build, and every consumer sees no feed. Never
+  // read, migrate or rewrite stored state while disabled.
+  if(globalThis.TingsNative?.sharingEnabled === false) return null;
   const state = loadShareState();
   const feed = state.feeds && state.feeds.agenda ? state.feeds.agenda : null;
   if(feed && !/^[0-9a-f]{16}$/.test(String(feed.ownerId || ''))){
