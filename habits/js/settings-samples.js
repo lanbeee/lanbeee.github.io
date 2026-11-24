@@ -1,10 +1,10 @@
-function sortSampleCount(){
-  return load().filter(h=>h.sample).length;
+function sortSampleCount(items = load()){
+  return items.filter(h=>h.sample).length;
 }
 
 // RENDER: update sample count label + remove button on sample sheet
-function updateSortSampleCount(){
-  const n = sortSampleCount();
+function updateSortSampleCount(items){
+  const n = sortSampleCount(items);
   const label = $('sort-sample-count');
   if(label)label.textContent = n
     ? `${n} tagged sample${n === 1 ? '' : 's'} on home · remove drops the rest`

@@ -185,24 +185,24 @@ function validateFixedStartTimes(){
   return false;
 }
 
-function scheduleLinkHabitOptions(subjectHid,selectedHid){
-  const items = typeof load === 'function' ? load() : [];
+function scheduleLinkHabitOptions(subjectHid,selectedHid,items){
   const options = ['<option value="">— choose habit —</option>'];
   for(const item of items){
-    if(!item || cleanHabitId(item.hid) === cleanHabitId(subjectHid) || item.type === 'zero')continue;
+    if(!item || item.type === 'zero')continue;
     const hid = cleanHabitId(item.hid);
+    if(hid === subjectHid)continue;
     options.push(`<option value="${escapeHtml(hid)}"${hid === selectedHid ? ' selected' : ''}>${escapeHtml((item.name || 'untitled').slice(0,60))}</option>`);
   }
   return options.join('');
 }
 
-function scheduleLinkEditorHtml(link,subjectHid,idx){
+function scheduleLinkEditorHtml(link,subjectHid,idx,items){
   const direction = link && link.direction === 'before' ? 'before' : 'after';
   const adjacency = link && link.adjacency === 'direct' ? 'direct' : 'sometime';
   const anchorHid = link ? link.anchorHid : '';
   const sameDay = Boolean(link && link.requireSameDay);
   const helpId = `detail-link-same-day-help-${idx}`;
-  const anchor = (typeof load === 'function' ? load() : []).find(item=>item && item.hid === anchorHid);
+  const anchor = items.find(item=>item && item.hid === anchorHid);
   const anchorName = anchor && anchor.name || 'the other habit';
   const adjLabel = direction === 'before' ? 'before' : 'after';
   return `<div class="schedule-link-editor" data-link-index="${idx}">
@@ -211,7 +211,7 @@ function scheduleLinkEditorHtml(link,subjectHid,idx){
         <button type="button" class="seg-opt${direction === 'after' ? ' on' : ''}" data-link-direction="after">after</button>
         <button type="button" class="seg-opt${direction === 'before' ? ' on' : ''}" data-link-direction="before">before</button>
       </div>
-      <select class="mini-select schedule-link-habit" aria-label="linked habit">${scheduleLinkHabitOptions(subjectHid,anchorHid)}</select>
+      <select class="mini-select schedule-link-habit" aria-label="linked habit">${scheduleLinkHabitOptions(subjectHid,anchorHid,items)}</select>
       <button type="button" class="mini-text-btn schedule-link-clear" aria-label="remove link">remove</button>
     </div>
     <div class="seg schedule-link-adjacency" role="group" aria-label="relationship strength"${anchorHid ? '' : ' hidden'}>
@@ -236,12 +236,13 @@ function scheduleLinkEditorHtml(link,subjectHid,idx){
   </div>`;
 }
 
-function renderScheduleLinkEditors(h = {}){
+function renderScheduleLinkEditors(h = {},items = null){
   const list = $('detail-schedule-link-list');
   if(!list)return;
-  const subjectHid = h && h.hid;
+  const subjectHid = cleanHabitId(h?.hid);
   const links = normalizeScheduleLinks(h && h.scheduleLinks,subjectHid);
-  list.innerHTML = links.map((link,idx)=>scheduleLinkEditorHtml(link,subjectHid,idx)).join('');
+  const library = items || (links.length ? load() : []);
+  list.innerHTML = links.map((link,idx)=>scheduleLinkEditorHtml(link,subjectHid,idx,library)).join('');
 }
 
 function refreshScheduleLinkEditorRow(editor,h){
@@ -304,12 +305,13 @@ function readScheduleLinksFromDetail(subjectHid){
 function addBlankScheduleLinkRow(){
   const list = $('detail-schedule-link-list');
   if(!list)return;
-  const h = detailIdx != null ? load()[detailIdx] : null;
+  const items = typeof loadReadonly === 'function' ? loadReadonly() : load();
+  const h = detailIdx != null ? items[detailIdx] : null;
   if(!h)return;
   const idx = list.querySelectorAll('.schedule-link-editor').length;
   list.insertAdjacentHTML('beforeend',scheduleLinkEditorHtml({
     anchorHid:'',direction:'after',adjacency:'sometime',requireSameDay:false
-  },h.hid,idx));
+  },h.hid,idx,items));
   setDetailDirty();
 }
 
@@ -526,6 +528,7 @@ function syncHabitScheduleOptionsUi(){
 }
 
 function syncDetailSchedulePlacesUi(){
+  if(typeof ensureDetailHydrated === 'function')ensureDetailHydrated('fields');
   const wrap = $('detail-place-chips');
   const label = $('detail-places-label');
   const optional = isLocationConditionControl($('detail-place-chips'));

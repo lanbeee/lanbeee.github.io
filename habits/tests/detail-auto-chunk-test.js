@@ -95,10 +95,10 @@ function ok(value,message){
     const head = document.querySelector('.detail-head').getBoundingClientRect();
     const pager = document.querySelector('.detail-pager').getBoundingClientRect();
     const bar = document.querySelector('.detail-bottom-bar').getBoundingClientRect();
-    const done = document.querySelector('#detail-cool').getBoundingClientRect();
+    const done = document.querySelector('#detail-cool');
     const tab = document.querySelector('.detail-page-tab').getBoundingClientRect();
     return {
-      head:head.height,pager:pager.height,bar:bar.height,done:done.width,doneHeight:done.height,doneBottom:done.bottom,pagerTop:pager.top,tab:tab.width,
+      head:head.height,pager:pager.height,bar:bar.height,done:done.offsetWidth,doneHeight:done.offsetHeight,doneBottom:done.getBoundingClientRect().bottom,pagerTop:pager.top,tab:tab.width,
       viewport:innerHeight,overlap:Math.max(0,pager.bottom - bar.top),overflow:document.body.scrollWidth - innerWidth
     };
   });
@@ -134,6 +134,7 @@ function ok(value,message){
       inside:Math.min(save.top,cancel.top)>=head.top && bottom<=head.bottom && bottom<=innerHeight};
   });
   ok(dirtyDock.visible && dirtyDock.width <= dirtyDock.available && dirtyDock.inside,'save and cancel fit the stable header when editing');
+  await page.locator('.detail-page-tab[aria-label="tracking"]').click();
   ok((await page.locator('#detail-auto-mark-label').textContent()) === 'auto-log agenda chunks','breakable auto-mark is named as chunk logging');
   ok((await page.locator('#detail-auto-mark-summary').textContent()).includes('Manual taps count first'),'auto-log summary explains manual reconciliation');
 

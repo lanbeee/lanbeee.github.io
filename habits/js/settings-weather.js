@@ -795,18 +795,32 @@ function renderWeatherControls(opts = {}){
     btn.title=noHomeCity ? 'Set your city under Locations first' : '';
   }
   const panel=$('weather-forecast-data');
-  if(panel)panel.innerHTML=renderWeatherInspector(settings);
-  const tingProfileValue=$('ting-weather-profile')?$('ting-weather-profile').value:'';
-  renderWeatherProfileSelect('ting-weather-profile',tingProfileValue);
-  renderWeatherLocationSelect('ting-weather-location',$('ting-weather-location')?.value || '');
-  const detailHabit=detailIdx != null ? load()[detailIdx] : null;
-  const detailProfileValue=$('detail-weather-profile')
-    ? $('detail-weather-profile').value
-    : (detailHabit ? weatherProfileSelectValue(detailHabit.weatherProfileMode,detailHabit.weatherProfileId) : '');
-  renderWeatherProfileSelect('detail-weather-profile',detailProfileValue);
-  renderWeatherLocationSelect('detail-weather-location',$('detail-weather-location')?.value || detailHabit?.weatherLocationId || '');
-  syncWeatherHabitLocationUi();
+  const forecastDetails=$('weather-forecast-details');
+  if(panel && (!forecastDetails || forecastDetails.open)){
+    panel.innerHTML=renderWeatherInspector(settings);
+  }
+  const addOpen = Boolean($('add-sheet')?.classList.contains('open'));
+  const detailOpen = Boolean($('detail-sheet')?.classList.contains('open') || (typeof getPane === 'function' && getPane()?.dataset.activeSheet === 'detail-sheet'));
+  if(addOpen && (typeof _addDeferredOptions === 'undefined' || !_addDeferredOptions)){
+    const tingProfileValue=$('ting-weather-profile')?$('ting-weather-profile').value:'';
+    renderWeatherProfileSelect('ting-weather-profile',tingProfileValue);
+    renderWeatherLocationSelect('ting-weather-location',$('ting-weather-location')?.value || '');
+  }
+  if(detailOpen){
+    const detailHabit=detailIdx != null ? load()[detailIdx] : null;
+    const detailProfileValue=$('detail-weather-profile')
+      ? $('detail-weather-profile').value
+      : (detailHabit ? weatherProfileSelectValue(detailHabit.weatherProfileMode,detailHabit.weatherProfileId) : '');
+    renderWeatherProfileSelect('detail-weather-profile',detailProfileValue);
+    renderWeatherLocationSelect('detail-weather-location',$('detail-weather-location')?.value || detailHabit?.weatherLocationId || '');
+  }
+  if(addOpen || detailOpen)syncWeatherHabitLocationUi();
 }
+$('weather-forecast-details')?.addEventListener('toggle',e=>{
+  if(!e.currentTarget.open)return;
+  const panel=$('weather-forecast-data');
+  if(panel)panel.innerHTML=renderWeatherInspector(sortSettings || loadSortSettings());
+});
 
 function weatherProfileUsages(id,data=null,settings=null){
   const clean=cleanWeatherProfileId(id);

@@ -73,13 +73,14 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
     const topics=await page.evaluate(()=>{
       saveSortSettings({...sortSettings,topics:['Errands']});
       // Warm the same inputs, including the container's initial dataset.
-      openDetail(2);openDetail(2);
+      openDetail(2);scrollDetailToNav('identity','instant');
+      openDetail(2);
       $('detail-topic-chips').querySelector('[data-topic="Errands"]').click();
       const edited=selectedTopicsFrom('detail-topic-chips');
       refreshDetailView();
       const cancelled=selectedTopicsFrom('detail-topic-chips');
       $('detail-topic-chips').querySelector('[data-topic="Errands"]').click();
-      openDetail(3);
+      openDetail(3);scrollDetailToNav('identity','instant');
       return {edited,cancelled,nextItem:selectedTopicsFrom('detail-topic-chips'),saved:load()[2].topics};
     });
     assert.deepEqual(topics.edited,['Errands'],'a topic tap updates the draft');

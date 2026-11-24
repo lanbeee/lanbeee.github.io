@@ -1226,21 +1226,18 @@ function seedScript(){
     const visibleOnly = html.replace(/\stitle="[^"]*"/g,'').replace(/\saria-label="[^"]*"/g,'');
     const noFullName = !/Email/.test(visibleOnly) && !/Walk/.test(visibleOnly);
 
-    // Detail actions page hosts order controls; opens there when links exist
+    // Detail opens on Summary. The order controls must be ready as soon as Actions opens.
     const deepIdx = load().findIndex(h=>h.hid === 't-deep');
     openDetail(deepIdx);
+    const summaryOnAfter = document.querySelector('.detail-page-tab.on')?.getAttribute('aria-label') === 'summary';
+    document.querySelector('.detail-page-tab[aria-label="actions"]')?.click();
+    const actionsOnAfter = document.querySelector('.detail-page-tab.on')?.getAttribute('aria-label') === 'actions';
     const orderBlock = document.getElementById('detail-order-block');
     const orderVisible = orderBlock && !orderBlock.hidden;
     const unlinkBtns = document.querySelectorAll('[data-order-unlink]');
     const clearAll = document.getElementById('detail-order-clear-all');
     const tabCount = document.querySelectorAll('.detail-page-tab').length;
     const orderTab = [...document.querySelectorAll('.detail-page-tab')].some(t=>/^order/i.test((t.getAttribute('aria-label')||'').trim()));
-    const actionsTabOn = document.querySelector('.detail-page-tab.on')?.getAttribute('aria-label') === 'actions'
-      || document.querySelector('.detail-page-tab[aria-label="actions"]')?.classList.contains('on');
-    // Wait a frame for scrollDetailToNav
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    const actionsOnAfter = document.querySelector('.detail-page-tab.on')?.getAttribute('aria-label') === 'actions';
-    const summaryOnAfter = document.querySelector('.detail-page-tab.on')?.getAttribute('aria-label') === 'summary';
 
     // Unlink one
     unlinkBtns[0]?.click();
@@ -1269,7 +1266,7 @@ function seedScript(){
   assert(marks.noFullName, 'marks do not show full neighbor names');
   assert(marks.orderVisible && marks.unlinkCount >= 1, 'actions page shows order links when present');
   assert(!marks.orderTab && marks.tabCount === 9, 'no separate order tab; nine detail pages');
-  assert(marks.summaryOnAfter, 'detail opens on summary; order links live on the actions page');
+  assert(marks.summaryOnAfter && marks.actionsOnAfter, 'detail opens on summary and navigates immediately to actions');
   assert(marks.afterOne === 1, 'unlink removes one edge');
   assert(marks.afterClear === 0 && marks.blockHiddenAfter, 'clear all removes links and hides order block');
   assert(marks.normOk && marks.swatchOn === 'purple', 'emoji background swatches normalize + select');

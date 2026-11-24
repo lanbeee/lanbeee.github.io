@@ -251,6 +251,7 @@ function setSettingsSearchOpen(open,focus = true){
     $('settings-search-input')?.blur();
     if(wasOpen)stack.scrollTop = settingsSearchReturnScroll;
   }else{
+    if(typeof ensureSettingsSectionHydrated === 'function')ensureSettingsSectionHydrated('all');
     if(!wasOpen)invalidateSettingsSearchCache();
     renderSettingsSearch();
     if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
@@ -268,6 +269,7 @@ function revealSettingsSearchEntry(entry){
   const body = section?.querySelector('.settings-collapse-body');
   const head = section?.querySelector('.settings-collapse-head');
   if(body && head){
+    if(typeof ensureSettingsSectionHydrated === 'function')ensureSettingsSectionHydrated(body.id);
     body.hidden = false;
     head.setAttribute('aria-expanded','true');
   }

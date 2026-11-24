@@ -1262,6 +1262,7 @@ function assistantRenderGuides(){
 function assistantToggleGuideBrowser(open, opts){
   const restore = !opts || opts.restore !== false;
   const browser=$('assistant-guide-browser'),guides=$('assistant-guides');
+  const wasOpen = assistantGuideSearchOpen;
   if(open && !assistantGuideSearchOpen){
     assistantGuidePark = assistantComposerDraft();
     assistantGuideSearchOpen = true;
@@ -1277,7 +1278,7 @@ function assistantToggleGuideBrowser(open, opts){
   if(guides){
     guides.classList.toggle('is-browsing', assistantGuideSearchOpen);
     if(assistantGuideSearchOpen)guides.hidden=false;
-    else guides.scrollTop=0;
+    else if(wasOpen && !guides.hidden)guides.scrollTop=0;
   }
   assistantSyncSearchChrome();
   const input=$('assistant-input');

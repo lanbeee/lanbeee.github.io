@@ -665,10 +665,10 @@ function reconcileCalendarDuplicateGroup(keepHid,reviewedHids){
 function calendarDuplicateSourceName(h){
   return {device:'Phone calendar',ics:'ICS import',pdf:'PDF import',gcal:'Google calendar',msgraph:'Outlook calendar'}[h.source] || 'Tings';
 }
-function renderCalendarDuplicateReview(){
+function renderCalendarDuplicateReview(data = load(),settings = loadSortSettings()){
   const host=$('settings-calendar-body');if(!host)return;
   const previous=$('calendar-duplicate-review');
-  const settings=loadSortSettings(),groups=calendarDuplicateGroups(load(),settings);
+  const groups=calendarDuplicateGroups(data,settings);
   const section=document.createElement('details');section.id='calendar-duplicate-review';section.open=previous?.open===true;
   const summary=document.createElement('summary');summary.textContent=`Review possible duplicates (${groups.length})`;section.append(summary);
   const hint=document.createElement('p');hint.className='field-hint';hint.textContent='Matches have the same name, start and end. Other copies stay hidden while the copy you keep is available at that time.';section.append(hint);
@@ -692,10 +692,10 @@ function renderCalendarDuplicateReview(){
   }
   if(previous)previous.replaceWith(section);else host.append(section);
 }
-function renderIgnoredCalendarItems(){
+function renderIgnoredCalendarItems(data = load(),settings = loadSortSettings()){
   const host=$('settings-calendar-body');if(!host)return;
   $('calendar-ignored-list')?.remove();
-  const settings=loadSortSettings(),data=load(),byId=new Map(data.map(h=>[h.hid,h]));
+  const byId=new Map(data.map(h=>[h.hid,h]));
   const entries=(settings.calendarIgnores || []).filter(entry=>{
     if(entry.scope!=='item')return true;
     const h=byId.get(entry.id.slice('item:'.length));

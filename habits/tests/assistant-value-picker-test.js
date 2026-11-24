@@ -256,7 +256,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const settings=loadSortSettings();
       saveSortSettings({...settings,locations:settings.locations.concat(Array.from({length:24},(_,i)=>({id:`saved-${i}`,name:`Saved place ${i}`,lat:40,lng:-74}))),
         topics:settings.topics.concat(Array.from({length:24},(_,i)=>`Topic ${i}`)),
-        weatherProfiles:Array.from({length:12},(_,i)=>({id:`profile-${i}`,name:`Profile ${i}`,rules:[]}))});
+        weatherProfiles:Array.from({length:8},(_,i)=>({id:`profile-${i}`,name:`Profile ${i}`,rules:[]}))});
       save([{...load()[0],locationPrefs:{home:'high'}}]);
       openDetail(0);scrollDetailToNav('summary','auto');
       const s=pickerTest.open();detailSummary.session=s;

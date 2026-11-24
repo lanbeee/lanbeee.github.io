@@ -79,8 +79,8 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
   await page.waitForSelector('#detail-sheet.open');
   await page.waitForTimeout(200);
   await page.evaluate(() => {
-    $('detail-priority-disclosure').open = true;
     scrollDetailToNav('identity');
+    $('detail-priority-disclosure').open = true;
   });
   await page.waitForTimeout(300);
 

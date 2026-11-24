@@ -425,6 +425,7 @@ async function openDetailAssistant(instruction = '',opts = {}){
 }
 
 function renderDetailSearch(){
+  if(typeof ensureDetailHydrated === 'function')ensureDetailHydrated('all');
   const input = $('detail-search-input');
   const query = detailSearchNormalize(input.value).slice(0,120);
   const tokens = query.split(' ').filter(Boolean);
@@ -453,6 +454,7 @@ function setDetailSearchOpen(open,focus = true){
   open = Boolean(open && !getSheetInner('detail-sheet')?.classList.contains('tune-dirty'));
   const inner = getSheetInner('detail-sheet');
   if(!inner)return;
+  if(open && typeof ensureDetailHydrated === 'function')ensureDetailHydrated('all');
   const wasOpen = inner.classList.contains('detail-search-open');
   if(open && !wasOpen){
     const pager = inner.querySelector('.detail-pager');
@@ -490,6 +492,7 @@ function setDetailSearchOpen(open,focus = true){
 let detailSearchHitTarget = null;
 let detailSearchHitTimer = null;
 function revealDetailSearchEntry(entry){
+  if(typeof ensureDetailHydrated === 'function')ensureDetailHydrated('all');
   if(!entry.target.isConnected)return;
   let target = entry.target;
   const original = target;
@@ -563,6 +566,7 @@ function syncDetailEditingChrome(){
   const inner = getSheetInner('detail-sheet');
   if(!inner)return;
   const active = document.activeElement;
+  if(!inner.contains(active) && !inner.matches('.detail-editing,.detail-field-editing,.detail-ask-typing'))return;
   // updateKeyboardLift always writes this custom property inline before calling;
   // reading the inline style skips the whole-document computed-style pass that
   // a getComputedStyle read would force on a freshly repainted detail sheet.

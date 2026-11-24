@@ -98,7 +98,9 @@ const live = Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PA
     await stage([['durationMinutes',35]]);
     assert.equal(await page.locator(`${active} [data-focus-edit]`).innerText(),'adjust in editor');
     await page.locator(`${active} [data-focus-edit]`).click();
-    await page.waitForFunction(()=>$('detail-duration').classList.contains('detail-search-hit'));
+    // The earlier overview link can still be highlighted. The new editor
+    // navigation finishes when it focuses the input on the next frame.
+    await page.waitForFunction(()=>document.activeElement === $('detail-duration'));
     await page.locator('#detail-duration').blur();
     assert.equal(await page.locator('#detail-duration').inputValue(),'35');
     assert.equal(await page.evaluate(()=>getSheetInner('detail-sheet').classList.contains('tune-dirty')),true);

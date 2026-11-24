@@ -672,6 +672,7 @@ function doNuke(i, opts){
 let nativeKeyboardRestHeight = 0;
 let nativeKeyboardLayoutWidth = 0;
 let nativeKeyboardRestSafeBottom = 0;
+let keyboardViewportAtRest = false;
 function updateKeyboardLift(){
   const detailMounted = getPane()?.dataset.activeSheet === 'detail-sheet';
   const addOpen = $('add-sheet').classList.contains('open');
@@ -712,6 +713,10 @@ function updateKeyboardLift(){
   const visibleBottom = needsLift && !nativeResized
     ? Math.min(layoutHeight,window.visualViewport.height + window.visualViewport.offsetTop) : layoutHeight;
   const keyboard = Math.max(0,layoutHeight - visibleBottom);
+  const viewport = window.visualViewport;
+  keyboardViewportAtRest = nativeResized
+    ? layoutHeight === nativeKeyboardRestHeight
+    : !viewport || (viewport.height >= layoutHeight - 1 && Math.abs(viewport.offsetTop) < 1);
   if(pickerOpen){
     const imeHeight = nativeResized ? nativeKeyboardRestHeight - layoutHeight : layoutHeight - (window.visualViewport?.height || layoutHeight);
     picker.classList.toggle('kb-visible',picker.classList.contains('kb-open') && imeHeight > 80);
@@ -751,12 +756,16 @@ function updateKeyboardLift(){
     const safeBottom = `max(0px,calc(100% - ${nativeKeyboardRestHeight}px + ${nativeKeyboardRestSafeBottom}px))`;
     if(style.getPropertyValue('--keyboard-dock-safe-bottom') !== safeBottom)style.setProperty('--keyboard-dock-safe-bottom',safeBottom);
     // In-flow padding percentages resolve against width, unlike the floating
-    // dock's top. Use viewport length for Summary's footer clearance instead.
+    // dock's top. Use viewport length for Summary's and Add's footer clearance
+    // so CSS zeroes the safe inset whenever the IME shrinks 100dvh without
+    // mutating documentElement.style (which invalidates style document-wide).
     const detailSafeBottom = `max(0px,calc(100dvh - ${nativeKeyboardRestHeight}px + ${nativeKeyboardRestSafeBottom}px))`;
     if(style.getPropertyValue('--detail-footer-safe-bottom') !== detailSafeBottom)style.setProperty('--detail-footer-safe-bottom',detailSafeBottom);
+    if(style.getPropertyValue('--add-footer-safe-bottom') !== detailSafeBottom)style.setProperty('--add-footer-safe-bottom',detailSafeBottom);
   }else{
     if(style.getPropertyValue('--keyboard-dock-safe-bottom'))style.removeProperty('--keyboard-dock-safe-bottom');
     if(style.getPropertyValue('--detail-footer-safe-bottom'))style.removeProperty('--detail-footer-safe-bottom');
+    if(style.getPropertyValue('--add-footer-safe-bottom'))style.removeProperty('--add-footer-safe-bottom');
   }
   // Native layout already follows both keyboard directions. A pixel snapshot
   // would hold the old height for a frame as the keyboard closes.
@@ -766,9 +775,6 @@ function updateKeyboardLift(){
   // a percentage would resolve inside the wide modal's padded container.
   const addHeight = nativeResized ? '100dvh' : bottom;
   if(style.getPropertyValue('--add-viewport-height') !== addHeight)style.setProperty('--add-viewport-height',addHeight);
-  if(nativeResized && layoutHeight < nativeKeyboardRestHeight){
-    if(style.getPropertyValue('--add-footer-safe-bottom') !== '0px')style.setProperty('--add-footer-safe-bottom','0px');
-  }else if(style.getPropertyValue('--add-footer-safe-bottom'))style.removeProperty('--add-footer-safe-bottom');
   const value = `${keyboard}px`;
   if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
   if(typeof syncDetailEditingChrome === 'function'){
@@ -776,6 +782,16 @@ function updateKeyboardLift(){
     if(detailOpen || detailInner?.classList.contains('detail-editing') || detailInner?.classList.contains('detail-field-editing')){
       syncDetailEditingChrome();
     }
+  }
+}
+
+function syncSheetKeyboardLift(){
+  // The viewport listeners handle resizes. A regular sheet open with the
+  // keyboard down doesn't need a layout read between rendering and painting.
+  if(document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')){
+    updateKeyboardLift();
+  }else if(!keyboardViewportAtRest){
+    scheduleKeyboardLayout();
   }
 }
 
@@ -1439,6 +1455,21 @@ window.addEventListener('popstate',event=>{
 
 // RENDER: opens a sheet or mounts it in the pane
 const sheetEnterMotions = new WeakMap();
+const sheetEnterCallbacks = new WeakMap();
+function isSheetEntering(id){
+  const wrap = $(id);
+  const anim = wrap ? sheetEnterMotions.get(wrap) : null;
+  return Boolean(anim && anim.playState === 'running');
+}
+function afterSheetEntry(id,fn){
+  if(typeof fn !== 'function')return;
+  const wrap = $(id);
+  const anim = wrap ? sheetEnterMotions.get(wrap) : null;
+  if(!anim || anim.playState !== 'running'){ fn(); return; }
+  let list = sheetEnterCallbacks.get(anim);
+  if(!list){ list = []; sheetEnterCallbacks.set(anim,list); }
+  list.push(fn);
+}
 document.addEventListener('focusin',event=>{
   // A focused editor must meet the keyboard immediately, even during entry.
   if(event.target.matches('input,textarea,select,[contenteditable="true"]')){
@@ -1482,25 +1513,40 @@ function openSheet(id,opts = {}){
   // opened. Arm every sheet so the next card does not need a whitelist entry.
   armSheetBackdropGuard(id);
   updateFullPageState();
-  updateKeyboardLift();
+  syncSheetKeyboardLift();
   // Only a fresh phone opening slides in. History traversal already has its
   // own motion, and cancelling an edge gesture must never replay this entry.
   // Guided tours keep their spotlight targets still while measuring them.
   // Move the content inside the cover so Home's scroll lock cannot flash through.
-  if(!wasOpen && !paneTierActive() && !browserNavigationApplying && !window.TingsCoach?.state().active
+  if(!wasOpen && !opts.skipEntryMotion && !paneTierActive() && !browserNavigationApplying && !window.TingsCoach?.state().active
     && (id === 'add-sheet' || isFullPageSheet(id))
     && !matchMedia('(prefers-reduced-motion: reduce)').matches){
     const inner = getSheetInner(id);
     if(inner){
-      sheetEnterMotions.get($(id))?.cancel();
+      const wrap = $(id);
+      sheetEnterMotions.get(wrap)?.cancel();
+      wrap.classList.add('sheet-entering');
       inner.style.willChange = 'transform';
+      // Start partially on-screen so frame 0 already presents recognizable
+      // destination content (never a blank backdrop flash) and rasterizes
+      // tiles on the first commit instead of stalling mid-slide.
       const anim = inner.animate([
-        {transform:'translate3d(100%,0,0)'},{transform:'translate3d(0,0,0)'}
+        {transform:'translate3d(24%,0,0)'},{transform:'translate3d(0,0,0)'}
       ],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
-      const clearWillChange = ()=>{ if(sheetEnterMotions.get($(id)) === anim)inner.style.willChange = ''; };
-      anim.addEventListener('finish',clearWillChange,{once:true});
-      anim.addEventListener('cancel',clearWillChange,{once:true});
-      sheetEnterMotions.set($(id),anim);
+      const finishEntry = ()=>{
+        if(sheetEnterMotions.get(wrap) === anim){
+          inner.style.willChange = '';
+          wrap.classList.remove('sheet-entering');
+        }
+        const cbs = sheetEnterCallbacks.get(anim);
+        if(cbs){
+          sheetEnterCallbacks.delete(anim);
+          for(const cb of cbs){ try{ cb(); }catch(_){} }
+        }
+      };
+      anim.addEventListener('finish',finishEntry,{once:true});
+      anim.addEventListener('cancel',finishEntry,{once:true});
+      sheetEnterMotions.set(wrap,anim);
     }
   }
 }
@@ -1547,6 +1593,7 @@ function closeSheet(id){
   if(id === 'day-logs-sheet')delete $(id).dataset.hideAgenda;
   sheetEnterMotions.get($(id))?.cancel();
   if(id === 'detail-sheet' && typeof cancelDetailNavigationMotion === 'function')cancelDetailNavigationMotion();
+  if(id === 'detail-sheet' && typeof invalidateDetailHydration === 'function')invalidateDetailHydration();
   rememberBrowserPageScroll();
   // If this sheet is currently mounted in the pane, unmount it instead.
   const pane = getPane();
@@ -1566,7 +1613,7 @@ function closeSheet(id){
     setFilterSheetQuery('calendar-filter', '');
     if(typeof renderOverview === 'function')renderOverview();
   }
-  $(id).classList.remove('open');
+  $(id).classList.remove('open','sheet-entering');
   $(id).style.zIndex = '';
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);

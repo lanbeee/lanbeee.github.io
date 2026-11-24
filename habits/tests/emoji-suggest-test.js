@@ -208,6 +208,7 @@ function check(label, cond, extra){
   // --- detail-sheet auto-suggest (rename) ---
   await page.evaluate(() => { if(typeof openDetail === 'function')openDetail(0); });
   await page.locator('#detail-sheet.open').waitFor({ timeout: 5000 });
+  await page.locator('.detail-page-tab[aria-label="name & type"]').click();
   const detailState = await page.evaluate(() => ({
     name: document.getElementById('detail-habit-message').value,
     emoji: document.getElementById('detail-emoji').value
@@ -230,6 +231,7 @@ function check(label, cond, extra){
   });
   await page.evaluate(() => { if(typeof openDetail === 'function')openDetail(1); });
   await page.locator('#detail-sheet.open').waitFor({ timeout: 5000 });
+  await page.locator('.detail-page-tab[aria-label="name & type"]').click();
   const rename2 = await page.evaluate(() => {
     const el = document.getElementById('detail-habit-message');
     el.value = 'meditatoin';

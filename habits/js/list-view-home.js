@@ -28,6 +28,7 @@ function selectedTopicsFrom(containerId){
 
 // PURE: read selected add-topic chips
 function selectedAddTopics(){
+  if(typeof _addDeferredOptions !== 'undefined' && _addDeferredOptions)return _addDeferredOptions.topics.slice();
   return selectedTopicsFrom('ting-tag-chips');
 }
 
@@ -60,6 +61,7 @@ function selectedLocationIdsFrom(containerId){
 
 // PURE: selected locations on the add sheet
 function selectedLocationIds(){
+  if(typeof _addDeferredOptions !== 'undefined' && _addDeferredOptions)return _addDeferredOptions.locationIds.slice();
   return selectedLocationIdsFrom('ting-tag-chips');
 }
 
@@ -71,6 +73,7 @@ function selectedLocationTypesFrom(containerId){
 }
 
 function selectedLocationTypes(){
+  if(typeof _addDeferredOptions !== 'undefined' && _addDeferredOptions)return (_addDeferredOptions.locationTypes || []).slice();
   return selectedLocationTypesFrom('ting-tag-chips');
 }
 
@@ -82,6 +85,7 @@ function selectedAnywhereFrom(containerId){
 }
 
 function selectedAnywhere(){
+  if(typeof _addDeferredOptions !== 'undefined' && _addDeferredOptions)return Boolean(_addDeferredOptions.anywhereAllowed);
   return selectedAnywhereFrom('ting-tag-chips');
 }
 
@@ -145,6 +149,7 @@ function selectedLocationPrefsFrom(containerId){
 }
 
 function selectedLocationPrefs(){
+  if(typeof _addDeferredOptions !== 'undefined' && _addDeferredOptions)return {...(_addDeferredOptions.locationPrefs || {})};
   return selectedLocationPrefsFrom('ting-tag-chips');
 }
 
@@ -238,6 +243,7 @@ function addTagSearch(row,kind,containerId,value = '',expanded = false){
 // rebuild and its forced scroll reads for unchanged inputs; the previous
 // render already left exactly that markup in place.
 const renderTagChipsSigs = new WeakMap();
+const tagRowScrollLeft = new WeakMap();
 function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null,anywhereAllowed = null,selectedLocTypes = null){
   const wrap = $(containerId);
   if(!wrap)return;
@@ -268,12 +274,17 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   ]);
   if(renderTagChipsSigs.get(wrap) === signature)return;
   renderTagChipsSigs.set(wrap,signature);
-  const placeQuery = needPlaces ? (wrap.querySelector('.tag-row-places .tag-search')?.value || '') : '';
-  const topicQuery = needTopics ? (wrap.querySelector('.tag-row-topics .tag-search')?.value || '') : '';
-  const placesExpanded = needPlaces ? (wrap.querySelector('.tag-row-places')?.classList.contains('is-expanded') || false) : false;
-  const topicsExpanded = needTopics ? (wrap.querySelector('.tag-row-topics')?.classList.contains('is-expanded') || false) : false;
-  const placeScroll = needPlaces ? (wrap.querySelector('.tag-row-places')?.scrollLeft || 0) : 0;
-  const topicScroll = needTopics ? (wrap.querySelector('.tag-row-topics')?.scrollLeft || 0) : 0;
+  const previousPlaces = needPlaces ? wrap.querySelector('.tag-row-places') : null;
+  const previousTopics = needTopics ? wrap.querySelector('.tag-row-topics') : null;
+  const placeQuery = previousPlaces?.querySelector('.tag-search')?.value || '';
+  const topicQuery = previousTopics?.querySelector('.tag-search')?.value || '';
+  const placesExpanded = previousPlaces?.classList.contains('is-expanded');
+  const topicsExpanded = previousTopics?.classList.contains('is-expanded');
+  // The scroll event can lag a chip click. Read the live position on edits,
+  // and use the tracked position during Detail's batched field paint.
+  const inDetailBatch = typeof _detailOpeningBatch !== 'undefined' && _detailOpeningBatch;
+  const placeScroll = placesExpanded ? 0 : (inDetailBatch ? tagRowScrollLeft.get(previousPlaces) : previousPlaces?.scrollLeft);
+  const topicScroll = topicsExpanded ? 0 : (inDetailBatch ? tagRowScrollLeft.get(previousTopics) : previousTopics?.scrollLeft);
   const focusedSearch = document.activeElement?.matches('.tag-search')
     ? document.activeElement.closest('.tag-row') : null;
   const restoreSearch = focusedSearch && wrap.contains(focusedSearch)
@@ -316,7 +327,10 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     // Only a real drag counts. Programmatic scrollLeft, and the tiny scroll
     // a phone tap can emit, must not swallow the next click — that blocked
     // cycling a place through allowed / preferred / avoid.
-    row.addEventListener('scroll',function(){ if(moved)arm(); },{passive:true});
+    row.addEventListener('scroll',()=>{
+      tagRowScrollLeft.set(row,row.scrollLeft);
+      if(moved)arm();
+    },{passive:true});
   }
   if(needPlaces){
     // Only show saved places + temporary places already attached to THIS item.
@@ -413,8 +427,14 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   if(needTopics)filterTagChoices(topicRow);
   // Fresh rows already rest at 0; only a kept scroll position needs writing
   // (each scrollLeft write forces a layout pass).
-  if(needPlaces && !placesExpanded && placeScroll)locRow.scrollLeft = placeScroll;
-  if(needTopics && !topicsExpanded && topicScroll)topicRow.scrollLeft = topicScroll;
+  if(!placesExpanded && placeScroll){
+    locRow.scrollLeft = placeScroll;
+    tagRowScrollLeft.set(locRow,locRow.scrollLeft);
+  }
+  if(!topicsExpanded && topicScroll){
+    topicRow.scrollLeft = topicScroll;
+    tagRowScrollLeft.set(topicRow,topicRow.scrollLeft);
+  }
   if(placeFocus){
     const chip = locRow.querySelector(placeFocus);
     (chip && !chip.hidden ? chip : locRow.querySelector('.tag-picker-toggle')).focus({preventScroll:true});
@@ -2119,6 +2139,7 @@ function setSearchOpen(open,options = {}){
 // HYBRID: close and clear search UI
 function closeSearch(options = {}){
   const open = isSearchOpen();
+  if(!open && !searchQuery && document.activeElement !== $('habit-search'))return;
   const active = Boolean(searchQuery.trim()) || open;
   setSearchOpen(false,{
     clear:options.clear !== false,

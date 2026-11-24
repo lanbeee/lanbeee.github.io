@@ -653,7 +653,7 @@ function seedScript(){
     overviewListPane = 'plan';
     renderOverview();
 
-    const insightText = document.getElementById('overview-insight')?.innerText || '';
+    const insightText = document.getElementById('overview-insight')?.textContent || '';
     const cap = overviewWeekCapacity(load());
     const tomorrowLoad = cap.tomorrow ? cap.tomorrow.load : -1;
 
@@ -663,18 +663,18 @@ function seedScript(){
     const hasExpand = !!expandBtn;
     if(expandBtn)expandBtn.click();
     const expandedCount = document.querySelectorAll('#overview-list .overview-item').length;
-    const expandedText = document.getElementById('overview-list')?.innerText || '';
+    const expandedText = document.getElementById('overview-list')?.textContent || '';
 
     // Check attention pane: Really Overdue present, Already Caught Up absent
     setOverviewListPane('care');
-    const careText = document.getElementById('overview-list')?.innerText || '';
+    const careText = document.getElementById('overview-list')?.textContent || '';
 
     // Check Month view shows local appointments and coming up section
     overviewRangeFilter = 'month';
     overviewMonthOffset = 0;
     renderOverview();
     const monthEventCell = document.querySelector(`#overview-calendar [data-log-day="${keyAt(3)}"]`);
-    const monthListText = document.getElementById('overview-list')?.innerText || '';
+    const monthListText = document.getElementById('overview-list')?.textContent || '';
 
     // Check day sheet for day+3 lists Dentist Event + Weekly Sync with event meta
     resetDayLogsStep();

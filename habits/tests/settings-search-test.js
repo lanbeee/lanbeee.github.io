@@ -259,7 +259,7 @@ const {chromium} = require('playwright');
     await page.setViewportSize({width:390,height:844});
     await page.waitForTimeout(250);
     await resize(844);
-    await page.evaluate(()=>{window.TingsNative={isNative:true,platform:'android'};updateKeyboardLift();});
+    await page.evaluate(()=>{openSettingsSheet();setSettingsSearchOpen(true);window.TingsNative={isNative:true,platform:'android'};updateKeyboardLift();});
     await page.setViewportSize({width:390,height:494});
     await resize(144);
     const nativeDock = await page.locator('#settings-sheet .sheet-search-dock').boundingBox();

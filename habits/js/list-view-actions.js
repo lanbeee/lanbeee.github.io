@@ -3,6 +3,27 @@ function renderProgressive(){
   if(didRender !== false)_homeListFingerprint = homeListFingerprint();
 }
 
+function redrawBreakableCrowns(){
+  document.querySelectorAll('#list .breakable-crown').forEach(crown=>{
+    if(Number.isFinite(crown._scroll))drawCrownRidges(crown.querySelector('.crown-canvas'),crown._scroll);
+  });
+}
+
+// One observer covers the live Home list. IME height changes need no redraw,
+// and replaced cards no longer leave behind individual resize listeners.
+let breakableCrownListWidth;
+new ResizeObserver(([entry])=>{
+  const width = entry.contentRect.width;
+  if(breakableCrownListWidth !== undefined && width !== breakableCrownListWidth)redrawBreakableCrowns();
+  breakableCrownListWidth = width;
+}).observe($('list'));
+let breakableCrownPixelRatio = window.devicePixelRatio;
+window.addEventListener('resize',()=>{
+  if(window.devicePixelRatio === breakableCrownPixelRatio)return;
+  breakableCrownPixelRatio = window.devicePixelRatio;
+  redrawBreakableCrowns();
+});
+
 // WIRE: crown-dial gesture for breakable progress. Drag horizontally to adjust
 // minutes (3px ≈ 1 min, speed-adaptive). Updates the 3-color status bar and
 // pending target. The dial owns horizontal intent in both directions (forward
@@ -328,10 +349,6 @@ function setupBreakableCrown(row,_realIdx){
     crown.addEventListener(ev,stop,{ passive:true });
   });
   crown.addEventListener('click',e=>{ e.stopPropagation(); },{ passive:true });
-
-  window.addEventListener('resize',()=>{
-    if(canvas && typeof drawCrownRidges === 'function')drawCrownRidges(canvas,crown._scroll);
-  });
 
   syncVisual(committed);
 }
@@ -680,7 +697,7 @@ function setupCardTap(row,realIdx){
     if(row.classList.contains('is-agenda-dragging') || row.classList.contains('agenda-longpress-armed'))return;
     if(swipeOpenCard){closeAllSwipes();return;}
     openDetail(realIdx);
-  },{ignoreSelector:'button.pulse-btn'});
+  },{ignoreSelector:'button.pulse-btn',immediateTouch:true});
 }
 
 // PURE: short item name for compact toast messages

@@ -67,6 +67,24 @@ function load(){
   return _cloneJson(data);
 }
 
+// Read-only variant of load() for hot render/open paths that never mutate
+// returned records. Avoids deep-cloning the entire library and log history.
+function loadReadonly(){
+  const canCache = typeof localStorage !== 'undefined'
+    && typeof Storage !== 'undefined' && Storage.read === _defaultStorageRead;
+  if(canCache){
+    const now = Date.now();
+    let raw;
+    try{ raw = localStorage.getItem(KEY); }catch(_){}
+    if(raw !== undefined && _loadCache?.raw === raw && now >= _loadCache.loadedAt && now < _loadCache.expiresAt){
+      return _loadCache.data;
+    }
+    const fresh = load();
+    return (_loadCache && _loadCache.raw === raw) ? _loadCache.data : fresh;
+  }
+  return load();
+}
+
 // Test/debug override: `?planner=fast` exercises the whole app without loading
 // or calling GLPK. It is intentionally sessionless—the user's saved optimizer
 // preference is untouched when the query parameter is removed.

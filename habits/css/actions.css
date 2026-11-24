@@ -94,10 +94,10 @@ body[data-pane-count="3"] #action-toast{
 }
 #action-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto;}
 
-html.modal-open,body.modal-open{overflow:hidden;overscroll-behavior:none;}
-body.modal-open .pane-list,
-body.modal-open .pane-overview,
-body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
+/* Phone Home scrolls the document. Turning its full-height list into a
+   second scroll container on every open relays out the sticky day headers. */
+html.modal-open,body.modal-open:not([data-pane-count="1"]){overflow:hidden;overscroll-behavior:none;}
+body.modal-open:not([data-pane-count="1"]) :is(.pane-list,.pane-overview,.pane-detail){overflow:hidden;overscroll-behavior:none;}
 #action-undo,#action-open,#action-link,#action-plan,#snooze-until-planned{
   border:0;background:var(--bg);color:var(--text);
   border-radius:999px;padding:8px 12px;font:inherit;font-weight:650;

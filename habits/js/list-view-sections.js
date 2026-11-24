@@ -15,7 +15,8 @@ function updateStuckSectionHeaders(){
   }).pop() || null;
   headers.forEach(el=>el.classList.toggle('stuck',el===active));
 }
-document.addEventListener('scroll',()=>{
+document.addEventListener('scroll',e=>{
+  if(e.target !== document && e.target !== document.scrollingElement && !e.target?.classList?.contains?.('pane-list'))return;
   if(_stuckHeadersRaf)return;
   _stuckHeadersRaf = true;
   requestAnimationFrame(updateStuckSectionHeaders);
@@ -1815,6 +1816,7 @@ function render(opts){
     : captureHomeReadingPosition(list);
   _homeRenderedWeek = null;
   list.innerHTML = '';
+  list.classList.toggle('preserve-row-heights',Boolean(readingPosition));
   empty.onclick = null;
   // Search is habit lookup — the quota bar can't move while typing (only a
   // save() changes stored size, and save() refreshes the bar itself), so skip

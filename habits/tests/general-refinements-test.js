@@ -316,11 +316,12 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const pane = document.querySelector('.pane-list');
     return {
       bodyLocked:document.body.classList.contains('modal-open'),
-      paneOverflow:getComputedStyle(pane).overflowY,
+      paneHasScrollRange:pane.scrollHeight > pane.clientHeight + 1,
       htmlOverflow:getComputedStyle(document.documentElement).overflow
     };
   });
-  check('open sheets lock the body and underlying home pane',modal.bodyLocked && modal.paneOverflow === 'hidden',JSON.stringify(modal));
+  check('open sheets lock the phone document without creating a second Home scroller',
+    modal.bodyLocked && modal.htmlOverflow === 'hidden' && !modal.paneHasScrollRange,JSON.stringify(modal));
   await page.evaluate(()=>closeSheet('add-sheet'));
   check('closing the last sheet restores page scrolling',await page.evaluate(()=>!document.body.classList.contains('modal-open')));
 

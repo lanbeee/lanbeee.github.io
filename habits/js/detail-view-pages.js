@@ -69,6 +69,11 @@ let detailNavigationRevision = 0;
 let detailPanelMotion = null;
 let detailDockMotion = null;
 let _detailOpeningBatch = false;
+let _detailPagerMutationObserver = null;
+
+function flushDetailPagerObservers(){
+  _detailPagerMutationObserver?.takeRecords();
+}
 
 function cancelDetailNavigationMotion(){
   detailPanelMotion?.cancel();
@@ -106,11 +111,26 @@ function animateDetailNavigation(previousNav,previousDock,behavior = 'smooth'){
 // stacks vertically. Does not change saved habit fields.
 const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','weather','effort','tracking'];
 let _minimalEffortHomes = null;
+let _detailMinimalInitialized = false;
 function applyDetailMinimalMode(){
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   const sheet = $('detail-sheet');
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   const wasMinimal = Boolean(sheet?.classList.contains('minimal-detail'));
+  const unchanged = _detailMinimalInitialized && minimal === wasMinimal && !minimal;
+  _detailMinimalInitialized = true;
+  if(unchanged){
+    const availabilityTitle = $('detail-availability-disclosure')?.querySelector('summary');
+    if(availabilityTitle)availabilityTitle.textContent = sheet?.classList.contains('opportunity-mode') ? 'days & hours' : 'days, hours & places';
+    if(pager){
+      const pages = visibleDetailPages(pager);
+      const inner = getSheetInner('detail-sheet');
+      if(inner && !pages.some(page=>page.dataset.detailNav === inner.dataset.fullNav))inner.dataset.fullNav = pages[0]?.dataset.detailNav || '';
+    }
+    if(sheet?.classList.contains('opportunity-mode'))syncDetailConditionsLayout(true);
+    if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
+    return;
+  }
   // The body class flips before this runs; keep the explicit selected tab.
   const fromNav = wasMinimal ? (detailMinimalView() === 'summary' ? 'summary' : 'availability')
     : getSheetInner('detail-sheet')?.dataset.fullNav;
@@ -240,9 +260,13 @@ function detailPageIndexByNav(navKey){
   return visibleDetailPages(pager).findIndex(page=>page.dataset.detailNav === navKey);
 }
 
+let _detailPagerScrolled = false;
 function scrollDetailToNav(navKey,behavior = 'auto'){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if(!pager)return;
+  if(navKey && navKey !== 'summary' && typeof ensureDetailHydrated === 'function'){
+    ensureDetailHydrated(navKey);
+  }
   const index = detailPageIndexByNav(navKey);
   if(index < 0)return;
   const previousNav = detailCurrentNav();
@@ -254,6 +278,7 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
     updateDetailPagerDots();
     const page = visibleDetailPages(pager)[index];
     pager.scrollTo({left:navKey === 'summary' ? 0 : pager.clientWidth,behavior:'instant'});
+    _detailPagerScrolled = navKey !== 'summary';
     const settings = pager.querySelector('.detail-minimal-settings');
     if(settings && page && navKey !== 'summary')settings.scrollTo({top:page.getBoundingClientRect().top - settings.getBoundingClientRect().top + settings.scrollTop,behavior:'instant'});
     animateDetailNavigation(previousNav,previousDock,behavior);
@@ -262,7 +287,8 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
   // Explicit navigation lands synchronously. Field reveal/focus and a queued
   // Save restore must never compete with an unfinished horizontal animation.
   getSheetInner('detail-sheet').dataset.fullNav = visibleDetailPages(pager)[index].dataset.detailNav;
-  pager.scrollTo({left:index * pager.clientWidth,behavior:'instant'});
+  pager.scrollTo({left:index === 0 ? 0 : index * pager.clientWidth,behavior:'instant'});
+  _detailPagerScrolled = index > 0;
   updateDetailPagerDots();
   animateDetailNavigation(previousNav,previousDock,behavior);
 }
@@ -273,8 +299,20 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
 function bindDetailPagerScroll(pager){
   if(pager.dataset.scrollBound === '1')return;
   pager.dataset.scrollBound = '1';
-  let width = 0,pageSignature = '';
+  let width = 0,pageSignature = '',alignDeferred = false;
   const align = ()=>{
+    if(_detailOpeningBatch)return false;
+    if(!$('detail-sheet')?.classList.contains('open') && getPane()?.dataset.activeSheet !== 'detail-sheet')return false;
+    // Already resting at scrollLeft=0 on Summary while sliding in: avoid
+    // forcing a full sheet layout (pager.clientWidth) on the opening frame.
+    if(typeof isSheetEntering === 'function' && isSheetEntering('detail-sheet')
+      && detailCurrentNav() === 'summary' && !_detailPagerScrolled){
+      if(!alignDeferred && typeof afterSheetEntry === 'function'){
+        alignDeferred = true;
+        afterSheetEntry('detail-sheet',()=>{ alignDeferred = false; align(); });
+      }
+      return false;
+    }
     const pages = detailIsSingleView() ? [...pager.children] : visibleDetailPages(pager);
     const signature = pages.map(page=>page.dataset.detailNav).join('|');
     if(!pager.clientWidth || (width === pager.clientWidth && signature === pageSignature))return false;
@@ -282,9 +320,12 @@ function bindDetailPagerScroll(pager){
     pageSignature = signature;
     const index = detailIsSingleView() ? Number(detailMinimalView() === 'settings') : Math.max(0,pages.findIndex(page=>page.dataset.detailNav === detailCurrentNav()));
     pager.scrollTo({left:index * width,behavior:'instant'});
+    _detailPagerScrolled = index > 0;
     return true;
   };
   pager.addEventListener('scroll',()=>{
+    _detailPagerScrolled = pager.scrollLeft > 1;
+    if(_detailPagerScrolled && typeof ensureDetailHydrated === 'function')ensureDetailHydrated('all');
     if(align() || !width)return;
     if(detailIsSingleView()){
       const view = pager.scrollLeft >= width / 2 ? 'settings' : 'summary';
@@ -309,7 +350,8 @@ function bindDetailPagerScroll(pager){
     animateDetailNavigation(previousNav,previousDock);
   },{passive:true});
   new ResizeObserver(align).observe(pager);
-  new MutationObserver(align).observe(pager,{subtree:true,attributes:true,attributeFilter:['hidden']});
+  _detailPagerMutationObserver = new MutationObserver(align);
+  _detailPagerMutationObserver.observe(pager,{subtree:true,attributes:true,attributeFilter:['hidden']});
 }
 
 function bindDetailPagerTabs(dotsWrap,pager){

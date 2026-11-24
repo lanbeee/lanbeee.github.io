@@ -35,7 +35,8 @@ const assert=require('node:assert/strict');
       checks.push(agendaBlockedIntervals('2026-11-27',{...settings,blockedTimes:[busy]},at(2026,11,27)-12*3600000,at(2026,11,28)-12*3600000).length===1,
         agendaBlockedIntervals('2026-11-20',{...settings,blockedTimes:[busy]},at(2026,11,20)-12*3600000,at(2026,11,21)-12*3600000).length===0);
       const rate=scheduledOpportunityRate(h),fifthRate=scheduledOpportunityRate({...h,allowedOrdinalWeekdays:[{ordinal:5,weekday:5}]});
-      openDetail(0);const editorPresent=Boolean($('detail-ordinal-rules'));const copyRules=readOrdinalWeekdays($('detail-ordinal-rules'));closeDetail();
+      openDetail(0);scrollDetailToNav('availability','instant');
+      const editorPresent=Boolean($('detail-ordinal-rules'));const copyRules=readOrdinalWeekdays($('detail-ordinal-rules'));closeDetail();
       const event={id:'ignore-event',calendarSeriesId:'ics:series',source:'ics',subject:'Meeting',start:now+3600000,end:now+7200000};
       applyCalendarImport([event],{source:'ics'});const item=load().find(x=>x.externalId===event.id);
       const ignores=[{scope:'series',id:item.calendarSeriesId,name:item.name}];saveSortSettings({...settings,calendarIgnores:ignores});sortSettings=loadSortSettings();
@@ -81,7 +82,7 @@ const assert=require('node:assert/strict');
     assert.equal(duplicated.clean,true);assert.equal(duplicated.cancelled,true);assert.equal(duplicated.saved,true);assert.equal(duplicated.independent,true);assert.match(duplicated.name,/ copy$/);
     const controls=await page.evaluate(()=>{
       buildWeekAgendaOffMain=async(data,settings,count,opts)=>buildWeekAgenda(data,settings,count,opts);
-      closeDetail();openDetail(0);
+      closeDetail();openDetail(0);scrollDetailToNav('availability','instant');
       const allowed=$('detail-ordinal-rules'),preferred=$('detail-preferred-ordinal-rules');
       allowed.querySelector('[data-ordinal-pick="1"]').click();allowed.querySelector('[data-ordinal-day="1"]').click();
       preferred.querySelector('[data-ordinal-pick="2"]').click();preferred.querySelector('[data-ordinal-day="3"]').click();

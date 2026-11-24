@@ -46,6 +46,10 @@
   border-radius:var(--radius-sm);padding:12px;
   min-width:0;overflow:hidden;overflow-wrap:anywhere;
 }
+#settings-sheet .settings-block{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 72px;
+}
 .settings-label{
   display:block;color:var(--text);font-size:calc(13px * var(--font-scale));font-weight:650;margin-bottom:7px;
 }

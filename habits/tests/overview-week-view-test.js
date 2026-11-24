@@ -408,7 +408,8 @@ async function chooseOption(page,selector){
       }
       throw new Error('No empty evening grid slot is visible');
     });
-    await page.mouse.click(target.x,target.y);
+    if(width < 600)await page.touchscreen.tap(target.x,target.y);
+    else await page.mouse.click(target.x,target.y);
     await page.waitForSelector('#add-sheet.open');
     const draft = await page.evaluate(()=>({type:selectedType,date:document.querySelector('#ting-due-date').value,time:document.querySelector('#ting-due-time').value,top:document.elementFromPoint(innerWidth/2,innerHeight/2)?.closest('.sheet-wrap')?.id}));
     assert(draft.type === 'task' && draft.date === target.day && draft.time === target.time,'empty grid tap stages a task at the tapped date and time');

@@ -13,6 +13,22 @@
 body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#week-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#feedback-sheet,#home-filter-sheet,#calendar-filter-sheet,#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet,#bulk-edit-sheet,#bulk-batch-sheet){
   transition:none;
 }
+/* These phone pages close immediately. Keep their controls in the DOM but
+   skip their layout and paint while another page or the keyboard is moving. */
+body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#week-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#feedback-sheet,#home-filter-sheet,#calendar-filter-sheet,#locations-manager-sheet,#weather-manager-sheet,#busy-manager-sheet):not(.open){
+  content-visibility:hidden;
+}
+/* Month keeps its grid between visits. Keep its layout ready on idle Home,
+   but skip it while an editor or another sheet is using the viewport. */
+body[data-pane-count="1"]:not(.modal-open) #overview-sheet:not(.open){
+  visibility:hidden;
+  content-visibility:visible;
+}
+/* Skip live backdrop blur while a full-page sheet slides in so Android Vulkan
+   doesn't run a per-frame blur pass during the 220ms entry motion. */
+.sheet-wrap.sheet-entering .sheet-search-dock{
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+}
 /* Desktop modals cover the columns, not the wordmark / search / add bar. */
 body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap{
   top:var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height)));

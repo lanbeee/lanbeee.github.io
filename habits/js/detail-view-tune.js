@@ -44,6 +44,7 @@ function detailTuneType(){
 }
 
 function currentDetailTune(){
+  if(typeof ensureDetailHydrated === 'function')ensureDetailHydrated('fields');
   const type = detailTuneType();
   const locationIds = selectedLocationIdsFrom('detail-place-chips');
   const locationTypes = typeof selectedLocationTypesFrom === 'function' ? selectedLocationTypesFrom('detail-place-chips') : [];
@@ -614,6 +615,7 @@ function setScheduleView(view){
 
 // HYBRID: resets detail state and closes sheet
 function closeDetail(){
+  if(typeof invalidateDetailHydration === 'function')invalidateDetailHydration();
   // A batch draft edit must restore the save button and its chrome on every
   // close path (backdrop, cancel, Escape, system Back).
   if(typeof bulkDraftEditActive === 'function' && bulkDraftEditActive())cancelBulkDraftEdit();

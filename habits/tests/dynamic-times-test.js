@@ -375,8 +375,8 @@ async function toastText(page){
   // Open Stretch detail → schedule pane.
   await page.evaluate((i) => { openDetail(i); }, stretchIdx);
   await page.waitForSelector('#detail-sheet.open', { timeout:5000 });
-  await page.evaluate(()=>getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true));
   await page.locator('.detail-page-tab[aria-label="when & where"]').click();
+  await page.evaluate(()=>$('detail-availability-disclosure').open=true);
   await page.waitForTimeout(200);
 
   // Habit ordering now has a dedicated recurring editor rather than being
@@ -385,6 +385,7 @@ async function toastText(page){
   const habitOpt = await startEndpoint.locator('.time-anchor option[value="habit"]').count();
   assert(habitOpt === 0, 'new dynamic-time dropdown omits habit order');
   await page.locator('.detail-page-tab[aria-label="time & order"]').click();
+  await page.locator('#detail-order-disclosure > summary').click();
   await page.locator('#detail-schedule-link-add').click();
   await page.waitForTimeout(50);
   const afterEditor = page.locator('#detail-schedule-link-list .schedule-link-editor').last();

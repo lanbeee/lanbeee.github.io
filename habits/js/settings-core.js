@@ -225,15 +225,39 @@ function applyResolvedAddProfile(kind,type){
   applyAddProfile(profile);
 }
 
+let _addDeferredOptions = null;
+let _addContentScrolled = false;
+(function bindAddScrollTracker(){
+  const content = document.querySelector('.add-content');
+  if(!content || content.dataset.scrollTracked === '1')return;
+  content.dataset.scrollTracked = '1';
+  content.addEventListener('scroll',()=>{
+    if(content.scrollTop > 0)_addContentScrolled = true;
+  },{passive:true});
+})();
+
+function ensureAddOptionsHydrated(){
+  const profile = _addDeferredOptions;
+  if(!profile)return;
+  _addDeferredOptions = null;
+  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('ting-weather-profile',profile.weatherProfileValue || '');
+  if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('ting-weather-location',profile.weatherLocationId || '');
+  $('ting-show-weather')?.setAttribute('aria-pressed',String(Boolean(profile.showWeather)));
+  $('ting-show-weather-location')?.setAttribute('aria-pressed',String(Boolean(profile.showWeatherAtLocation)));
+  if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
+  renderTagChips('ting-tag-chips',profile.topics,profile.locationIds,null,profile.locationPrefs,profile.anywhereAllowed,profile.locationTypes || []);
+}
+
 function readAddProfile(){
+  const deferred = _addDeferredOptions;
   return {
     repeatMode:$('ting-repeat-mode').value,
     conditionTrigger:$('ting-condition-trigger').value,
     conditionRadiusM:opportunityRadius({conditionRadiusM:$('ting-condition-radius').value}),
-    weatherProfileValue:$('ting-weather-profile').value,
-    weatherLocationId:$('ting-weather-location').value,
-    showWeather:$('ting-show-weather').getAttribute('aria-pressed') === 'true',
-    showWeatherAtLocation:$('ting-show-weather-location').getAttribute('aria-pressed') === 'true',
+    weatherProfileValue:deferred ? (deferred.weatherProfileValue || '') : $('ting-weather-profile').value,
+    weatherLocationId:deferred ? (deferred.weatherLocationId || '') : $('ting-weather-location').value,
+    showWeather:deferred ? Boolean(deferred.showWeather) : $('ting-show-weather').getAttribute('aria-pressed') === 'true',
+    showWeatherAtLocation:deferred ? Boolean(deferred.showWeatherAtLocation) : $('ting-show-weather-location').getAttribute('aria-pressed') === 'true',
     defaults:addActiveDefaults,
     target:targetFromRhythmParts($('ting-times').value,$('ting-days').value),
     dueDate:$('ting-due-date').value,
@@ -266,11 +290,27 @@ function applyAddProfile(profile){
   $('ting-repeat-mode').value = profile.repeatMode || 'routine';
   $('ting-condition-trigger').value = profile.conditionTrigger || 'weather';
   $('ting-condition-radius').value = opportunityRadius(profile);
-  renderWeatherProfileSelect('ting-weather-profile',profile.weatherProfileValue || '');
-  renderWeatherLocationSelect('ting-weather-location',profile.weatherLocationId || '');
-  $('ting-show-weather').setAttribute('aria-pressed',String(Boolean(profile.showWeather)));
-  $('ting-show-weather-location').setAttribute('aria-pressed',String(Boolean(profile.showWeatherAtLocation)));
-  if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
+  const moreHidden = Boolean($('add-more-options')?.hidden) && (profile.repeatMode || 'routine') !== 'opportunity';
+  if(moreHidden){
+    _addDeferredOptions = {
+      weatherProfileValue:profile.weatherProfileValue || '',
+      weatherLocationId:profile.weatherLocationId || '',
+      showWeather:Boolean(profile.showWeather),
+      showWeatherAtLocation:Boolean(profile.showWeatherAtLocation),
+      topics:(profile.topics || []).slice(),
+      locationIds:(profile.locationIds || []).slice(),
+      locationTypes:(profile.locationTypes || []).slice(),
+      locationPrefs:{...(profile.locationPrefs || {})},
+      anywhereAllowed:Boolean(profile.anywhereAllowed)
+    };
+  }else{
+    _addDeferredOptions = null;
+    renderWeatherProfileSelect('ting-weather-profile',profile.weatherProfileValue || '');
+    renderWeatherLocationSelect('ting-weather-location',profile.weatherLocationId || '');
+    $('ting-show-weather').setAttribute('aria-pressed',String(Boolean(profile.showWeather)));
+    $('ting-show-weather-location').setAttribute('aria-pressed',String(Boolean(profile.showWeatherAtLocation)));
+    if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
+  }
   addActiveDefaults = {...profile.defaults};
   syncRhythm('ting',profile.target);
   $('ting-due-date').value = profile.dueDate;
@@ -285,7 +325,9 @@ function applyAddProfile(profile){
     btn.classList.toggle('on',selected);
     btn.setAttribute('aria-pressed',String(selected));
   });
-  renderTagChips('ting-tag-chips',profile.topics,profile.locationIds,null,profile.locationPrefs,profile.anywhereAllowed,profile.locationTypes || []);
+  if(!moreHidden){
+    renderTagChips('ting-tag-chips',profile.topics,profile.locationIds,null,profile.locationPrefs,profile.anywhereAllowed,profile.locationTypes || []);
+  }
   const days = profile.defaults.allowedWeekdays;
   const dayText = days.length ? days.map(day=>WEEKDAY_LABELS[day]).join(', ') : 'any day';
   const start = profile.defaults.allowedTimeStart;
@@ -312,7 +354,11 @@ function applyAddDefaults(){
   // A fresh open (or completed/discard flow) always leaves batch mode.
   if(typeof exitBulkBatchMode === 'function')exitBulkBatchMode();
   resetAppointmentShortcut();
-  document.querySelector('.add-content').scrollTop = 0;
+  if(_addContentScrolled){
+    const content = document.querySelector('.add-content');
+    if(content)content.scrollTop = 0;
+    _addContentScrolled = false;
+  }
   const settings = loadSortSettings();
   addSharedEdits = {};
   addHabitDraft = null;
@@ -323,26 +369,75 @@ function applyAddDefaults(){
   $('ting-message').value = '';
   $('ting-emoji').value = '';
   if(typeof renderEmojiBgSwatches === 'function')renderEmojiBgSwatches('ting-emoji-bg','');
-  selectedType = settings.defaultType;
-  document.querySelectorAll('#type-seg .seg-opt').forEach(btn=>btn.classList.toggle('on',selectedType === 'task' ? btn.dataset.v === 'task' : btn.dataset.v === 'keepup'));
-  applyResolvedAddProfile(selectedType === 'task' ? 'task' : 'habit',selectedType);
-  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('ting-weather-profile','');
-  if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('ting-weather-location','');
-  $('ting-show-weather')?.setAttribute('aria-pressed','false');
-  $('ting-show-weather-location')?.setAttribute('aria-pressed','false');
-  if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   $('add-topics-section').hidden = false;
   $('add-more-options').hidden = true;
   $('add-more-toggle').setAttribute('aria-expanded','false');
   document.querySelector('.add-weather-options').open = false;
+  selectedType = settings.defaultType;
+  document.querySelectorAll('#type-seg .seg-opt').forEach(btn=>btn.classList.toggle('on',selectedType === 'task' ? btn.dataset.v === 'task' : btn.dataset.v === 'keepup'));
+  applyResolvedAddProfile(selectedType === 'task' ? 'task' : 'habit',selectedType);
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
   if(typeof applyAddMinimalMode === 'function')applyAddMinimalMode();
 }
 
+let _settingsDeferredSections = null;
+let _settingsSheetClean = false;
+let _settingsSyncedKey = '';
+
+(function bindSettingsDirtyTracker(){
+  const sheet = $('settings-sheet');
+  if(!sheet || sheet.dataset.cleanTracked === '1')return;
+  sheet.dataset.cleanTracked = '1';
+  const markDirty = ()=>{ _settingsSheetClean = false; };
+  sheet.addEventListener('click',markDirty,{capture:true,passive:true});
+  sheet.addEventListener('input',markDirty,{capture:true,passive:true});
+  sheet.addEventListener('change',markDirty,{capture:true,passive:true});
+  sheet.addEventListener('toggle',markDirty,{capture:true,passive:true});
+})();
+
+function settingsSyncStateKey(){
+  let sortRaw = '';
+  try{ sortRaw = localStorage.getItem(SORT_SETTINGS_KEY) || ''; }catch(_){}
+  const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  const managers = `${Number(Boolean($('busy-manager-sheet')?.classList.contains('open')))}${Number(Boolean($('locations-manager-sheet')?.classList.contains('open')))}${Number(Boolean($('weather-manager-sheet')?.classList.contains('open')))}`;
+  return `${rev}|${minimal ? 1 : 0}|${managers}|${sortRaw}`;
+}
+
+function ensureSettingsSectionHydrated(bodyId = 'all'){
+  if(!_settingsDeferredSections || !_settingsDeferredSections.size)return;
+  const targets = bodyId === 'all' ? [..._settingsDeferredSections] : (_settingsDeferredSections.has(bodyId) ? [bodyId] : []);
+  if(!targets.length)return;
+  let items = null;
+  const getItems = ()=>items || (items = typeof loadReadonly === 'function' ? loadReadonly() : load());
+  for(const id of targets){
+    _settingsDeferredSections.delete(id);
+    if(id === 'settings-calendar-body'){
+      renderIgnoredCalendarItems(getItems(),sortSettings);
+      renderCalendarImportControls(getItems());
+    }else if(id === 'settings-topics-body'){
+      renderTopicList();
+    }else if(id === 'settings-prayer-body'){
+      renderPrayerTimesControls();
+    }else if(id === 'settings-defaults-body'){
+      syncDefaultProfileControls();
+      renderDefaultTopicsChips();
+    }else if(id === 'settings-assistant-body'){
+      if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
+    }else if(id === 'settings-cleanup-body'){
+      updateSortSampleCount(getItems());
+    }else if(id === 'settings-locations-body'){
+      if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+    }
+  }
+}
+
 function openSettingsSheet(){
-  if(typeof setSettingsSearchOpen === 'function')setSettingsSearchOpen(false,false);
-  resetSettingsSheetState();
-  syncSettingsControls();
+  if(!_settingsSheetClean)resetSettingsSheetState();
+  const key = settingsSyncStateKey();
+  if(!(_settingsSheetClean && _settingsSyncedKey === key && _settingsDeferredSections !== null)){
+    syncSettingsControls({lazySections:true});
+  }
   openSheet('settings-sheet');
 }
 
@@ -378,12 +473,14 @@ function openAddSettings(section){
     return;
   }
   addSettingsReturn = true;
+  _settingsSheetClean = false;
   defaultProfileKind = kind === 'task' ? 'task' : 'habit';
   closeSheet('add-sheet');
   resetSettingsSheetState();
-  syncSettingsControls();
+  syncSettingsControls({lazySections:true});
   const body = $(section === 'defaults' ? 'settings-defaults-body' : section === 'weather' ? 'settings-weather-body' : 'settings-blocked-body');
   const head = document.querySelector(`[data-collapse-target="${body.id}"]`);
+  ensureSettingsSectionHydrated(body.id);
   body.hidden = false;
   head.setAttribute('aria-expanded','true');
   $('settings-close').setAttribute('aria-label','back to new ' + (kind === 'task' ? 'task' : kind === 'event' ? 'event' : 'habit'));
@@ -441,21 +538,36 @@ function resetSettingsSheetState(){
     if(body)body.hidden = true;
     head.setAttribute('aria-expanded','false');
   });
+  _settingsSheetClean = true;
 }
 
 // HYBRID: sync settings UI from stored state
-function syncSettingsControls(){
+function syncSettingsControls(opts = {}){
+  const lazy = Boolean(opts.lazySections);
   sortSettings = loadSortSettings();
+  const deferred = lazy ? new Set() : null;
+  _settingsDeferredSections = deferred;
+  let items = null;
+  const getItems = ()=>items || (items = typeof loadReadonly === 'function' ? loadReadonly() : load());
+  const deferIfHidden = id=>{
+    if(!lazy)return false;
+    const el = $(id);
+    if(el && el.hidden){ deferred.add(id); return true; }
+    return false;
+  };
   syncCardDetailControls();
   const resetConfirm = $('settings-reset-confirm');
   if(resetConfirm)resetConfirm.hidden = true;
-  updateSortSampleCount();
-  renderTopicList();
-  renderIgnoredCalendarItems();
+  if(!deferIfHidden('settings-cleanup-body'))updateSortSampleCount(getItems());
+  if(!deferIfHidden('settings-topics-body'))renderTopicList();
+  if(!deferIfHidden('settings-calendar-body')){
+    renderIgnoredCalendarItems(getItems(),sortSettings);
+    renderCalendarImportControls(getItems());
+  }
   renderBlockedTimeControls({ includeManager: Boolean($('busy-manager-sheet')?.classList.contains('open')) });
   renderLocationControls({ includeManager: Boolean($('locations-manager-sheet')?.classList.contains('open')) });
   if(typeof renderWeatherControls === 'function')renderWeatherControls({ includeManager: Boolean($('weather-manager-sheet')?.classList.contains('open')) });
-  if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+  if(!deferIfHidden('settings-locations-body') && typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
   document.querySelectorAll('#default-type-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.defaultType === sortSettings.defaultType);
   });
@@ -463,8 +575,7 @@ function syncSettingsControls(){
   document.querySelectorAll('#travel-mode-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.travelMode === travelMode);
   });
-  renderPrayerTimesControls();
-  renderCalendarImportControls();
+  if(!deferIfHidden('settings-prayer-body'))renderPrayerTimesControls();
   const agendaTimeMode = normalizeAgendaTimeMode(sortSettings.showAgendaTimesOnCards);
   document.querySelectorAll('#agenda-time-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === agendaTimeMode);
@@ -472,7 +583,10 @@ function syncSettingsControls(){
   document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
     btn.setAttribute('aria-pressed',String(Boolean(sortSettings[btn.dataset.settingToggle])));
   });
-  syncDefaultProfileControls();
+  if(!deferIfHidden('settings-defaults-body')){
+    syncDefaultProfileControls();
+    renderDefaultTopicsChips();
+  }
   document.querySelectorAll('#font-scale-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === sortSettings.fontScale);
   });
@@ -491,7 +605,7 @@ function syncSettingsControls(){
     btn.classList.toggle('on',parseInt(btn.dataset.segValue,10) === logKeep);
   });
   syncHomeCityStatus();
-  renderDefaultTopicsChips();
-  applyAppearanceSettings();
-  if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
+  if(!lazy)applyAppearanceSettings();
+  if(!deferIfHidden('settings-assistant-body') && typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
+  _settingsSyncedKey = lazy ? settingsSyncStateKey() : '';
 }

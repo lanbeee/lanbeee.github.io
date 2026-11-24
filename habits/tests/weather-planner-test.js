@@ -32,7 +32,14 @@ function assert(value,message){
   await page.waitForSelector('#weather-manager-sheet.open');
   await page.locator('#weather-profile-add').click();
   assert(await page.locator('.weather-profile-card').count()===1,'settings creates a named weather profile');
-  assert(await page.locator('#ting-weather-profile option').count()===3,'new profile appears beside inherit and no-weather choices');
+  const addProfileCount=await page.evaluate(()=>{
+    openAddSheetFromChrome();
+    $('add-more-toggle').click();
+    const count=$('ting-weather-profile').options.length;
+    closeSheet('add-sheet');
+    return count;
+  });
+  assert(addProfileCount===3,'new profile appears beside inherit and no-weather choices');
   assert(await page.locator('.weather-rule-hint').count()===1,'each rule shows its metric scale');
   assert(/chance/.test(await page.locator('.weather-rule-hint').first().textContent()),'the fixed-value hint names the metric scale bands');
   assert(await page.locator('[data-weather-rule-importance]').first().inputValue()==='medium','new weather rules start at medium relative priority');
@@ -101,6 +108,7 @@ function assert(value,message){
 
   // Transparency panel: seed a fake stored forecast (hourly + near-term) and
   // check the settings screen shows exactly the rows the planner scores.
+  await page.evaluate(()=>$('weather-forecast-details').open=true);
   const inspect=await page.evaluate(()=>{
     const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
     const now=Date.now();
@@ -176,8 +184,10 @@ function assert(value,message){
     ]));
     renderLocationControls();renderWeatherControls();
     openDetail(0);
+    scrollDetailToNav('weather','instant');
     const itemHint=$('detail-weather-guidance-hint')?.textContent || '';
     openDetail(1);
+    scrollDetailToNav('availability','instant');
     const optionValue=document.querySelector('.habit-option-weather')?.value || '';
     const optionHint=document.querySelector('.habit-option-weather-hint')?.textContent || '';
     const usage=document.querySelector('.weather-profile-used')?.textContent || '';
@@ -616,11 +626,14 @@ function assert(value,message){
       logs:[],locationIds:[],anywhereAllowed:true}]);
     saveSortSettings({...loadSortSettings(),locations:settings.locations,weatherProfiles:loadSortSettings().weatherProfiles});
     sortSettings=loadSortSettings();
+    openAddSheetFromChrome();
+    $('add-more-toggle').click();
     const profileId=[...($('ting-weather-profile')?.options || [])]
       .find(option=>option.value && option.value!=='__none__')?.value || '';
     if($('ting-weather-profile'))$('ting-weather-profile').value=profileId;
     if(typeof renderWeatherLocationSelect==='function')renderWeatherLocationSelect('ting-weather-location','');
     if(typeof syncWeatherHabitLocationUi==='function')syncWeatherHabitLocationUi();
+    closeSheet('add-sheet');
     return {
       parkUsesHome:!parkCoords.locationId,
       bostonFar:bostonCoords.locationId==='boston',

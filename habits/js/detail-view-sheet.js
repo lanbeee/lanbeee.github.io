@@ -14,13 +14,25 @@
 // A detail preview can show a new item, or staged edits, before anything is saved.
 let detailUnsavedCreate = null;
 let detailUnsavedReminders = null;
+let _detailOpenToken = 0;
+let _detailHydration = null;
+let _detailWarmTimer = null;
+let _detailVerticalScrolled = false;
 
-function paintDetailFields(h){
+function invalidateDetailHydration(){
+  _detailOpenToken += 1;
+  _detailHydration = null;
+  if(_detailWarmTimer !== null){
+    clearTimeout(_detailWarmTimer);
+    _detailWarmTimer = null;
+  }
+}
+
+function paintDetailHeader(h){
   const days = daysSince(h.lastLog);
   const c = habitColors(h,days);
   const cardScoreTone = cardTone(h);
   const accent = visualClassColor(cardScoreTone);
-  if(typeof renderNativeDetailReminders === 'function')renderNativeDetailReminders(h);
   $('detail-name').textContent = h.name;
   // The header subtitle is the item's state (the canonical cardCue); the
   // summary tab shows history and settings, so nothing repeats.
@@ -33,6 +45,42 @@ function paintDetailFields(h){
   $('detail-trend').textContent = trendText(h);
   $('detail-habit-message').value = h.name || '';
   $('detail-emoji').value = h.emoji || '';
+  if(typeof syncDetailSnoozeAction === 'function')syncDetailSnoozeAction(h);
+  if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi(h);
+  $('detail-mark').style.cssText = '';
+  const markStyle = typeof emojiBgInlineStyle === 'function'
+    ? emojiBgInlineStyle(h,c.bg,c.icon)
+    : `background:${c.bg};color:${c.icon}`;
+  $('detail-mark').style.cssText = markStyle;
+  $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
+  $('detail-mark').classList.toggle('has-emoji-bg',Boolean(normalizeEmojiBgColor(h.emojiBgColor)));
+  $('detail-mark').setAttribute('aria-label',`add entry for ${h.name}`);
+  $('detail-mark').setAttribute('aria-description',`Priority P${effectivePriority(h)}`);
+  $('detail-mark').innerHTML = iconHtml(h,c);
+  $('detail-delete-confirm').hidden = true;
+  // Keep nav-kind metadata current so tab labels and detailTuneType() match
+  // immediately before inactive editor pages are hydrated.
+  const type = h.type || 'keepup';
+  const isTask = type === 'task';
+  const mainType = isTask ? 'task' : 'keepup';
+  document.querySelectorAll('#detail-type-seg .seg-opt').forEach(btn=>{
+    btn.classList.toggle('on',btn.dataset.detailType === mainType);
+  });
+  if(!isTask){
+    const mode = typeToMode(type);
+    document.querySelectorAll('#detail-mode-seg .seg-opt').forEach(btn=>{
+      btn.classList.toggle('on',btn.dataset.mode === mode);
+    });
+  }
+  const opp = normalizeRepeatMode(h.repeatMode,type) === 'opportunity';
+  $('detail-sheet')?.classList.toggle('opportunity-mode',opp);
+  getSheetInner('detail-sheet')?.classList.toggle('opportunity-mode',opp);
+}
+
+function paintDetailEditorFields(h,items = null){
+  if(typeof renderNativeDetailReminders === 'function')renderNativeDetailReminders(h);
+  $('detail-habit-message').value = h.name || '';
+  $('detail-emoji').value = h.emoji || '';
   renderEmojiBgSwatches('detail-emoji-bg',h.emojiBgColor || '');
   $('detail-days').value = h.target || '';
   $('detail-repeat-mode').value = normalizeRepeatMode(h.repeatMode,h.type);
@@ -42,7 +90,6 @@ function paintDetailFields(h){
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
   $('detail-tap-session').setAttribute('aria-pressed',h.tapStartsSession ? 'true' : 'false');
   $('detail-tap-session').closest('label').hidden = isEventItem(h) || h.type === 'zero';
-  if(typeof syncDetailSnoozeAction === 'function')syncDetailSnoozeAction(h);
   setDetailSharedDisplayMode(sharedDisplayModeForHabit(h));
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-early-window').value = habitEarlyWindowDays(h);
@@ -65,7 +112,7 @@ function paintDetailFields(h){
   $('detail-ignore-occurrence').hidden=!calendarIgnoreIdentity(h);
   $('detail-ignore-series').hidden=!calendarIgnoreIdentity(h,'series');
   renderScheduleChips('detail',h);
-  renderScheduleLinkEditors(h);
+  renderScheduleLinkEditors(h,items);
   renderHabitScheduleOptions(h);
   // Expand configured options, but keep unused advanced fields quiet.
   $('detail-options-disclosure').open = Boolean(h.scheduleOptions?.length);
@@ -79,6 +126,14 @@ function paintDetailFields(h){
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
   setDetailPriorityUi(effectivePriority(h));
+  syncRhythm('detail',h.target || 7);
+  syncBreakableUi();
+  if(typeof updateEmojiPreview === 'function')updateEmojiPreview();
+}
+
+function paintDetailFields(h,items = null){
+  paintDetailHeader(h);
+  paintDetailEditorFields(h,items);
 }
 
 function paintDetailChrome(h,items = null){
@@ -107,6 +162,93 @@ function paintDetailChrome(h,items = null){
   syncDeviceCalendarDetail(h);
   renderEventDetailUi(h);
 }
+
+function ensureDetailHydrated(scope = 'all'){
+  const state = _detailHydration;
+  if(!state || state.token !== _detailOpenToken)return;
+  if(state.fields && state.calendar && state.order)return;
+  const needCalendar = scope === 'all' || scope === 'calendar';
+  const needOrder = scope === 'all' || scope === 'order' || scope === 'actions';
+  const needFields = scope === 'all' || scope === 'fields'
+    || (scope !== 'calendar' && scope !== 'order' && scope !== 'summary');
+  if((!needFields || state.fields) && (!needCalendar || state.calendar) && (!needOrder || state.order))return;
+  const items = load();
+  const h = detailIdx != null ? items[detailIdx] : null;
+  if(!h || (state.hid && h.hid !== state.hid)){
+    _detailHydration = null;
+    return;
+  }
+  const prevBatch = typeof _detailOpeningBatch !== 'undefined' ? _detailOpeningBatch : false;
+  if(typeof _detailOpeningBatch !== 'undefined')_detailOpeningBatch = true;
+  try{
+    if(needFields && !state.fields){
+      state.fields = true;
+      paintDetailEditorFields(h,items);
+      if(state.changedHabit && !state.disclosuresReset){
+        state.disclosuresReset = true;
+        resetDetailDisclosures(h);
+      }
+      renderLocalAppointmentDetail(h);
+      syncDeviceCalendarDetail(h);
+      renderEventDetailUi(h);
+      applyDetailMinimalMode();
+    }
+    if(needCalendar && !state.calendar){
+      state.calendar = true;
+      renderStats(h);
+      renderGraph(h);
+      renderCalendar(h,items);
+      syncDetailVizMode();
+    }
+    if(needOrder && !state.order){
+      state.order = true;
+      renderDetailOrderPage(h);
+    }
+  }finally{
+    if(typeof flushDetailPagerObservers === 'function')flushDetailPagerObservers();
+    if(typeof _detailOpeningBatch !== 'undefined')_detailOpeningBatch = prevBatch;
+  }
+  if(state.fields && state.calendar && state.order)_detailHydration = null;
+}
+
+function scheduleDetailWarmHydration(token){
+  if(token !== _detailOpenToken || !_detailHydration)return;
+  if(!$('detail-sheet')?.classList.contains('open') && getPane()?.dataset.activeSheet !== 'detail-sheet')return;
+  const step1 = ()=>{
+    _detailWarmTimer = null;
+    if(token !== _detailOpenToken || !_detailHydration)return;
+    if(!$('detail-sheet')?.classList.contains('open') && getPane()?.dataset.activeSheet !== 'detail-sheet')return;
+    ensureDetailHydrated('calendar');
+    ensureDetailHydrated('order');
+    if(token !== _detailOpenToken || !_detailHydration)return;
+    _detailWarmTimer = setTimeout(()=>{
+      _detailWarmTimer = null;
+      if(token !== _detailOpenToken || !_detailHydration)return;
+      if(!$('detail-sheet')?.classList.contains('open') && getPane()?.dataset.activeSheet !== 'detail-sheet')return;
+      ensureDetailHydrated('fields');
+    },40);
+  };
+  _detailWarmTimer = setTimeout(step1,32);
+}
+
+(function bindDetailLazyGuards(){
+  const sheet = $('detail-sheet');
+  if(!sheet || sheet.dataset.lazyBound === '1')return;
+  sheet.dataset.lazyBound = '1';
+  sheet.addEventListener('scroll',e=>{
+    if(e.target && e.target.scrollTop > 0)_detailVerticalScrolled = true;
+  },{capture:true,passive:true});
+  const onInactiveInteract = e=>{
+    if(!_detailHydration)return;
+    const page = e.target?.closest?.('.detail-page');
+    if(page && !page.classList.contains('detail-summary-page')){
+      ensureDetailHydrated('all');
+    }
+  };
+  sheet.addEventListener('pointerdown',onInactiveInteract,{capture:true,passive:true});
+  sheet.addEventListener('focusin',onInactiveInteract,true);
+  sheet.addEventListener('click',onInactiveInteract,true);
+})();
 
 function detailTuneSnapshot(h){
   return {
@@ -177,7 +319,7 @@ function detailTuneSnapshot(h){
     earlyWindowDays:habitEarlyWindowDays(h),
     delayAllowanceDays:habitDelayAllowanceDays(h),
     priority:effectivePriority(h),
-    dueDate:parseDateInput($('detail-due-date').value),
+    dueDate:parseDateInput(dateInputValue(h.dueDate ?? h.eventTime)),
     eventTime:h.eventTime ?? null,
     planByDate:h.planByDate ?? null
   };
@@ -187,9 +329,11 @@ function detailTuneSnapshot(h){
 function openDetail(i){
   // One saved-list read feeds the whole paint; detail readers below take it
   // instead of each paying another load().
-  const items = load();
+  const items = typeof loadReadonly === 'function' ? loadReadonly() : load();
   const h = items[i];
   if(!h)return;
+  invalidateDetailHydration();
+  const openToken = _detailOpenToken;
   const inner = getSheetInner('detail-sheet');
   if(inner?.contains(document.activeElement))document.activeElement.blur();
   inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open');
@@ -200,44 +344,78 @@ function openDetail(i){
     detailVizMode = 'calendar';
   }
   detailIdx = i;
+  const sheet = $('detail-sheet');
+  const wasSpecial = Boolean(sheet?.classList.contains('event-detail') || sheet?.classList.contains('local-appointment') || sheet?.classList.contains('phone-calendar-detail')
+    || inner?.classList.contains('event-detail') || inner?.classList.contains('local-appointment') || inner?.classList.contains('phone-calendar-detail'));
+  const targetNav = changedHabit ? 'summary' : (detailCurrentNav() || 'summary');
+  const searchOpen = !changedHabit && $('detail-search-panel') && !$('detail-search-panel').hidden;
+  const deferInactive = targetNav === 'summary' && !isMinimalMode() && !isEventItem(h) && !isLocalAppointment(h) && !wasSpecial && !searchOpen;
   if(typeof _detailOpeningBatch !== 'undefined')_detailOpeningBatch = true;
   try{
     syncDetailSearchAssistant(h);
     detailUnsavedCreate = null;
     detailUnsavedReminders = null;
-    paintDetailFields(h);
-    detailTuneOriginal = detailTuneSnapshot(h);
-    // Reset disclosures before painting chrome: the section renderers force some
-    // disclosures open (device personalization reveals the emoji editor), and a
-    // later reset would close them again and hide their controls.
-    if(changedHabit)resetDetailDisclosures(h);
-    paintDetailChrome(h,items);
+    if(deferInactive){
+      paintDetailHeader(h);
+      detailTuneOriginal = detailTuneSnapshot(h);
+      applyDetailMinimalMode();
+      _detailHydration = {
+        token:openToken,
+        idx:i,
+        hid:h.hid,
+        fields:false,
+        calendar:false,
+        order:false,
+        disclosuresReset:false,
+        changedHabit
+      };
+    }else{
+      paintDetailFields(h,items);
+      detailTuneOriginal = detailTuneSnapshot(h);
+      // Reset disclosures before painting chrome: the section renderers force some
+      // disclosures open (device personalization reveals the emoji editor), and a
+      // later reset would close them again and hide their controls.
+      if(changedHabit)resetDetailDisclosures(h);
+      paintDetailChrome(h,items);
+    }
     setDetailDirty(false,h);
     renderDetailSummary(h,items);
     if(typeof invalidateDetailSearchCache === 'function')invalidateDetailSearchCache();
     if(changedHabit){
       $('detail-search-input').value = '';
       setDetailSearchOpen(false,false);
+      if(inner)inner.dataset.fullNav = 'summary';
+      setDetailMinimalView('summary');
     }else if(!$('detail-search-panel').hidden){
       renderDetailSearch();
     }
   }finally{
+    if(typeof flushDetailPagerObservers === 'function')flushDetailPagerObservers();
     if(typeof _detailOpeningBatch !== 'undefined')_detailOpeningBatch = false;
   }
+  // Sync tab bar before revealing the sheet so content-visibility:hidden
+  // keeps this work off the open layout pass.
+  renderDetailTabs();
+  updateDetailPagerDots();
   openSheet('detail-sheet',{detailHid:h.hid});
-  if(changedHabit){
-    const inner = getSheetInner('detail-sheet');
+  if(changedHabit && (_detailVerticalScrolled || _detailPagerScrolled)){
     const pager = inner?.querySelector('.detail-pager');
-    if(inner)inner.scrollTop = 0;
-    setDetailMinimalView('summary');
-    if(pager){
-      pager.querySelectorAll('.detail-page,.detail-minimal-settings').forEach(page=>{ page.scrollTop = 0; });
-      // Select Summary directly; no delayed pager reset can race a pill tap.
+    if(_detailVerticalScrolled){
+      if(inner)inner.scrollTop = 0;
+      pager?.querySelectorAll('.detail-page,.detail-minimal-settings').forEach(page=>{ page.scrollTop = 0; });
+      _detailVerticalScrolled = false;
+    }
+    if(pager && _detailPagerScrolled){
       scrollDetailToNav('summary','instant');
     }
   }
-  renderDetailTabs();
-  updateDetailPagerDots();
+  if(deferInactive){
+    if(typeof afterSheetEntry === 'function'){
+      afterSheetEntry('detail-sheet',()=>scheduleDetailWarmHydration(openToken));
+    }else{
+      scheduleDetailWarmHydration(openToken);
+    }
+  }
 }
 
 function detailDisplayRecord(saved, draft){
@@ -267,6 +445,7 @@ function openDetailUnsaved(index, draft){
   if(!saved || !draft)return false;
   openDetail(index);
   const original = typeof currentDetailTune === 'function' ? currentDetailTune() : detailTuneOriginal;
+  invalidateDetailHydration();
   const display = detailDisplayRecord(saved, draft);
   paintDetailFields(display);
   paintDetailChrome(display);
@@ -277,6 +456,7 @@ function openDetailUnsaved(index, draft){
 
 function openDetailUnsavedCreate(draft){
   if(!draft || !String(draft.name || '').trim())return false;
+  invalidateDetailHydration();
   const inner = getSheetInner('detail-sheet');
   if(inner?.contains(document.activeElement))document.activeElement.blur();
   inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open','tune-dirty');
@@ -342,10 +522,18 @@ function selectedEmojiBgColor(containerId){
 function renderEmojiBgSwatches(containerId,selected = ''){
   const wrap = $(containerId);
   if(!wrap)return;
+  const current = normalizeEmojiBgColor(selected);
+  if(wrap.dataset.swatchesBuilt === '1'){
+    wrap.querySelectorAll('.emoji-bg-swatch').forEach(el=>{
+      const active = (el.dataset.emojiBg || '') === current;
+      el.classList.toggle('on',active);
+      el.setAttribute('aria-pressed',active ? 'true' : 'false');
+    });
+    return;
+  }
   const tokens = typeof EMOJI_BG_COLOR_TOKENS !== 'undefined'
     ? EMOJI_BG_COLOR_TOKENS
     : ['teal','amber','red','purple','blue','green'];
-  const current = normalizeEmojiBgColor(selected);
   const chips = [
     `<button type="button" class="emoji-bg-swatch none${current === '' ? ' on' : ''}" data-emoji-bg="" title="none" aria-label="no emoji background" aria-pressed="${current === '' ? 'true' : 'false'}"><i class="ti ti-slash" aria-hidden="true"></i></button>`,
     ...tokens.map(token=>{
@@ -354,6 +542,7 @@ function renderEmojiBgSwatches(containerId,selected = ''){
     })
   ];
   wrap.innerHTML = chips.join('');
+  wrap.dataset.swatchesBuilt = '1';
   if(wrap.dataset.bound !== '1'){
     wrap.dataset.bound = '1';
     wrap.addEventListener('click',e=>{

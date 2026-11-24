@@ -329,6 +329,12 @@ html{overscroll-behavior-y:none;}
   position:relative;overflow:hidden;border-radius:var(--card-radius);
   touch-action:pan-y;
 }
+/* Estimate offscreen rows unless a refresh must restore an exact reading
+   position. In that case the heights above the anchor must already be final. */
+#list:not(.preserve-row-heights) > .swipe-row:not([data-swipe-open]):not(.agenda-drag-ready):not(.is-agenda-dragging){
+  content-visibility:auto;
+  contain-intrinsic-size:auto 96px;
+}
 /* Collapsed at rest (width:0). Inline width during swipe still reveals actions;
    without this, content-sized actions sit under the card and peek on fast scroll. */
 .swipe-actions{

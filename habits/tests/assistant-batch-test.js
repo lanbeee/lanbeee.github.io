@@ -77,7 +77,7 @@ async function launchBrowser(){
     return {
       max:Number(input.maxLength),
       kept:input.value.length,
-      height:parseFloat(input.style.height || '0')
+      height:input.getBoundingClientRect().height
     };
   }, CALENDAR);
   assert(composer.max >= CALENDAR.length, 'composer max is at least the calendar paste (' + composer.max + ')');

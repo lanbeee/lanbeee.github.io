@@ -2450,6 +2450,7 @@ function assistantFocusUndo(snapshot){
 function assistantFocusPreviewReminders(session, hid){
   const staged = assistantFocusReminderPatch(session);
   if(!Object.keys(staged.patch).length)return;
+  if(typeof ensureDetailHydrated === 'function')ensureDetailHydrated('fields');
   const owner = `item:${hid}`;
   Object.entries(staged.patch).forEach(([key, value]) => {
     const edge = document.querySelector(`select[data-reminder-owner="${CSS.escape(owner)}"][data-reminder-edge="${CSS.escape(key)}"]`);

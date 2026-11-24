@@ -1007,6 +1007,9 @@ restoreHabitTimer();
 plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
 plannerPerfMark('app-first-render-returned');
+// Prime resting keyboard/viewport CSS variables behind the launch cover so the
+// very first sheet open after launch never pays a full-document style recalc.
+if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
 if(typeof startWeatherLifecycle === 'function')setTimeout(startWeatherLifecycle,0);
 // Pre-homeCityCountry installs: resolve the home city's country once so the
 // 'auto' temperature unit can infer. Deferred: never competes with first

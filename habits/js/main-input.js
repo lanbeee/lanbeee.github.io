@@ -76,9 +76,11 @@ function bindCollapseAccordion(rootSelector, exclusive){
 const resetAboutSheetState = bindCollapseAccordion('#about-sheet', true);
 const resetPrivacySheetState = bindCollapseAccordion('#privacy-sheet', true);
 
-$('open-about').addEventListener('click',()=>{
+const handleOpenAbout = ()=>{
   if(typeof openSettingsSheet === 'function')openSettingsSheet();
-});
+};
+if(typeof bindTap === 'function')bindTap($('open-about'),handleOpenAbout,{immediateTouch:true});
+else $('open-about').addEventListener('click',handleOpenAbout);
 $('settings-open-about')?.addEventListener('click',()=>{
   resetAboutSheetState();
   openSheet('about-sheet');
@@ -1035,6 +1037,7 @@ document.querySelectorAll('.settings-collapse-head').forEach(head=>{
     const body = $(head.dataset.collapseTarget);
     if(!body)return;
     const opening = body.hidden;
+    if(opening && typeof ensureSettingsSectionHydrated === 'function')ensureSettingsSectionHydrated(body.id);
     body.hidden = !opening;
     head.setAttribute('aria-expanded',String(opening));
   });
@@ -1121,7 +1124,8 @@ function openRememberedCalendar(){
   if(view === 'week' && typeof openWeekView === 'function')openWeekView();
   else openCalendarOverview({range:view === 'month' ? 'month' : 'recent'});
 }
-$('open-overview').addEventListener('click',openRememberedCalendar);
+if(typeof bindTap === 'function')bindTap($('open-overview'),()=>openRememberedCalendar(),{immediateTouch:true});
+else $('open-overview').addEventListener('click',openRememberedCalendar);
 bindOverviewScrollGuards();
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-head-close')?.addEventListener('click',()=>closeSheet('overview-sheet'));

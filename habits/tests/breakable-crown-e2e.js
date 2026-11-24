@@ -190,6 +190,26 @@ function manualLog(minutes, tsOffset = 0){
     assert(info.crownCalendar === '0', `A: calendar=0, got ${info.crownCalendar}`);
     assert(info.labelText === '30/90m', `A: label "30/90m", got "${info.labelText}"`);
     assert(info.ariaNow === '30', `A: aria-valuenow=30, got ${info.ariaNow}`);
+    const crownCanvas = page.locator('#list .breakable-crown .crown-canvas').first();
+    const originalWidth = await crownCanvas.evaluate(canvas=>canvas.width);
+    await page.evaluate(()=>{
+      const original = window.drawCrownRidges;
+      window.crownResizeDraws = 0;
+      window.drawCrownRidges = (canvas,...args)=>{
+        if(canvas?.closest('#list .breakable-crown'))window.crownResizeDraws++;
+        return original(canvas,...args);
+      };
+      window.restoreCrownDraw = ()=>{window.drawCrownRidges = original;};
+    });
+    await page.setViewportSize({width:390,height:620});
+    const heightDraws = await page.evaluate(()=>new Promise(resolve=>{
+      requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(window.crownResizeDraws)));
+    }));
+    assert(heightDraws === 0, 'A: a height-only keyboard resize does not redraw Home crowns');
+    await page.setViewportSize({width:448,height:620});
+    await page.waitForFunction(width=>document.querySelector('#list .breakable-crown .crown-canvas').width > width,originalWidth);
+    await page.evaluate(()=>window.restoreCrownDraw());
+    await page.setViewportSize({width:390,height:844});
     console.log('  ok A — crown dial renders correctly');
   }
 

@@ -228,17 +228,17 @@ function onCalendarPdfSelectNone(){
   refreshCalendarPdfSelectionUI();
 }
 
-function renderCalendarImportControls(){
-  if(typeof renderCalendarDuplicateReview === 'function')renderCalendarDuplicateReview();
+function renderCalendarImportControls(items = load()){
+  const settings = sortSettings || loadSortSettings();
+  if(typeof renderCalendarDuplicateReview === 'function')renderCalendarDuplicateReview(items,settings);
   // Keep a user's chosen range while settings re-render.
   try{calendarIcsDateRange();}catch(_){}
   const select = $('calendar-credit-habit');
   if(!select)return;
-  const settings = sortSettings || loadSortSettings();
   const selected = settings.calendarCreditHabitId || '';
   // Keepup/reduce with a duration — not only already-breakable — so Work shows
   // up even if the breakable toggle was never flipped on.
-  const habits = load().filter(h=>h && (h.type === 'keepup' || h.type === 'reduce')
+  const habits = items.filter(h=>h && (h.type === 'keepup' || h.type === 'reduce')
     && !isEventItem(h) && Number(h.durationMinutes) > 0);
   const options = [`<option value="">none</option>`].concat(
     habits.map(h=>{
@@ -258,7 +258,7 @@ function renderCalendarImportControls(){
     const mode = normalizeCalendarAllDayMode(settings.calendarAllDayMode);
     allDaySelect.value = mode;
   }
-  const imported = load().filter(h=>h && (h.source === 'pdf' || h.source === 'ics')).length;
+  const imported = items.filter(h=>h && (h.source === 'pdf' || h.source === 'ics')).length;
   const status = $('calendar-pdf-status');
   if(status && !pendingCalendarEvents){
     status.textContent = imported

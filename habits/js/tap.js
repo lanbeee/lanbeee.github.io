@@ -13,6 +13,33 @@ const TAP_MOVE_PX = 8;
 const TAP_HOLD_MS = 650;
 const TAP_RECOVER_MS = 60;
 const TAP_PAN_IGNORE_MS = 500;
+const TAP_GHOST_CLICK_MS = 400;
+const TAP_GHOST_CLICK_PX = 28;
+
+// When a touch tap activates immediately on pointerup, Chromium still
+// synthesizes a trailing click ~15 ms later at the same coordinates. If the
+// tap opened a new full-screen sheet, that ghost click would land on a control
+// inside the new sheet (not the original button). Swallow that one trailing
+// trusted click at the same spot; any new physical pointerdown clears it.
+let _tapGhostClick = null;
+let _tapGhostBound = false;
+function armTapGhostClickGuard(x, y){
+  _tapGhostClick = {x, y, until:Date.now() + TAP_GHOST_CLICK_MS};
+  if(_tapGhostBound)return;
+  _tapGhostBound = true;
+  document.addEventListener('pointerdown',()=>{ _tapGhostClick = null; },true);
+  document.addEventListener('click',e=>{
+    const g = _tapGhostClick;
+    if(!g)return;
+    if(Date.now() > g.until){ _tapGhostClick = null; return; }
+    if(!e.isTrusted || e.detail === 0)return;
+    if(Math.hypot(e.clientX - g.x, e.clientY - g.y) <= TAP_GHOST_CLICK_PX){
+      _tapGhostClick = null;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  },true);
+}
 
 function tapScrollerSnapshot(fromEl, extraEls){
   const scrollers = [];
@@ -97,6 +124,9 @@ function bindTap(el, activate, opts){
     }
     activate(event);
   }
+  function fireRecoveredTap(tap,x = tap.x,y = tap.y){
+    fire({target:tap.target,type:'click',clientX:x,clientY:y,preventDefault(){},stopPropagation(){}},tap.tapId);
+  }
   function recover(tap){
     recovery = tap;
     clearTimeout(recoveryTimer);
@@ -107,7 +137,7 @@ function bindTap(el, activate, opts){
       clearRecovery();
       if(!el.isConnected || Date.now() < ignoreUntil)return;
       if(tapIsPan(tap, null, moveLimit, holdMs)){rejectPan();return;}
-      fire({target:tap.target, type:'click'}, tap.tapId);
+      fireRecoveredTap(tap);
     }, TAP_RECOVER_MS);
   }
 
@@ -173,6 +203,16 @@ function bindTap(el, activate, opts){
     tap.endTime = Date.now();
     if(tapIsPan(tap, e, moveLimit, holdMs)){ rejectPan(); return; }
     pointer = null;
+    if(e.pointerType === 'touch' && opts.immediateTouch){
+      // Activate immediately on touch release instead of waiting 15-30 ms for
+      // the synthesized click; arm the ghost-click guard so the trailing click
+      // cannot land on a newly opened sheet or double-fire.
+      clearRecovery();
+      if(tap.cleanup)tap.cleanup();
+      armTapGhostClickGuard(e.clientX,e.clientY);
+      fireRecoveredTap(tap,e.clientX,e.clientY);
+      return;
+    }
     recover(tap);
   });
   el.addEventListener('pointercancel', e=>{
@@ -188,6 +228,8 @@ function bindTap(el, activate, opts){
     if(ignored(e))return;
     e.preventDefault();
     e.stopPropagation();
+    // Keyboard and assistive technology clicks have no pointer tap to consume.
+    if(e.isTrusted && e.detail === 0){ fire(e,null); return; }
     if(Date.now() < ignoreUntil)return;
     if(Number(el.dataset && el.dataset.ignoreClickUntil || 0) > Date.now())return;
     if(recovery){

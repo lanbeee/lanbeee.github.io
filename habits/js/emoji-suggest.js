@@ -599,7 +599,8 @@ function updateEmojiPreview(){
   renderPreviewTile('ting-emoji-preview','ting-emoji','ting-emoji-bg',addType);
   let detailType = 'keepup';
   if(typeof detailIdx === 'number' && typeof load === 'function'){
-    const h = (load() || [])[detailIdx];
+    const list = typeof loadReadonly === 'function' ? loadReadonly() : load();
+    const h = (list || [])[detailIdx];
     if(h)detailType = isEventItem(h)?'event':h.type;
   }
   renderPreviewTile('detail-emoji-preview','detail-emoji','detail-emoji-bg',detailType);
@@ -1010,10 +1011,12 @@ function setupDetailMarkMenu(){
       const picker = _emojiPickers.get('detail-emoji');
       // Rebuilding the grid on every item switch costs layout passes for a
       // picker that is usually folded away; opening it refreshes anyway.
-      if(picker && $('detail-appearance-disclosure')?.open){picker.search.value = '';refreshEmojiPicker(picker);}
-      updateEmojiPreview();
+      const appearanceOpen = Boolean($('detail-appearance-disclosure')?.open);
+      if(picker && appearanceOpen){picker.search.value = '';refreshEmojiPicker(picker);}
+      if(appearanceOpen)updateEmojiPreview();
       const mark = document.getElementById('detail-mark');
-      const h = typeof load === 'function' ? load()[i] : null;
+      const list = typeof loadReadonly === 'function' ? loadReadonly() : (typeof load === 'function' ? load() : null);
+      const h = list ? list[i] : null;
       if(mark && h){
         mark.setAttribute('aria-label', isEventItem(h) ? `edit icon for ${h.name}` : h.type === 'task'
           ? `complete or edit emoji for ${h.name}`

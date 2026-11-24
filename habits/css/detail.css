@@ -243,6 +243,12 @@
 .detail-page-tab[data-detail-pinned].on{background:var(--bg3);}
 .detail-page-tab:active{transform:scale(0.96);}
 .detail-page-nav:has(.detail-dots[hidden]){display:none;}
+/* Off-screen horizontal pager tabs stay in flow for swipe geometry, while
+   letting Chromium skip their layout and paint on the initial Summary open. */
+body[data-pane-count="1"] #detail-sheet:not(.minimal-detail) .detail-pager > .detail-page:not(.is-active){
+  content-visibility:auto;
+  contain-intrinsic-size:auto 500px;
+}
 /* Only the pager/search results scroll. Footer space belongs to the layout,
    so it cannot cover a field, including when a keyboard reduces the height. */
 body .detail-sheet{

@@ -731,12 +731,15 @@ function detailSummaryGroups(item,summary,facts,items){
   return groups;
 }
 
+let _detailSummaryCacheKey = '';
+let _detailSummaryCacheRaw;
 function renderDetailSummaryOverview(held = null,items = null){
   const host = $('detail-summary');
   if(!host)return;
   const item = held || detailSummaryRecord();
-  if(!item){host.replaceChildren();return;}
+  if(!item){_detailSummaryCacheKey = '';host.replaceChildren();return;}
   if(typeof assistantFocusItemSummary !== 'function'){
+    _detailSummaryCacheKey = '';
     host.innerHTML = '<p class="focus-note">Loading summary…</p>';
     if(!detailSummaryLoadPending && typeof tingsLoadAssistant === 'function'){
       detailSummaryLoadPending = true;
@@ -748,6 +751,24 @@ function renderDetailSummaryOverview(held = null,items = null){
     }
     return;
   }
+  const isSavedRecord = Boolean(item.hid && !detailUnsavedCreate && (!held || (items && detailIdx != null && held === items[detailIdx])));
+  let raw;
+  let cacheKey = '';
+  if(isSavedRecord){
+    try{ raw = localStorage.getItem(KEY); }catch(_){}
+    const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
+    const weekSig = (typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek)
+      ? (_homeRenderedWeek.generatedAt || _homeRenderedWeek.days?.length || 1) : 0;
+    cacheKey = JSON.stringify([
+      item.hid,rev,Math.floor(Date.now() / 60000),weekSig,
+      typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode),
+      Boolean(sortSettings?.use24HourTime),
+      Boolean(typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === detailIdx)
+    ]);
+    if(raw !== undefined && raw === _detailSummaryCacheRaw && cacheKey === _detailSummaryCacheKey && host.childElementCount > 0){
+      return;
+    }
+  }
   // The paint's saved list feeds name lookups without another load().
   const summary = assistantFocusItemSummary(item,items ? {items} : null);
   const facts = detailSummaryFacts(item,items);
@@ -758,6 +779,8 @@ function renderDetailSummaryOverview(held = null,items = null){
   }
   if(activity)parts.push(activity);
   host.innerHTML = parts.join('');
+  _detailSummaryCacheKey = isSavedRecord ? cacheKey : '';
+  _detailSummaryCacheRaw = isSavedRecord ? raw : undefined;
 }
 
 // Group rows read "label  content" on one grid — the label column replaces

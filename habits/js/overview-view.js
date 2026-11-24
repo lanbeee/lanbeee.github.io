@@ -41,11 +41,13 @@ function overviewLocationChoices(data){
 }
 
 function settleCalendarFilterChoices(library){
-  const nextTopic = pruneFilterValue(overviewTopicFilter, overviewTopicChoices(library), {caseInsensitive:true});
+  const nextTopic = overviewTopicFilter === 'all' ? 'all'
+    : pruneFilterValue(overviewTopicFilter, overviewTopicChoices(library), {caseInsensitive:true});
   if(!filterValuesEqual(nextTopic, overviewTopicFilter)){
     setSharedFilter('topic', nextTopic);
   }
-  const nextLoc = pruneFilterValue(overviewLocationFilter, overviewLocationChoices(library));
+  const nextLoc = overviewLocationFilter === 'all' ? 'all'
+    : pruneFilterValue(overviewLocationFilter, overviewLocationChoices(library));
   if(!filterValuesEqual(nextLoc, overviewLocationFilter)){
     setSharedFilter('location', nextLoc);
   }
@@ -76,6 +78,10 @@ const _overviewCellDateFmt = typeof Intl !== 'undefined'
   ? new Intl.DateTimeFormat(undefined,{weekday:'long',month:'long',day:'numeric'}) : null;
 const _overviewShortDateFmt = typeof Intl !== 'undefined'
   ? new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric'}) : null;
+function calendarDayLabel(date){
+  return _overviewCellDateFmt ? _overviewCellDateFmt.format(date)
+    : date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+}
 let _overviewFilterCacheKey = '';
 let _overviewFilterRaw;
 let _overviewFilterSheetBuilt = false;
@@ -239,16 +245,21 @@ function buildDayTally(data,included,rangeBounds = null){
     toneCounts[entry.tone] = (toneCounts[entry.tone] || 0) + 1;
   };
   data.forEach(h=>{
-    const toneByDay = logToneMap(h);
-    normalizeLogs(h.logs).forEach(log=>{
+    const rawLogs = Array.isArray(h.logs) ? h.logs : [];
+    let toneByDay = null;
+    for(let i = 0;i < rawLogs.length;i += 1){
+      const log = rawLogs[i];
       const ts = logTime(log);
-      const isPlan = isPlanLog(log);
+      if(!ts || !included(ts))continue;
+      const isPlan = isPlanLog(log) || (typeof log === 'number' && ts > Date.now());
       const key = dateKey(ts);
-      const tone = isPlan ? 'plan' : toneByDay.get(key) || entryTone(h.type);
+      if(!isPlan && toneByDay === null)toneByDay = logToneMap(h);
+      const tone = isPlan ? 'plan' : (toneByDay.get(key) || entryTone(h.type));
       const timed = isPlan && typeof planTimed === 'function' ? planTimed(log) : false;
       addEntry(ts,{hid:h.hid,name:h.name,type:h.type,tone,planned:isPlan,kind:isPlan ? 'plan' : 'actual',ts,timed});
-    });
+    }
     habitPlanMarkers(h).forEach(marker=>{
+      if(marker.ts == null || !included(marker.ts))return;
       addEntry(marker.ts,{hid:h.hid,name:h.name,type:h.type,tone:marker.tone,planned:true,kind:marker.kind,scheduled:true,ts:marker.ts,timed:Boolean(marker.timed)});
     });
     if(rangeBounds){
@@ -292,7 +303,7 @@ function cellMarkup(key,date,entries,extraSpans = '',opts = {}){
   ].filter(Boolean).join(' ');
   const dayAttr = opts.entryDay ? 'data-entry-day' : 'data-log-day';
   const eligible = opts.eligible instanceof Set && !entries.length && opts.eligible.has(key) ? 'eligible' : '';
-  const dateLabel = _overviewCellDateFmt ? _overviewCellDateFmt.format(date) : date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  const dateLabel = calendarDayLabel(date);
   const itemLabel = entries.length ? `, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}` : ', no items';
   return `<button type="button" class="cal-day ${cls}${eligible ? ` ${eligible}` : ''}" ${dayAttr}="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}${more}</span></button>`;
 }
@@ -499,8 +510,13 @@ function renderOverviewLists(data,countForHabit,scopeNote = '',options = {}){
   }
   const upcoming = Array.isArray(options.upcoming) ? options.upcoming : [];
   _overviewMonthCache = {data,countForHabit,scopeNote,options};
-  const allItems = load();
+  const allItems = Array.isArray(options.library) ? options.library : load();
   const indices = new Map(allItems.map((h,index)=>[h.hid || h.name,index]));
+  const byId = new Map();
+  data.forEach(item=>{
+    if(item.hid)byId.set(item.hid,item);
+    if(item.name && !byId.has(item.name))byId.set(item.name,item);
+  });
   const rows = data.map(h=>({h,index:indices.get(h.hid || h.name),count:countForHabit(h),c:habitColors(h)}))
     .filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,5);
 
@@ -508,7 +524,7 @@ function renderOverviewLists(data,countForHabit,scopeNote = '',options = {}){
   if(upcoming.length){
     const limit = _overviewListExpanded ? upcoming.length : 4;
     const upHtml = upcoming.slice(0,limit).map(({key,entry,label})=>{
-      const h = data.find(item=>(entry.hid && item.hid === entry.hid) || item.name === entry.name);
+      const h = (entry.hid && byId.get(entry.hid)) || byId.get(entry.name) || null;
       const c = h ? habitColors(h) : colors(null,null,entry.type);
       const idx = h ? indices.get(h.hid || h.name) : undefined;
       const actionAttr = Number.isInteger(idx) ? `data-open-overview-item="${idx}"` : `data-log-day="${escapeHtml(key)}"`;
@@ -794,15 +810,21 @@ function renderOverviewPaneFilter(cache){
 }
 
 // RENDER: one stretch pane at a time
-function renderOverviewStretchPane(data,cache,capacity){
-  const indices = new Map(load().map((h,index)=>[h.hid || h.name,index]));
+function renderOverviewStretchPane(data,cache,capacity,library = null){
+  const allItems = Array.isArray(library) ? library : load();
+  const indices = new Map(allItems.map((h,index)=>[h.hid || h.name,index]));
+  const byId = new Map();
+  data.forEach(item=>{
+    if(item.hid)byId.set(item.hid,item);
+    if(item.name && !byId.has(item.name))byId.set(item.name,item);
+  });
   const rowHtml = (rows,emptyName,emptyMeta,limit = 4) => {
     if(!rows.length){
       return `<div class="overview-item"><span class="overview-name">${escapeHtml(emptyName)}</span><span class="overview-meta">${escapeHtml(emptyMeta)}</span></div>`;
     }
     const visible = _overviewListExpanded ? rows : rows.slice(0,limit);
     const itemsHtml = visible.map(({key,entry,label})=>{
-      const h = data.find(item=>(entry.hid && item.hid === entry.hid) || item.name === entry.name);
+      const h = (entry.hid && byId.get(entry.hid)) || byId.get(entry.name) || null;
       const c = h ? habitColors(h) : colors(null,null,entry.type);
       const idx = h ? indices.get(h.hid || h.name) : undefined;
       const actionAttr = Number.isInteger(idx) ? `data-open-overview-item="${idx}"` : `data-log-day="${escapeHtml(key)}"`;
@@ -839,7 +861,7 @@ function pickOverviewListPane(lists){
 }
 
 // RENDER: around-today insight + one detail pane
-function renderOverviewStretchLists(data,tally,start,end){
+function renderOverviewStretchLists(data,tally,start,end,library = null){
   if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode)){
     hideOverviewStretchChrome();
     const capacity = overviewRecentOffset === 0 ? overviewWeekCapacity(data) : null;
@@ -856,7 +878,7 @@ function renderOverviewStretchLists(data,tally,start,end){
   _overviewMonthCache = null;
   renderOverviewInsight(capacity);
   renderOverviewPaneFilter(lists);
-  renderOverviewStretchPane(data,lists,capacity);
+  renderOverviewStretchPane(data,lists,capacity,library);
   syncOverviewLegend(true);
 }
 
@@ -919,15 +941,46 @@ function setOverviewMonthNav(showNav,label){
   if(today)today.hidden = overviewRangeFilter === 'recent' ? overviewRecentOffset === 0 : overviewMonthOffset === 0;
 }
 
+let _overviewLastRenderKey = '';
+let _overviewLastRenderRaw;
+let _overviewLastSortRaw;
+let _overviewLastRenderWeek;
 // RENDER: orchestrates full overview sheet render
 function renderOverview(){
-  const library = load();
+  const grid = $('overview-calendar');
+  const filterHost = $('overview-filter');
+  let raw,sortRaw;
+  try{
+    raw = localStorage.getItem(KEY);
+    sortRaw = localStorage.getItem(SORT_SETTINGS_KEY);
+  }catch(_){}
+  const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
+  const week = (typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek) || _overviewWeekSnapshot;
+  const renderKey = JSON.stringify([
+    rev,Math.floor(Date.now() / 60000),overviewRangeFilter,overviewRecentOffset,overviewMonthOffset,
+    overviewListPane,_overviewListExpanded,overviewFilterSelection(),
+    typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode),
+    sortSettings?._weatherContext?.revision,
+    $('calendar-filter-sheet')?.classList.contains('open'),filterSheetQuery('calendar-filter')
+  ]);
+  if(raw !== undefined && raw === _overviewLastRenderRaw && renderKey === _overviewLastRenderKey
+    && sortRaw === _overviewLastSortRaw && week === _overviewLastRenderWeek
+    && grid && grid.childElementCount > 0 && (!filterHost || filterHost.childElementCount > 0)){
+    syncOverviewSelectedDay(dayLogsKey);
+    return;
+  }
+  const library = typeof loadReadonly === 'function' ? loadReadonly() : load();
   settleCalendarFilterChoices(library);
   const allData = library.filter(h=>!isCalendarIgnored(h));
   renderOverviewFilters(allData,library);
-  const data = allData.filter(matchesOverviewFilters);
-  if(overviewRangeFilter === 'recent')renderOverviewRecent(data);
-  else renderOverviewMonth(data,overviewRangeFilter === 'all');
+  const selection = overviewFilterSelection();
+  const data = allData.filter(h=>matchesFilterSelection(h,selection));
+  if(overviewRangeFilter === 'recent')renderOverviewRecent(data,library);
+  else renderOverviewMonth(data,overviewRangeFilter === 'all',library);
+  _overviewLastRenderKey = renderKey;
+  _overviewLastRenderRaw = raw;
+  _overviewLastSortRaw = sortRaw;
+  _overviewLastRenderWeek = week;
   // Rebuild/layout can fire scroll events that falsely arm guards; clear on next tick.
   setTimeout(()=>{
     ['.overview-sheet','.pane-overview','#overview-filter','#overview-pane-filter','#overview-insight','#overview-list']
@@ -941,7 +994,7 @@ function renderOverview(){
 }
 
 // RENDER: 14-day strip centered on today (past 7 · today · next 6)
-function renderOverviewRecent(data){
+function renderOverviewRecent(data,library = null){
   const today = dayStart(Date.now());
   const shift = overviewRecentOffset * 86400000;
   const start = today - OVERVIEW_RECENT_PAST * 86400000 + shift;
@@ -958,7 +1011,7 @@ function renderOverviewRecent(data){
   if(kicker)kicker.textContent = overviewRecentOffset === 0 ? 'Past 7 · next 6' : '2-week view';
   if(hint)hint.textContent = 'Tap any day to review it or add a plan.';
 
-  renderOverviewStretchLists(data,tally,start,end);
+  renderOverviewStretchLists(data,tally,start,end,library);
 }
 
 // PURE: label for the around-today window. `aroundToday` defaults to the
@@ -972,14 +1025,11 @@ function recentRangeLabel(start,end,aroundToday = overviewRecentOffset === 0){
 }
 
 // RENDER: month grid; all-time mode keeps month browsing but lists use full history
-function renderOverviewMonth(data,allTime){
+function renderOverviewMonth(data,allTime,library = null){
   const frame = monthFrame(overviewMonthOffset);
   const startTs = frame.first.getTime();
-  const endTs = frame.last.getTime() + 86400000;
-  const gridTally = buildDayTally(data,ts=>{
-    const d = new Date(ts);
-    return d.getFullYear() === frame.year && d.getMonth() === frame.month;
-  },{startTs,endTs});
+  const endTs = new Date(frame.year,frame.month + 1,1).getTime();
+  const gridTally = buildDayTally(data,ts=>ts >= startTs && ts < endTs,{startTs,endTs});
   const agendaAdded = mergeAgendaIntoTally(gridTally,weekAgendaByDay(cachedOverviewWeek(data),data),startTs,endTs);
   setOverviewMonthNav(true,frame.label);
 
@@ -1001,10 +1051,7 @@ function renderOverviewMonth(data,allTime){
 
   const countForHabit = allTime
     ? h=>actualLogs(h.logs).length
-    : h=>actualLogs(h.logs).filter(ts=>{
-      const d = new Date(ts);
-      return d.getFullYear() === frame.year && d.getMonth() === frame.month;
-    }).length;
+    : h=>actualLogs(h.logs).filter(ts=>ts >= startTs && ts < endTs).length;
   const monthUpcoming = [];
   if(!allTime){
     const today = todayIso();
@@ -1024,7 +1071,8 @@ function renderOverviewMonth(data,allTime){
   renderOverviewLists(data,countForHabit,allTime ? ' · all time' : '',{
     upcoming:monthUpcoming,
     monthLabel:frame.label,
-    hasAgenda:agendaAdded > 0
+    hasAgenda:agendaAdded > 0,
+    library
   });
 }
 

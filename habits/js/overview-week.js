@@ -645,7 +645,7 @@ function weekViewLayoutFor(rows,dayKey,dayBase,settings,opts){
 // PURE row adapter: one planner day → renderable events / busy / travel /
 // markers / unplaced. Works on copies; never mutates the cached week.
 // ─────────────────────────────────────────────────────────────────────────
-function weekCalendarRows(day,data,settings,topicMap,visibleHids){
+function weekCalendarRows(day,data,settings,topicMap,visibleHids,precomputed = null){
   const out = {events:[],busy:[],travel:[],markers:[],unplaced:[]};
   if(!day || !Number.isFinite(day.dayBase))return out;
   const now = Date.now();
@@ -817,7 +817,10 @@ function weekCalendarRows(day,data,settings,topicMap,visibleHids){
   // returns timed 'scheduled' markers — those are grid rows already, so only
   // untimed kinds go on the strip. A due marker may coexist with a timed
   // session for the same habit: they say different things.
-  if(typeof habitPlanMarkers === 'function'){
+  if(precomputed && precomputed.markersByDay){
+    const list = precomputed.markersByDay.get(dayKey);
+    if(list)out.markers = list.slice();
+  }else if(typeof habitPlanMarkers === 'function'){
     data.forEach(h=>{
       if(!h || (visibleHids && !visibleHids.has(h.hid)))return;
       habitPlanMarkers(h).forEach(marker=>{
@@ -1341,13 +1344,14 @@ function weekViewFillInitialWeek(data,gen){
 // Fast 14-day projection on the dedicated preview worker, so days past the
 // mounted week still have an agenda and Home's planner is left alone.
 // A newer request invalidates an older one; the shared worker is never used.
-function weekViewHorizonKey(data){
-  return weekViewCacheKey(`${dateKey(Date.now())}|horizon`,'fast',homePlannerDirtyKey(data));
+function weekViewHorizonKey(data,dirtyKey = homePlannerDirtyKey(data)){
+  return weekViewCacheKey(`${dateKey(Date.now())}|horizon`,'fast',dirtyKey);
 }
 
 function weekViewEnsureHorizonWeek(data,gen){
   const key = weekViewHorizonKey(data);
   if(_weekViewCache.has(key))return null;
+  if(!weekPreviewWorkerAvailable())return Promise.reject(new Error('preview planner unavailable'));
   if(_weekViewPending.has(key))return _weekViewPending.get(key);
   const seq = ++_weekHorizonSeq;
   const promise = weekPreviewRequest(data,sortSettings,WEEK_VIEW_HORIZON,'fast',homePlannerDirtyKey(data))
@@ -1418,11 +1422,16 @@ let _weekViewRefreshTimer = null;
 const WEEK_VIEW_PREFS_KEY = 'tings_week_view_v1';
 
 // A worker result must not replace the native scroller under a finger or
-// during momentum. Keep the result cached and paint it after scrolling ends.
+// during momentum, nor tear the sheet's opening slide animation. Keep the
+// result cached and paint it right after entry/scrolling ends.
 function weekViewRequestRefresh(){
   clearTimeout(_weekViewRefreshTimer);
   _weekViewRefreshTimer = null;
   if(!weekSheetOpen())return;
+  if(typeof isSheetEntering === 'function' && isSheetEntering('week-sheet')){
+    afterSheetEntry('week-sheet',()=>weekViewRequestRefresh());
+    return;
+  }
   if(_weekViewTouchActive || Date.now() - _weekViewScrollAt < 180){
     _weekViewRefreshTimer = setTimeout(weekViewRequestRefresh,180);
     return;
@@ -1457,14 +1466,18 @@ function weekViewLayoutForWidth(width){
 }
 
 function weekViewDesktopLayout(){
+  // A closed phone sheet skips layout. Reading its width forces the browser
+  // to lay out that hidden subtree just before replacing the board.
+  if(!weekSheetOpen())return weekViewLayoutForWidth(window.innerWidth);
   const sheet = document.querySelector('#week-sheet .week-view-sheet');
   return weekViewLayoutForWidth((sheet && sheet.clientWidth) || window.innerWidth);
 }
 
 function weekViewVisibleHids(data){
   const set = new Set();
+  const selection = overviewFilterSelection();
   data.forEach(h=>{
-    if(h && h.hid && typeof matchesOverviewFilters === 'function' && matchesOverviewFilters(h))set.add(h.hid);
+    if(h && h.hid && !isCalendarIgnored(h) && matchesFilterSelection(h,selection))set.add(h.hid);
   });
   return set;
 }
@@ -1605,7 +1618,7 @@ function weekViewDaysHeadHtml(days,todayKey,selectedKey,layoutByDay,visibleCount
     const layout = layoutByDay && layoutByDay.get(day.dayKey);
     const load = weekViewHeadSummary(layout,wide);
     const hot = Boolean(layout && (layout.ratio >= 0.85 || layout.status === 'tight' || layout.status === 'overlap'));
-    const full = d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+    const full = calendarDayLabel(d);
     return `<button type="button" class="wv-day-head${day.dayKey === todayKey ? ' is-today' : ''}" data-wv-dayhead="${escapeHtml(day.dayKey)}" aria-label="${escapeHtml(load ? `${full}, ${load}, open day details` : `${full}, open day details`)}">`
       + `<span>${escapeHtml(WEEKDAY_LABELS[d.getDay()] || '')}</span><b>${d.getDate()}</b>`
       + (load ? `<em class="wv-load${hot ? ' is-hot' : ''}">${escapeHtml(load)}</em>` : '')
@@ -1853,7 +1866,7 @@ function weekViewPaintSelection(){
   }else if(next)host.insertAdjacentHTML('beforeend',next);
 }
 
-function weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount,preGrid = null){
+function weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount,preGrid = null,eagerRange = null){
   const columns = preGrid ? preGrid.template : weekViewGridColumns(days);
   const widthStyle = preGrid ? ` style="width:${preGrid.widthPx}"` : '';
   const desktop = _weekViewLayout === 'desktop';
@@ -1869,9 +1882,18 @@ function weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,vis
     : weekViewGutterHtml(1);
   const nowtag = nowMin == null ? ''
     : `<span class="wv-nowtag" data-wv-nowtag style="top:${listMode ? `${axis.timeToY(nowMin)}px` : `calc(${nowMin} * var(--wv-hour-h) / 60)`};">${escapeHtml(weekViewRailClock(nowMin))}</span>`;
-  const cols = listMode
-    ? days.map(day=>weekViewAlignedColumnHtml(day,rowsByDay.get(day.dayKey),axis,todayKey,visibleCount)).join('')
-    : days.map(day=>weekViewDayColHtml(day,rowsByDay.get(day.dayKey),todayKey,weekViewDaySel,true)).join('');
+  const cols = days.map((day,idx)=>{
+    if(eagerRange && (idx < eagerRange.start || idx >= eagerRange.end)){
+      const isToday = day.dayKey === todayKey;
+      if(listMode){
+        return `<div class="wv-col is-aligned${isToday ? ' is-today' : ''}" data-wv-daycol="${day.dayKey}" data-wv-deferred="1"><div class="wv-list" style="height:${axis.height}px"></div></div>`;
+      }
+      return `<div class="wv-col${isToday ? ' is-today' : ''}" data-wv-daycol="${escapeHtml(day.dayKey)}" data-wv-deferred="1"></div>`;
+    }
+    return listMode
+      ? weekViewAlignedColumnHtml(day,rowsByDay.get(day.dayKey),axis,todayKey,visibleCount)
+      : weekViewDayColHtml(day,rowsByDay.get(day.dayKey),todayKey,weekViewDaySel,true);
+  }).join('');
   const trackHeight = listMode ? `${axis.height}px` : 'calc(1440 * var(--wv-hour-h) / 60)';
   // Axis-locked scrolling: the outer scroller pans the day strip (x only) and
   // the inner one scrolls the clock (y only), so the browser locks every
@@ -1881,7 +1903,46 @@ function weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,vis
   return `<div class="wv-clock"><div class="wv-scroller" data-visible="${visibleCount}"><div class="wv-yscroll"${widthStyle}><div class="wv-board${listMode && !flat ? ' is-aligned-grid' : ''}${flat ? ' is-flat' : ''}" data-visible="${visibleCount}" data-span="${days.length}"${widthStyle}><div class="wv-board-head"><div class="wv-corner" aria-hidden="true"></div><div class="wv-board-head-main">${head}${markers}</div></div><div class="wv-cols" style="height:${trackHeight};grid-template-columns:${columns}">${cols}</div></div></div></div><div class="wv-rail" aria-hidden="true"><div class="wv-gutter" style="height:${trackHeight}">${gutter}</div></div><div class="wv-nowrail" aria-hidden="true"><div class="wv-nowtrack" style="height:${trackHeight}">${nowtag}</div></div><div class="wv-corner-cover" aria-hidden="true"></div></div>`;
 }
 
-function renderWeekView(){
+let _weekViewBoardCache = null;
+let _weekViewDeferredHydrator = null;
+
+function ensureWeekViewColsHydrated(){
+  if(typeof _weekViewDeferredHydrator !== 'function')return;
+  const fn = _weekViewDeferredHydrator;
+  _weekViewDeferredHydrator = null;
+  fn();
+}
+
+function weekViewWeekSig(week){
+  if(!week || !Array.isArray(week.days))return '0';
+  return `${week.generatedAt || 0}:${week.days.length}:${week.days[0]?.dayBase || 0}`;
+}
+
+function weekViewBuildMarkersByDay(data,topicMap,settings,visibleHids){
+  const map = new Map();
+  if(typeof habitPlanMarkers !== 'function')return map;
+  for(let i = 0;i < data.length;i += 1){
+    const h = data[i];
+    if(!h || (visibleHids && !visibleHids.has(h.hid)))continue;
+    const markers = habitPlanMarkers(h);
+    if(!markers.length)continue;
+    let token = null;
+    for(let j = 0;j < markers.length;j += 1){
+      const marker = markers[j];
+      if(marker.kind === 'scheduled')continue;
+      const dayKey = dateKey(marker.ts);
+      const id = `mk|${h.hid}|${marker.kind}|${marker.ts}`;
+      let list = map.get(dayKey);
+      if(!list){ list = []; map.set(dayKey,list); }
+      if(list.some(m=>m.id === id))continue;
+      if(token === null)token = weekViewColorGroup(h,topicMap,settings).token;
+      list.push({id,hid:h.hid,i,kind:marker.kind,ts:marker.ts,title:h.name || 'habit',token});
+    }
+  }
+  return map;
+}
+
+function renderWeekView(opts = {}){
   const body = $('week-view-body');
   const markersEl = $('week-view-markers');
   if(!body)return;
@@ -1897,7 +1958,7 @@ function renderWeekView(){
       ? _weekViewAlignTarget : prior.scrollLeft;
     _weekViewScrollTop = prior.scrollTop;
   }
-  const data = typeof load === 'function' ? load() : [];
+  const data = typeof loadReadonly === 'function' ? loadReadonly() : (typeof load === 'function' ? load() : []);
   const settings = sortSettings || loadSortSettings();
   settleCalendarFilterChoices(data);
   const dirtyKey = homePlannerDirtyKey(data);
@@ -1912,6 +1973,7 @@ function renderWeekView(){
     _weekViewAnchor = 0;
     _weekViewSpan = WEEK_VIEW_HORIZON;
     _weekViewCache.clear();
+    _weekViewBoardCache = null;
     _weekViewError = '';
     weekViewGen += 1;
     _weekHorizonSeq += 1;
@@ -1922,6 +1984,7 @@ function renderWeekView(){
     // Edits/deletions landed while open: cached weeks and in-flight preview
     // requests are stale; regenerate under a fresh generation.
     _weekViewCache.clear();
+    _weekViewBoardCache = null;
     _weekViewError = '';
     weekViewGen += 1;
     _weekHorizonSeq += 1;
@@ -1941,11 +2004,13 @@ function renderWeekView(){
 
   const gen = weekViewGen;
   const initial = weekViewInitialWeek(data);
-  let horizon = _weekViewCache.get(weekViewHorizonKey(data)) || null;
+  const horizonKey = weekViewHorizonKey(data,dirtyKey);
+  let horizon = _weekViewCache.get(horizonKey) || null;
   let pendingPromise = null;
-  if(!horizon && !_weekViewError)pendingPromise = weekViewEnsureHorizonWeek(data,gen);
-  if(pendingPromise){
-    pendingPromise.then(resolved=>{
+  const requestHorizon = ()=>{
+    const p = weekViewEnsureHorizonWeek(data,gen);
+    if(!p)return null;
+    p.then(resolved=>{
       if(resolved && gen === weekViewGen && weekSheetOpen())weekViewRequestRefresh();
     }).catch(err=>{
       if(!weekSheetOpen() || gen !== weekViewGen)return;
@@ -1953,6 +2018,28 @@ function renderWeekView(){
       _weekViewError = err;
       weekViewRequestRefresh();
     });
+    return p;
+  };
+  let scheduleDeferredHorizon = null;
+  if(!horizon && !_weekViewError){
+    if(opts.deferHorizon && initial){
+      // Defer preview worker startup + structured-clone postMessage until after
+      // the sheet's opening slide so opening never stalls on a cold worker.
+      const deferredGen = gen;
+      scheduleDeferredHorizon = ()=>{
+        const startDeferred = ()=>{
+          if(deferredGen !== weekViewGen || !weekSheetOpen())return;
+          requestHorizon();
+        };
+        if(typeof afterSheetEntry === 'function' && typeof isSheetEntering === 'function' && isSheetEntering('week-sheet')){
+          afterSheetEntry('week-sheet',startDeferred);
+        }else{
+          setTimeout(startDeferred,0);
+        }
+      };
+    }else{
+      pendingPromise = requestHorizon();
+    }
   }
   const loading = !initial && !horizon && Boolean(pendingPromise);
 
@@ -1973,28 +2060,102 @@ function renderWeekView(){
   const focusAttr = ['data-wv-dayhead','data-wv-event','data-wv-busy','data-wv-travel','data-wv-gap','data-wv-marker','data-wv-unplaced'].find(attr=>active && active.hasAttribute(attr));
   const focusValue = focusAttr ? active.getAttribute(focusAttr) : '';
 
-  const rowsByDay = new Map();
-  const layoutByDay = new Map();
-  days.forEach(day=>{
-    const src = weekViewPickSource(day,data,initial,horizon);
-    const rows = weekCalendarRows(src,data,settings,topicMap,visibleHids);
-    rowsByDay.set(day.dayKey,rows);
-    layoutByDay.set(day.dayKey,weekViewLayoutFor(rows,day.dayKey,day.dayBase,settings,null));
-  });
-  _weekViewRowsByDay = rowsByDay;
+  const estimatedW = (prior && prior.clientWidth) || _weekViewLastGeom.width || (desktop ? 0 : Math.min(window.innerWidth || 0, 480));
+  const preGrid = weekViewPrecomputedGrid(estimatedW,visibleCount,days.length);
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  const minuteBucket = Math.floor(Date.now() / 60000);
+  const filterKey = visibleHids ? [...visibleHids].join(',') : '*';
+  const initialSig = weekViewWeekSig(initial);
+  const horizonSig = weekViewWeekSig(horizon);
+  const eagerRange = (opts.deferOffscreenCols && !desktop && visibleCount < days.length)
+    ? { start: Math.max(0, guessStart), end: Math.min(days.length, guessStart + visibleCount + 1) }
+    : null;
+  const boardCacheKey = JSON.stringify([
+    dirtyKey,todayKey,days[0]?.dayKey,days.length,visibleCount,listMode,_weekViewZoom,_weekViewColor,
+    _weekViewLayout,weekViewDaySel,filterKey,minuteBucket,preGrid?.widthPx || '',
+    initialSig,horizonSig,settings.topics,[..._weekViewOpenGaps],eagerRange ? `${eagerRange.start}:${eagerRange.end}` : 'all',
+    doing ? `${doing.hid}:${doing.startedAt}:${doing.targetAt}` : ''
+  ]);
+  // Planner results can share dates and lengths while containing different rows.
+  const cacheHit = _weekViewBoardCache?.key === boardCacheKey
+    && _weekViewBoardCache.initial === initial && _weekViewBoardCache.horizon === horizon
+    && _weekViewBoardCache.data === data;
 
-  _weekViewSharedAxis = null;
-  _weekViewCtx = new Map();
+  let rowsByDay, layoutByDay, axis, boardHtml;
   _weekViewColumnLayouts = new Map();
   _weekViewDetailLayout = null;
+  _weekViewDeferredHydrator = null;
+  if(cacheHit){
+    ({ rowsByDay, layoutByDay, axis, boardHtml } = _weekViewBoardCache);
+    _weekViewCtx = new Map(_weekViewBoardCache.ctxEntries);
+  }else{
+    _weekViewCtx = new Map();
+    rowsByDay = new Map();
+    layoutByDay = new Map();
+    const precomputed = { markersByDay: weekViewBuildMarkersByDay(data,topicMap,settings,visibleHids) };
+    const roughData = data.filter(h=>h && !(typeof isCalendarIgnored === 'function' && isCalendarIgnored(h))
+      && (isLocalAppointment(h) || (isFixedTimedTask(h) && !isTaskDone(h))));
+    days.forEach(day=>{
+      const src = weekViewPickSource(day,roughData,initial,horizon);
+      const rows = weekCalendarRows(src,data,settings,topicMap,visibleHids,precomputed);
+      rowsByDay.set(day.dayKey,rows);
+      layoutByDay.set(day.dayKey,weekViewLayoutFor(rows,day.dayKey,day.dayBase,settings,null));
+    });
+    axis = listMode ? weekViewSharedTimeAxis(days.map(day=>rowsByDay.get(day.dayKey))) : null;
+    boardHtml = weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount,preGrid,eagerRange);
+    _weekViewBoardCache = { key:boardCacheKey, initial, horizon, data, rowsByDay, layoutByDay, axis, boardHtml, ctxEntries:[..._weekViewCtx.entries()], deferredCols:null };
+  }
+  _weekViewRowsByDay = rowsByDay;
+  _weekViewSharedAxis = axis;
+  if(eagerRange){
+    const hydrateGen = gen;
+    const hydrateCache = _weekViewBoardCache;
+    const hydrateDays = days;
+    const hydrateRowsByDay = rowsByDay;
+    const hydrateAxis = axis;
+    const hydrateTodayKey = todayKey;
+    const hydrateListMode = listMode;
+    const hydrateVisibleCount = visibleCount;
+    const hydrateSelectedKey = weekViewDaySel;
+    _weekViewDeferredHydrator = ()=>{
+      if(hydrateGen !== weekViewGen || !weekSheetOpen())return;
+      const deferredEls = body.querySelectorAll('.wv-col[data-wv-deferred="1"]');
+      if(!deferredEls.length)return;
+      const byKey = new Map(hydrateDays.map(d=>[d.dayKey,d]));
+      const cachedMap = hydrateCache && hydrateCache.key === boardCacheKey ? hydrateCache.deferredCols : null;
+      const nextMap = cachedMap || new Map();
+      deferredEls.forEach(el=>{
+        const key = el.dataset.wvDaycol;
+        const day = byKey.get(key);
+        if(!day)return;
+        let html = cachedMap ? cachedMap.get(key) : null;
+        if(html == null){
+          html = hydrateListMode
+            ? weekViewAlignedColumnHtml(day,hydrateRowsByDay.get(key),hydrateAxis,hydrateTodayKey,hydrateVisibleCount)
+            : weekViewDayColHtml(day,hydrateRowsByDay.get(key),hydrateTodayKey,hydrateSelectedKey,true);
+          nextMap.set(key,html);
+        }else{
+          // Ensure _weekViewCtx holds entries for cached deferred columns.
+          const r = hydrateRowsByDay.get(key);
+          if(r){
+            r.events.forEach(ev=>_weekViewCtx.set(ev.id,ev));
+            r.busy.forEach(b=>_weekViewCtx.set(b.id,b));
+            r.travel.forEach(tr=>_weekViewCtx.set(tr.id,tr));
+          }
+        }
+        el.outerHTML = html;
+      });
+      if(hydrateCache && hydrateCache.key === boardCacheKey && !hydrateCache.deferredCols){
+        hydrateCache.deferredCols = nextMap;
+      }
+    };
+  }
 
   if(markersEl){
     markersEl.innerHTML = '';
     markersEl.hidden = true;
   }
 
-  const axis = listMode ? weekViewSharedTimeAxis(days.map(day=>rowsByDay.get(day.dayKey))) : null;
-  _weekViewSharedAxis = axis;
   body.style.setProperty('--wv-agenda-lines',axis ? `linear-gradient(to bottom,${axis.ticks.flatMap(tick=>[
     `transparent ${tick.y}px`,`var(--border) ${tick.y}px`,`var(--border) ${tick.y + 1}px`,`transparent ${tick.y + 1}px`
   ]).join(',')})` : 'none');
@@ -2006,9 +2167,7 @@ function renderWeekView(){
   body.classList.toggle('is-multi',visibleCount > 1);
   body.classList.toggle('is-flat',listMode && visibleCount <= 3);
   body.dataset.days = String(visibleCount);
-  const preGrid = weekViewPrecomputedGrid((prior && prior.clientWidth) || _weekViewLastGeom.width,visibleCount,days.length);
-  body.innerHTML = weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount,preGrid)
-    + weekViewUnplacedHtml(rowsByDay.get(selectedDay.dayKey),selectedDay.dayKey);
+  body.innerHTML = boardHtml + weekViewUnplacedHtml(rowsByDay.get(selectedDay.dayKey),selectedDay.dayKey);
   body.setAttribute('aria-busy',String(loading));
   // The old scroller is gone: an ease aimed at it must not steer selection
   // painting on the new board.
@@ -2016,16 +2175,20 @@ function renderWeekView(){
   renderWeekViewStatus(loading);
   body.classList.toggle('is-loading',loading && !_weekViewError);
 
-  const scroller = body.querySelector('.wv-scroller');
-  if(scroller){
+  const finalizeScroll = ()=>{
+    const scroller = body.querySelector('.wv-scroller');
+    if(!scroller)return;
     weekViewSizeBoard(scroller);
     const y = weekViewYScroller(scroller);
-    if(_weekViewScrollToKey){
-      weekViewScrollToDay(scroller,_weekViewScrollToKey);
-      _weekViewScrollToKey = '';
-    }else if(_weekViewScrollReset){
-      weekViewScrollToDay(scroller,weekViewDaySel);
-    }else scroller.scrollLeft = _weekViewScrollLeft;
+    const targetDayKey = _weekViewScrollToKey || (_weekViewScrollReset ? weekViewDaySel : '');
+    if(_weekViewScrollToKey)_weekViewScrollToKey = '';
+    if(targetDayKey){
+      if(!(days[0]?.dayKey === targetDayKey && scroller.scrollLeft === 0)){
+        weekViewScrollToDay(scroller,targetDayKey);
+      }
+    }else if(_weekViewScrollLeft){
+      scroller.scrollLeft = _weekViewScrollLeft;
+    }
     if(_weekViewScrollReset){
       const minute = weekViewFocusMinute(selectedDay,rowsByDay.get(selectedDay.dayKey));
       if(listMode && axis && y)y.scrollTop = Math.max(0,axis.timeToY(minute) - 72);
@@ -2036,15 +2199,36 @@ function renderWeekView(){
       y.scrollTop = _weekViewScrollTop;
       weekViewSyncRail();
     }
-    weekViewPaintSelection();
+    if(!(opts.deferScroll && guess[0]?.dayKey === weekViewDaySel && scroller.scrollLeft === 0)){
+      weekViewPaintSelection();
+    }
+    _weekViewScrollReset = false;
+    if(scheduleDeferredHorizon){
+      const fn = scheduleDeferredHorizon;
+      scheduleDeferredHorizon = null;
+      fn();
+    }
+    if(typeof _weekViewDeferredHydrator === 'function'){
+      const hydrate = ()=>ensureWeekViewColsHydrated();
+      if(typeof afterSheetEntry === 'function' && typeof isSheetEntering === 'function' && isSheetEntering('week-sheet')){
+        afterSheetEntry('week-sheet',hydrate);
+      }else{
+        setTimeout(hydrate,0);
+      }
+    }
+  };
+  if(opts.deferScroll){
+    _weekViewRenderedDay = weekViewDaySel;
+    if(_weekViewMonthOpen)weekViewRenderMonth();
+    return finalizeScroll;
   }
+  finalizeScroll();
   if(focusAttr){
     const restored = [...document.querySelectorAll(`#week-sheet [${focusAttr}]`)].find(el=>el.getAttribute(focusAttr) === focusValue);
     restored?.focus({preventScroll:true});
   }
-  _weekViewScrollReset = false;
   _weekViewRenderedDay = weekViewDaySel;
-  weekViewRenderMonth();
+  if(_weekViewMonthOpen)weekViewRenderMonth();
 }
 
 function weekViewScrollSeed(scroller,rows,dayKey){
@@ -2259,6 +2443,7 @@ function weekViewActivate(event){
 }
 
 function weekViewNudge(dir){
+  ensureWeekViewColsHydrated();
   const scroller = document.querySelector('#week-view-body .wv-scroller');
   if(!scroller)return;
   weekViewCancelAlign();
@@ -2390,10 +2575,13 @@ function weekViewSuspend(){
 }
 
 function weekViewCleanup(){
-  weekViewSetOptionsOpen(false,false);
+  _weekViewDeferredHydrator = null;
+  if(_weekViewOptionsOpen)weekViewSetOptionsOpen(false,false);
   weekViewCancelScroll();
   weekViewSuspend();
-  _weekViewCache.clear();
+  // Keep _weekViewCache entries (keyed by todayKey + dirtyKey) warm across
+  // close/reopen so reopening Week doesn't respawn the preview worker; stale
+  // keys naturally miss or get cleared on revisionChanged / midnight / retry.
   _weekViewCtx = new Map();
   _weekViewError = '';
   _weekViewDirtyKey = '';
@@ -2432,8 +2620,11 @@ function openWeekView(){
   _weekViewOpener = document.activeElement;
   weekViewLoadPreferences();
   weekViewGen += 1;
-  renderWeekView();
+  // Build board markup while the sheet still has content-visibility:hidden,
+  // then reveal once, size/scroll in a single layout pass, and focus close.
+  const finalizeScroll = renderWeekView({deferScroll:true,deferHorizon:true,deferOffscreenCols:true});
   openSheet('week-sheet',{reopen:openWeekView});
+  if(typeof finalizeScroll === 'function')finalizeScroll();
   $('week-view-close').focus({preventScroll:true});
   if(!_weekViewTimer)_weekViewTimer = setInterval(weekViewTick,60000);
 }
@@ -2461,6 +2652,7 @@ function bindWeekView(){
     // The strip and the clock scroll on separate axes now: only the strip
     // settles onto a day; the clock just keeps the hour rail in step.
     if(cls.contains('wv-scroller')){
+      ensureWeekViewColsHydrated();
       _weekViewScrollAxis = 'x';
       weekViewQueueSettle(event.target);
     }else{
@@ -2557,7 +2749,7 @@ function bindWeekView(){
   // Return from every editor to this same day, scroll position and control.
   const coverObserver = new MutationObserver(records=>{
     if(!weekSheetOpen() || weekViewHasCoveringSheet())return;
-    if(!records.some(record=>!record.target.classList.contains('open')))return;
+    if(!records.some(record=>/\bopen\b/.test(record.oldValue || '') && !record.target.classList.contains('open')))return;
     const previous = _weekViewReturnFocus;
     const attr = ['data-wv-dayhead','data-wv-event','data-wv-busy','data-wv-travel','data-wv-marker','data-wv-unplaced'].find(key=>previous?.hasAttribute(key));
     const value = attr ? previous.getAttribute(attr) : '';
@@ -2567,7 +2759,7 @@ function bindWeekView(){
     _weekViewReturnFocus = null;
   });
   ['detail-sheet','block-edit-sheet','travel-edit-sheet','add-sheet','calendar-filter-sheet','day-logs-sheet'].forEach(id=>{
-    coverObserver.observe($(id),{attributes:true,attributeFilter:['class']});
+    coverObserver.observe($(id),{attributes:true,attributeFilter:['class'],attributeOldValue:true});
   });
 
 

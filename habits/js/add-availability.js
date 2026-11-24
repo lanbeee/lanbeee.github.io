@@ -36,8 +36,8 @@ function addFixedConflict(record,data,settings){
 }
 
 function addRoomSignature(record = readAddRecord(),plannerKey = homePlannerDirtyKey([])){
-  // createdAt is read anew; it must not make an unchanged draft look edited.
-  const {createdAt,...draft} = record;
+  // A fresh timestamp or a late emoji suggestion cannot change the schedule.
+  const {createdAt,emoji,emojiBgColor,...draft} = record;
   return JSON.stringify([draft,plannerKey,Math.floor(Date.now() / 60000)]);
 }
 

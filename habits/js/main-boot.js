@@ -107,6 +107,7 @@ $('add-more-toggle')?.addEventListener('click',()=>{
   const toggle = $('add-more-toggle');
   if(!body || !toggle)return;
   const opening = body.hidden;
+  if(opening && typeof ensureAddOptionsHydrated === 'function')ensureAddOptionsHydrated();
   body.hidden = !opening;
   toggle.setAttribute('aria-expanded',String(opening));
 });
@@ -182,12 +183,15 @@ function syncAddConditionsLayout(optional){
   if(optional)weather.open = true;
   $('ting-weather-profile').previousElementSibling.textContent = optional ? 'Weather rules' : 'weather guidance';
   const chips = $('ting-tag-chips');
+  if(optional && typeof ensureAddOptionsHydrated === 'function')ensureAddOptionsHydrated();
   if(chips.dataset.conditionMode !== String(optional)){
     chips.dataset.conditionMode = String(optional);
-    renderTagChips('ting-tag-chips',selectedAddTopics(),selectedLocationIds(),null,selectedLocationPrefs(),selectedAnywhere());
+    if(typeof _addDeferredOptions === 'undefined' || !_addDeferredOptions){
+      renderTagChips('ting-tag-chips',selectedAddTopics(),selectedLocationIds(),null,selectedLocationPrefs(),selectedAnywhere());
+    }
   }
   $('do-save').disabled = false;
-  if(typeof syncWeatherGuidanceHints === 'function')syncWeatherGuidanceHints();
+  if((typeof _addDeferredOptions === 'undefined' || !_addDeferredOptions) && typeof syncWeatherGuidanceHints === 'function')syncWeatherGuidanceHints();
 }
 
 // Describe the entered frequency in words; the stored interval stays internal.
@@ -346,12 +350,15 @@ document.querySelectorAll('[data-add-due]').forEach(button=>button.addEventListe
   if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
 }));
 
-$('open-add').addEventListener('click',()=>{
+function openAddSheetFromChrome(){
   closeSearch();
   applyAddDefaults();
-  openSheet('add-sheet');
+  openSheet('add-sheet',{skipEntryMotion:true});
   $('ting-message').focus({preventScroll:true});
-});
+}
+// Keep Add on click so Android WebView reliably opens the soft keyboard and
+// never blurs the focused name input on a trailing GestureTap.
+$('open-add').addEventListener('click',openAddSheetFromChrome);
 
 $('open-search').addEventListener('click',()=>{
   if(typeof homeSearchAvailable === 'function' && !homeSearchAvailable())return;
@@ -363,12 +370,7 @@ $('bar-open-search')?.addEventListener('click',()=>{
   if(isSearchOpen())closeSearch();
   else setSearchOpen(true);
 });
-$('bar-open-add')?.addEventListener('click',()=>{
-  closeSearch();
-  applyAddDefaults();
-  openSheet('add-sheet');
-  $('ting-message').focus({preventScroll:true});
-});
+$('bar-open-add')?.addEventListener('click',openAddSheetFromChrome);
 $('bar-open-overview')?.addEventListener('click',()=>openRememberedCalendar());
 // Wide-layout chrome: current place and the shared filters live in the app-bar.
 $('app-bar-place')?.addEventListener('click',()=>{
@@ -494,9 +496,15 @@ function readAddRecord(){
   const locationIds = selectedLocationIds();
   const locationTypes = typeof selectedLocationTypes === 'function' ? selectedLocationTypes() : [];
   const locationPrefs = selectedLocationPrefs();
-  const weatherChoice=typeof readWeatherProfileChoice==='function'
-    ? readWeatherProfileChoice('ting-weather-profile')
-    : {weatherProfileMode:$('ting-weather-profile')?.value?'profile':'inherit',weatherProfileId:cleanWeatherProfileId($('ting-weather-profile')?.value)};
+  const deferredAdd = typeof _addDeferredOptions !== 'undefined' ? _addDeferredOptions : null;
+  const weatherProfileVal = deferredAdd ? (deferredAdd.weatherProfileValue || '') : ($('ting-weather-profile')?.value || '');
+  const weatherChoice = deferredAdd
+    ? (typeof weatherProfileChoiceFromValue === 'function'
+      ? weatherProfileChoiceFromValue(weatherProfileVal)
+      : {weatherProfileMode:weatherProfileVal ? 'profile' : 'inherit',weatherProfileId:cleanWeatherProfileId(weatherProfileVal)})
+    : (typeof readWeatherProfileChoice === 'function'
+      ? readWeatherProfileChoice('ting-weather-profile')
+      : {weatherProfileMode:weatherProfileVal ? 'profile' : 'inherit',weatherProfileId:cleanWeatherProfileId(weatherProfileVal)});
   const record = {
     name:$('ting-message').value.trim().slice(0,60),
     type,
@@ -519,11 +527,13 @@ function readAddRecord(){
     locationPrefs,
     preferredLocationId:primaryPreferredLocationId(locationPrefs,locationIds),
     ...weatherChoice,
-    weatherLocationId:typeof readWeatherLocationId === 'function'
-      ? readWeatherLocationId('ting-weather-location',$('ting-weather-profile')?.value)
-      : null,
-    showWeather:$('ting-show-weather')?.getAttribute('aria-pressed') === 'true',
-    showWeatherAtLocation:$('ting-show-weather-location')?.getAttribute('aria-pressed') === 'true',
+    weatherLocationId:deferredAdd
+      ? (weatherChoice.weatherProfileMode === 'profile' ? (cleanLocationId(deferredAdd.weatherLocationId) || null) : null)
+      : (typeof readWeatherLocationId === 'function'
+        ? readWeatherLocationId('ting-weather-location',weatherProfileVal)
+        : null),
+    showWeather:deferredAdd ? Boolean(deferredAdd.showWeather) : $('ting-show-weather')?.getAttribute('aria-pressed') === 'true',
+    showWeatherAtLocation:deferredAdd ? Boolean(deferredAdd.showWeatherAtLocation) : $('ting-show-weather-location')?.getAttribute('aria-pressed') === 'true',
     durationMinutes:profile.durationMinutes,
     breakable:profile.breakable,
     minChunkMinutes:profile.minChunkMinutes,
