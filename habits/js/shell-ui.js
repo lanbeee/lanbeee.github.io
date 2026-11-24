@@ -997,15 +997,18 @@ function rememberBrowserPageScroll(pages = browserNavigationEntries[browserNavig
     const inner = getSheetInner(page.id);
     if(!inner)continue;
     const saved = [];
-    const seen = new Set();
-    const record = el=>{
-      if(!el || seen.has(el))return;
-      seen.add(el);
+    const record = (el,selector)=>{
       const top = el.scrollTop, left = el.scrollLeft;
-      if(top || left)saved.push({el,top,left});
+      if(top || left || selector)saved.push({el,selector,top,left});
     };
     record(inner);
-    inner.querySelectorAll(BROWSER_SCROLL_HOST_SELECTOR).forEach(record);
+    inner.querySelectorAll(BROWSER_SCROLL_HOST_SELECTOR).forEach(el=>{
+      // Week View discards its board on close. Its two scroll hosts are
+      // unique within the sheet and can be found again on Forward.
+      const selector = el.matches('.wv-scroller') ? '.wv-scroller'
+        : el.matches('.wv-yscroll') ? '.wv-yscroll' : null;
+      record(el,selector);
+    });
     page.scroll = saved;
   }
 }
@@ -1122,7 +1125,8 @@ function restoreBrowserPages(target){
       for(const page of target){
         if(!open.some(current=>current.key === page.key))continue;
         for(const pos of page.scroll || []){
-          if(pos.el.isConnected)pos.el.scrollTo({top:pos.top,left:pos.left,behavior:'instant'});
+          const el = pos.el.isConnected ? pos.el : pos.selector && getSheetInner(page.id)?.querySelector(pos.selector);
+          el?.scrollTo({top:pos.top,left:pos.left,behavior:'instant'});
         }
       }
     };

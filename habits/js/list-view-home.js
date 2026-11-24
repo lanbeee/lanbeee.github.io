@@ -1476,6 +1476,7 @@ function renderHomeTagFilterEmpty(wrap,groups){
 }
 
 let _homeTagFilterRenderedKey = '';
+let _homeTagFilterRenderedRaw;
 function renderHomeTagFilter(data,precomputedIndices = null){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
@@ -1492,9 +1493,16 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   const presence = registry.length && typeof locationPresence === 'function' ? locationPresence(registry) : null;
   const anchor = typeof currentLocationId === 'function' ? currentLocationId() : null;
   const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
-  const rawLen = (()=>{ try{ return (localStorage.getItem(KEY) || '').length; }catch(_){ return data.length; } })();
-  const cacheKey = `${rev}|${rawLen}|${data.length}|${Math.floor(Date.now() / 60000)}|${JSON.stringify(selection)}|${query}|${sortSettings?.pinnedLocationId || ''}|${anchor || ''}|${presence ? `${presence.kind}:${presence.name}:${presence.gps ? 1 : 0}` : ''}|${registry.map(l=>`${l.id}:${l.name}:${l.placeType || ''}`).join(',')}|${(sortSettings?.topics || []).join(',')}`;
-  if(cacheKey === _homeTagFilterRenderedKey && wrap.childElementCount > 0 && (!groups || groups.childElementCount > 0)){
+  let raw;
+  try{ raw = localStorage.getItem(KEY); }catch(_){}
+  const cacheKey = JSON.stringify([
+    rev,data.length,Math.floor(Date.now() / 60000),selection,query,sortSettings?.showSnoozed,
+    sortSettings?.calendarIgnores,sortSettings?.pinnedLocationId,anchor,
+    presence && [presence.kind,presence.name,presence.gps],
+    registry.map(l=>[l.id,l.name,l.placeType]),sortSettings?.topics
+  ]);
+  if(raw !== undefined && raw === _homeTagFilterRenderedRaw && cacheKey === _homeTagFilterRenderedKey
+    && wrap.childElementCount > 0 && (!groups || groups.childElementCount > 0)){
     return;
   }
   // "Real" usage = at least one habit carries this dimension. Without this
@@ -1568,6 +1576,7 @@ function renderHomeTagFilter(data,precomputedIndices = null){
 
   syncFilterSheetChrome({prefix:'home-filter', view, surfaceLabel:'list'});
   _homeTagFilterRenderedKey = cacheKey;
+  _homeTagFilterRenderedRaw = raw;
 }
 
 // RENDER: keep the wide-layout app-bar chrome in step with the shared filter

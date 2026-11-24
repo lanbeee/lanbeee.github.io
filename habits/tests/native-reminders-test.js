@@ -296,13 +296,14 @@ const assert = require('node:assert/strict');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-two'].start),'notification','other habit unchanged');
     const ids=await page.evaluate(()=>{
       updateSortSetting({blockedTimes:[{label:'Busy',start:900,end:960,days:[]},{label:'Busy',start:900,end:960,days:[]}]},{renderNow:false});
+      openBusyManager();
       return normalizeBlockedTimes(sortSettings.blockedTimes).map(b=>b.reminderId);
     });
     assert.equal(await page.locator('[data-blocked-row="0"] select[data-reminder-edge="missed"]').count(),0,'busy times do not enter missed list');
     assert.equal(new Set(ids).size,2,'identical busy rules get distinct stable identities');
-    await page.locator('[data-blocked-row="0"] select[data-reminder-edge="start"]').selectOption('alarm',{force:true});
+    await page.locator('[data-blocked-row="0"] select[data-reminder-edge="start"]').selectOption('alarm');
     await page.waitForFunction(id=>nativeReminderPreferences().items[`busy:${id}`]?.start==='alarm',ids[0]);
-    await page.evaluate(()=>{saveBlockedTimePatch(0,{label:'Renamed'});removeBlockedTime(1);});
+    await page.evaluate(()=>{saveBlockedTimePatch(0,{label:'Renamed'});removeBlockedTime(1);closeBusyManager();});
     assert.equal(await page.evaluate(id=>nativeReminderPreferences().items[`busy:${id}`].start,ids[0]),'alarm');
     await page.locator('#detail-native-reminders select[data-reminder-lead]').selectOption('15',{force:true});
     await page.waitForFunction(()=>nativeReminderPreferences().items['item:ui-one'].travelLeadMinutes===15);

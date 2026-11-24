@@ -956,8 +956,6 @@ let _weekViewLastGeom = { width: 0, gutterW: 0, gap: 0 };
 let _weekViewLastSized = null;
 const _weekViewShortDateFmt = typeof Intl !== 'undefined'
   ? new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric'}) : null;
-const _weekViewDayTitleFmt = typeof Intl !== 'undefined'
-  ? new Intl.DateTimeFormat(undefined,{weekday:'short',month:'short',day:'numeric'}) : null;
 
 function weekViewPrecomputedGrid(scrollerWidth,visible,span){
   if(!(scrollerWidth > 0) || !(_weekViewLastGeom.gutterW > 0))return null;
@@ -2434,14 +2432,8 @@ function openWeekView(){
   _weekViewOpener = document.activeElement;
   weekViewLoadPreferences();
   weekViewGen += 1;
-  const sheet = $('week-sheet');
-  sheet?.classList.add('is-preparing');
-  try{
-    renderWeekView();
-    openSheet('week-sheet');
-  }finally{
-    sheet?.classList.remove('is-preparing');
-  }
+  renderWeekView();
+  openSheet('week-sheet',{reopen:openWeekView});
   $('week-view-close').focus({preventScroll:true});
   if(!_weekViewTimer)_weekViewTimer = setInterval(weekViewTick,60000);
 }

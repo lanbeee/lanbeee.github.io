@@ -77,11 +77,11 @@ const _overviewCellDateFmt = typeof Intl !== 'undefined'
 const _overviewShortDateFmt = typeof Intl !== 'undefined'
   ? new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric'}) : null;
 let _overviewFilterCacheKey = '';
+let _overviewFilterRaw;
 let _overviewFilterSheetBuilt = false;
 let _dayLogsOpenedRev = -1;
 
 function ensureOverviewFilterSheetReady(){
-  if(_overviewFilterSheetBuilt)return;
   const library = load();
   settleCalendarFilterChoices(library);
   const allData = library.filter(h=>!isCalendarIgnored(h));
@@ -112,11 +112,14 @@ function renderOverviewFilters(data,library,opts = {}){
   const selection = overviewFilterSelection();
   const query = filterSheetQuery('calendar-filter');
   const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
-  const rawLen = (()=>{ try{ return (localStorage.getItem(KEY) || '').length; }catch(_){ return library.length; } })();
-  const locsSig = (sortSettings?.locations || []).map(l=>`${l.id}:${l.name}:${l.placeType || ''}`).join(',');
-  const topicsSig = (sortSettings?.topics || []).join(',');
-  const cacheKey = `${rev}|${rawLen}|${library.length}|${data.length}|${minimal ? 1 : 0}|${JSON.stringify(selection)}|${query}|${locsSig}|${topicsSig}`;
-  if(cacheKey === _overviewFilterCacheKey && (!includeSheet || _overviewFilterSheetBuilt) && wrap.querySelector('.overview-range-option')){
+  let raw;
+  try{ raw = localStorage.getItem(KEY); }catch(_){}
+  const cacheKey = JSON.stringify([
+    rev,Math.floor(Date.now() / 60000),library.length,data.length,minimal,selection,query,
+    sortSettings?.calendarIgnores,(sortSettings?.locations || []).map(l=>[l.id,l.name,l.placeType]),sortSettings?.topics
+  ]);
+  if(raw !== undefined && raw === _overviewFilterRaw && cacheKey === _overviewFilterCacheKey
+    && (!includeSheet || _overviewFilterSheetBuilt) && wrap.querySelector('.overview-range-option')){
     wrap.hidden = false;
     wrap.querySelectorAll('.overview-range-option').forEach(btn=>{
       const on = btn.dataset.overviewRange === overviewRangeFilter;
@@ -143,6 +146,7 @@ function renderOverviewFilters(data,library,opts = {}){
         </button>
       </div>`;
     _overviewFilterCacheKey = cacheKey;
+    _overviewFilterRaw = raw;
     _overviewFilterSheetBuilt = false;
     return;
   }
@@ -174,6 +178,7 @@ function renderOverviewFilters(data,library,opts = {}){
 
   syncFilterSheetChrome({prefix:'calendar-filter', view, surfaceLabel:'calendar'});
   _overviewFilterCacheKey = cacheKey;
+  _overviewFilterRaw = raw;
   _overviewFilterSheetBuilt = true;
 }
 

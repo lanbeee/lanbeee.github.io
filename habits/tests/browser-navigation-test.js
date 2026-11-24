@@ -87,6 +87,24 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       await page.waitForFunction(expected=>getSheetInner('privacy-sheet').scrollTop===expected,scroll);
       await home();
 
+      await page.evaluate(()=>openWeekView());
+      await page.locator('#week-view-display-options').tap();
+      await page.locator('#week-view-mode').tap();
+      await page.locator('#week-view-body.is-grid .wv-board').waitFor();
+      const weekTop = await page.evaluate(()=>{
+        const scroller=document.querySelector('#week-view-body .wv-yscroll');
+        scroller.scrollTop=240;
+        return scroller.scrollTop;
+      });
+      assert.ok(weekTop > 100,'Week calendar scrolls in Grid mode');
+      await back();
+      assert.deepEqual(await stack(),[]);
+      assert.equal(await page.locator('#week-view-body .wv-board').count(),0,'closed Week View releases its board');
+      await forward();
+      assert.deepEqual(await stack(),['week-sheet']);
+      await page.waitForFunction(expected=>document.querySelector('#week-view-body.is-grid .wv-yscroll')?.scrollTop===expected,weekTop);
+      await home();
+
       // Utility pages whose dismissal clears their context must rebuild it.
       await page.evaluate(()=>openActivity(0));
       await back();assert.equal(await page.evaluate(()=>activityIdx),null);

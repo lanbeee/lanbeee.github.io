@@ -51,6 +51,7 @@ constrained-weekly-agenda-test.js	planner	once
 day-capacity-scorecard-e2e.js	planner	page-both
 day-header-pill-tap-test.js	ui	once
 day-header-weather-fit-test.js	ui	once
+home-weather-refresh-test.js	ui	once
 detail-auto-chunk-test.js	planner	once
 detail-calendar-strip-test.js	ui	once
 day-plan-footer-test.js	ui	once

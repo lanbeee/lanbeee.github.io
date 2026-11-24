@@ -77,6 +77,50 @@ const { chromium, BASE, baseHabit } = require('./helpers/planner-test-helpers');
     assert.deepEqual(cacheCheck.s2Topics, ['Health', 'Work'], 'loadSortSettings() cache returns independent clones');
     assert.equal(cacheCheck.cName, 'EXTERNAL_UPDATE', 'external localStorage.setItem invalidates load() cache');
 
+    const legacyCacheCheck = await page.evaluate(() => {
+      const realNow = Date.now;
+      const raw = localStorage.getItem(KEY);
+      const eventTime = realNow() + 60_000;
+      try {
+        localStorage.setItem(KEY, JSON.stringify([
+          { hid:'legacy-event', name:'Old event', type:'event', eventTime },
+          { hid:'legacy-log', name:'Old log', type:'keepup', target:1, logs:[eventTime] }
+        ]));
+        Date.now = () => eventTime - 1;
+        const before = load().map(h=>h.logs.filter(log=>!isPlanLog(log)).length);
+        Date.now = () => eventTime + 1;
+        const after = load().map(h=>h.logs.filter(log=>!isPlanLog(log)).length);
+        return { before, after };
+      } finally {
+        Date.now = realNow;
+        localStorage.setItem(KEY, raw);
+      }
+    });
+    assert.deepEqual(legacyCacheCheck, {before:[0,0],after:[1,1]},
+      'legacy events and timestamp logs age out of the cache without a write');
+
+    const filterCacheCheck = await page.evaluate(() => {
+      const raw = localStorage.getItem(KEY);
+      const renderFilters = () => {
+        renderHomeTagFilter(load());
+        renderOverviewFilters(load(),load(),{includeSheet:true});
+        return ['home','calendar'].map(prefix=>document.getElementById(`${prefix}-filter-groups`).textContent);
+      };
+      try {
+        const before = renderFilters();
+        const changed = raw.replace('"Health"', '"Sports"');
+        if(changed === raw || changed.length !== raw.length)throw new Error('Expected a same-length storage change');
+        localStorage.setItem(KEY, changed);
+        const after = renderFilters();
+        return {before:before.map(text=>text.includes('Sports')),after:after.map(text=>text.includes('Sports'))};
+      } finally {
+        localStorage.setItem(KEY, raw);
+        renderFilters();
+      }
+    });
+    assert.deepEqual(filterCacheCheck,{before:[false,false],after:[true,true]},
+      'Home and Calendar filter options update for equal-length storage edits');
+
     // 2. Closed sheets apply layout/style/paint containment without permanent GPU layer promotion; open Detail batches pager sync
     const detailCheck = await page.evaluate(() => {
       const wrap = document.getElementById('detail-sheet');

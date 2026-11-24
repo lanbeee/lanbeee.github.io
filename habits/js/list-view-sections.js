@@ -190,20 +190,51 @@ if(typeof document !== 'undefined' && document.fonts){
   }
 }
 
+const _dayHeaderWeatherContexts = new WeakMap();
+const _dayHeaderWeatherCues = new WeakMap();
+
 function attachWeatherIndicator(header,day){
   if(!header || !day || day.dayBase == null || typeof weatherDayCueHtml!=='function')return;
-  const cue=weatherDayCueHtml(day.dayBase,day,sortSettings,{data:load()});
-  if(!cue)return;
-  const button=document.createElement('button');
-  button.type='button';
+  _dayHeaderWeatherContexts.set(header,day);
+  const cue=weatherDayCueHtml(day.dayBase,day,sortSettings,{
+    homeHeader:true,
+    data:sortSettings?.minimalMode ? load() : null
+  });
+  if(cue===(_dayHeaderWeatherCues.get(header) || ''))return;
+  _dayHeaderWeatherCues.set(header,cue);
+  let button=header.querySelector('.weather-day-button');
+  if(!cue){
+    const host=button?.parentElement;
+    button?.remove();
+    if(host && !host.childElementCount){
+      host.remove();
+      header.classList.remove('has-context','context-below','context-wrapped');
+    }
+    return;
+  }
+  if(!button){
+    button=document.createElement('button');
+    button.type='button';
+    bindDayHeaderPill(button,()=>openWeatherContextSheet(day.dayBase,day));
+    const host=dayHeaderContextHost(header);
+    host.insertBefore(button,host.querySelector('.dropped-pill,.planner-state-indicator'));
+  }
   button.className='weather-day-button';
   button.innerHTML=cue;
   const tone=button.querySelector('.weather-day-cue')?.dataset.weatherTone;
   if(tone)button.classList.add(`weather-tone-${tone}`);
   const accessible=button.querySelector('.weather-day-cue')?.getAttribute('title') || 'weather context';
   button.setAttribute('aria-label',accessible);
-  bindDayHeaderPill(button,()=>openWeatherContextSheet(day.dayBase,day));
-  dayHeaderContextHost(header)?.appendChild(button);
+}
+
+function syncHomeDayHeaderWeather(){
+  document.querySelectorAll('#list > .section-header').forEach(header=>{
+    const day=_dayHeaderWeatherContexts.get(header);
+    if(!day)return;
+    const previous=_dayHeaderWeatherCues.get(header);
+    attachWeatherIndicator(header,day);
+    if(_dayHeaderWeatherCues.get(header)!==previous)fitDayHeaderChips(header);
+  });
 }
 
 function missedPlannerFingerprint(data,settings){

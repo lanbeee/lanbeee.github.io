@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 const _defaultStorageRead = typeof Storage !== 'undefined' ? Storage.read : null;
-let _loadCache = { raw: undefined, data: null };
+let _loadCache = null;
 let _sortSettingsCache = { raw: undefined, forcedFast: undefined, base: null };
 let _agendaOptimizerPreloaded = false;
 
@@ -21,7 +21,10 @@ function _cloneJson(value){
   const keys = Object.keys(value);
   for(let i = 0; i < keys.length; i++){
     const k = keys[i];
-    out[k] = _cloneJson(value[k]);
+    const cloned = _cloneJson(value[k]);
+    if(k === '__proto__'){
+      Object.defineProperty(out,k,{value:cloned,enumerable:true,writable:true,configurable:true});
+    }else out[k] = cloned;
   }
   return out;
 }
@@ -29,25 +32,13 @@ function _cloneJson(value){
 function load(){
   const canCache = typeof localStorage !== 'undefined'
     && typeof Storage !== 'undefined' && Storage.read === _defaultStorageRead;
+  const now = Date.now();
+  let raw;
   if(canCache){
-    let raw;
-    try{ raw = localStorage.getItem(KEY); }catch(_){ raw = undefined; }
-    if(raw !== undefined && raw === _loadCache.raw && _loadCache.data){
+    try{ raw = localStorage.getItem(KEY); }catch(_){}
+    if(raw !== undefined && _loadCache?.raw === raw && now >= _loadCache.loadedAt && now < _loadCache.expiresAt){
       return _cloneJson(_loadCache.data);
     }
-    const stored = Storage.read(KEY) || [];
-    const data = normalize(stored);
-    // Legacy records need a saved ID before a retained agenda can follow them
-    // across edits. Persist only that migration; leave other raw fields intact.
-    if(stored.some(h=>!cleanHabitId(h.hid))){
-      try{
-        Storage.write(KEY,stored.map((h,i)=>cleanHabitId(h.hid) ? h : {...h,hid:data[i].hid}));
-        bumpPlannerDataRevision();
-        raw = localStorage.getItem(KEY);
-      }catch(_){ raw = undefined; }
-    }
-    if(raw !== undefined)_loadCache = { raw, data };
-    return _cloneJson(data);
   }
   const stored = Storage.read(KEY) || [];
   const data = normalize(stored);
@@ -57,9 +48,23 @@ function load(){
     try{
       Storage.write(KEY,stored.map((h,i)=>cleanHabitId(h.hid) ? h : {...h,hid:data[i].hid}));
       bumpPlannerDataRevision();
-    }catch(_){}
+      if(canCache)raw = localStorage.getItem(KEY);
+    }catch{ raw = undefined; }
   }
-  return data;
+  if(raw === undefined)return data;
+  // Bare timestamp logs become actual logs at their time. A legacy event
+  // also gains a completion once its time is in the past.
+  let expiresAt = Infinity;
+  stored.forEach((h,i)=>{
+    const eventTime = data[i].eventTime;
+    if(h.type === 'event' && eventTime >= now)expiresAt = Math.min(expiresAt,eventTime + 1);
+    if(!Array.isArray(h.logs))return;
+    for(const log of h.logs){
+      if(typeof log === 'number' && log > now)expiresAt = Math.min(expiresAt,log);
+    }
+  });
+  _loadCache = {raw,data,loadedAt:now,expiresAt};
+  return _cloneJson(data);
 }
 
 // Test/debug override: `?planner=fast` exercises the whole app without loading

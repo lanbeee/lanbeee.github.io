@@ -15,6 +15,8 @@ const WEATHER_METRICS = {
   european_aqi:{label:'EU AQI',unit:'',aggregate:'max',air:true,range:'0–100',hint:'air quality · 0–20 good · 21–40 fair · 41–60 moderate · 61+ poor'}
 };
 let _weatherRefreshLocks=[];
+const WEATHER_FORECAST_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+const WEATHER_SAVED_DAY_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
 // ── Temperature display unit ────────────────────────────────────────────
 // Forecast payloads, rule bounds, and margins are always °C (what Open-Meteo
@@ -482,9 +484,9 @@ function weatherCoordsForHabit(h,settings){
 }
 
 function weatherMergePlaceParts(weekly,near,air,now = Date.now()){
-  const weeklyFresh = weekly && now - Number(weekly.fetchedAt) <= 8 * 60 * 60 * 1000;
+  const weeklyFresh = weekly && now - Number(weekly.fetchedAt) <= WEATHER_FORECAST_MAX_AGE_MS;
   const nearFresh = near && now - Number(near.fetchedAt) <= 30 * 60 * 1000;
-  const airFresh = air && now - Number(air.fetchedAt) <= 8 * 60 * 60 * 1000;
+  const airFresh = air && now - Number(air.fetchedAt) <= WEATHER_FORECAST_MAX_AGE_MS;
   if(!weeklyFresh && !nearFresh)return null;
   const byTs = new Map();
   if(weeklyFresh)for(const sample of weekly.samples || [])byTs.set(sample.ts,{...sample,source:'weekly'});
@@ -530,9 +532,10 @@ function weatherContextFromBucket(bucket,lat,lng,now = Date.now()){
 
 function weatherPlannerContext(settings,now = Date.now()){
   const profiles = normalizeWeatherProfiles(settings && settings.weatherProfiles);
-  if(!profiles.length && !weatherAmbientEnabled(settings))return null;
-  const cache = weatherCacheRead();
+  if(!profiles.length && settings?.minimalMode)return null;
   const homeCoords = weatherHomeCoords(settings);
+  if(!homeCoords && !profiles.length)return null;
+  const cache = weatherCacheRead();
   const home = homeCoords
     ? weatherMergePlaceParts(
       weatherSameCoords(cache.weekly,homeCoords.lat,homeCoords.lng) ? cache.weekly : null,
@@ -1129,10 +1132,10 @@ function weatherDayFallback(context,dayBase){
   };
 }
 
-function weatherDaySummary(context,dayBase,settings,now=Date.now()){
+function weatherDaySummary(context,dayBase,settings,now=Date.now(),maxAge=WEATHER_FORECAST_MAX_AGE_MS){
   const ts=weatherDayTimestamp(dayBase);
   if(!context || ts==null || !Number(context.weeklyFetchedAt))return null;
-  if(now-Number(context.weeklyFetchedAt)>8*60*60*1000)return null;
+  if(now-Number(context.weeklyFetchedAt)>maxAge)return null;
   const key=weatherRequestedDayKey(dayBase);
   if(key<weatherRequestedDayKey(now))return null;
   const daily=(context.days || []).find(day=>day.key===key || weatherDayKey(day.ts,context.timezone)===key)
@@ -1151,6 +1154,23 @@ function weatherDaySummary(context,dayBase,settings,now=Date.now()){
     fetchedAt:Number(context.weeklyFetchedAt),timezone:context.timezone || '',
     cityName:String(settings?.homeCityName || '').trim() || 'home city'
   };
+}
+
+// The day header can show saved daily conditions during an outage. The
+// planner and hourly views still use the normal freshness limit.
+function weatherDisplayDaySummary(dayBase,settings){
+  const fresh = weatherDaySummary(settings?._weatherContext,dayBase,settings);
+  if(fresh || settings?.minimalMode)return fresh;
+  const home = weatherHomeCoords(settings);
+  if(!home)return null;
+  const weekly = weatherCacheRead().weekly;
+  if(!weatherSameCoords(weekly,home.lat,home.lng))return null;
+  const now = Date.now();
+  if(now - Number(weekly.fetchedAt) <= WEATHER_FORECAST_MAX_AGE_MS)return null;
+  const saved = weatherDaySummary({
+    days:weekly.days,timezone:weekly.timezone,weeklyFetchedAt:weekly.fetchedAt
+  },dayBase,settings,now,WEATHER_SAVED_DAY_MAX_AGE_MS);
+  return saved ? {...saved,saved:true} : null;
 }
 
 function weatherContextDayRows(dayBase,dayContext=null){
@@ -1239,7 +1259,7 @@ function weatherPeriodSummary(start,end,settings,locationId=null,now=Date.now())
   if(!settings || settings.minimalMode || !Number.isFinite(from) || !Number.isFinite(to) || to<=from)return null;
   if(weatherRequestedDayKey(from)<weatherRequestedDayKey(now))return null;
   const context=weatherContextForLocation(locationId,settings);
-  if(!context || !Number(context.weeklyFetchedAt) || now-Number(context.weeklyFetchedAt)>8*60*60*1000)return null;
+  if(!context || !Number(context.weeklyFetchedAt) || now-Number(context.weeklyFetchedAt)>WEATHER_FORECAST_MAX_AGE_MS)return null;
   const samples=weatherSamplesForDisplayInterval(context,from,to);
   if(!samples.length)return null;
   const numbers=field=>samples.map(sample=>Number(sample && sample[field])).filter(Number.isFinite);
@@ -1305,10 +1325,10 @@ function weatherPeriodPillHtml(start,end,settings,options={}){
   return `<span class="${escapeHtml(cls)}" title="${escapeHtml(detail)}" role="img" aria-label="${escapeHtml(detail)}">${inside}</span>`;
 }
 
-function weatherDayPresentation(dayBase,dayContext,settings,data=null){
+function weatherDayPresentation(dayBase,dayContext,settings,data=null,{homeHeader=false}={}){
   const s=settings || (typeof sortSettings!=='undefined' ? sortSettings : null) || (typeof loadSortSettings==='function' ? loadSortSettings() : {});
   const context=s?._weatherContext;
-  const summary=weatherDaySummary(context,dayBase,s);
+  const summary=homeHeader ? weatherDisplayDaySummary(dayBase,s) : weatherDaySummary(context,dayBase,s);
   if(!summary)return null;
   const minimal=Boolean(s.minimalMode);
   if(minimal){
@@ -1325,8 +1345,12 @@ function weatherDayPresentation(dayBase,dayContext,settings,data=null){
 }
 
 function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
-  const presentation=weatherDayPresentation(dayBase,dayContext,settings,options.data || null);
-  if(!presentation)return '';
+  const presentation=weatherDayPresentation(dayBase,dayContext,settings,options.data || null,options);
+  if(!presentation){
+    if(!options.homeHeader || settings?.minimalMode || !weatherHomeCoords(settings)
+      || weatherRequestedDayKey(dayBase)!==weatherRequestedDayKey(Date.now()))return '';
+    return '<span class="weather-day-cue weather-tone-fog" data-weather-tone="fog" title="Weather forecast unavailable"><i class="ti ti-cloud-off" aria-hidden="true"></i></span>';
+  }
   const compact=Boolean(options.compact);
   const minimal=presentation.status!=='forecast';
   const temp=presentation.showTemperature ? weatherTemperatureRange(presentation.summary) : '';
@@ -1338,7 +1362,7 @@ function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
     temp ? `feels like ${temp} ${weatherTempUnitWord()}` : '',
     summary.precipitationChance==null ? '' : `${Math.round(summary.precipitationChance)}% precipitation`,
     summary.wind==null ? '' : `${Math.round(weatherWindConverted(summary.wind))} ${weatherWindUnitLabel()} wind`,
-    weatherFreshnessText(summary.fetchedAt)
+    weatherDayFreshnessText(summary)
   ].filter(Boolean).join(', ');
   const tone=presentation.tone || presentation.status;
   const cls=`${options.className ? ` ${options.className}` : ''}${compact?' is-compact':''}`;
@@ -1347,7 +1371,14 @@ function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
   // open-minutes figure, so the wet chance lives in the tooltip, not as a
   // second number competing with it. Day headers keep the droplet + chance.
   const signal=compact || !chance ? '' : `<span class="weather-signal"><i class="ti ti-droplet" aria-hidden="true"></i>${escapeHtml(chance)}</span>`;
-  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(emoji)}</span>${signal}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
+  const saved=summary.saved ? '<span>saved</span>' : '';
+  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(emoji)}</span>${saved}${signal}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
+}
+
+function weatherDayFreshnessText(summary){
+  return summary.saved
+    ? `saved forecast, ${weatherFreshnessText(summary.fetchedAt)}`
+    : weatherFreshnessText(summary.fetchedAt);
 }
 
 function weatherFreshnessText(ts,now=Date.now()){
@@ -2423,12 +2454,12 @@ function weatherContextSheetModel(dayBase,dayContext=null,focusHid=''){
   const ts=weatherDayTimestamp(dayBase);
   if(ts==null)return null;
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
-  const summary=weatherDaySummary(settings?._weatherContext,dayBase,settings);
+  const summary=weatherDisplayDaySummary(dayBase,settings);
   return {
     summary,
     dayBase:summary?.dayBase ?? ts,
-    dayRows:summary ? weatherDayRows(settings?._weatherContext,summary.dayBase) : [],
-    items:summary ? weatherGuidedItemsForDay(dayBase,dayContext,settings) : [],
+    dayRows:summary && !summary.saved ? weatherDayRows(settings?._weatherContext,summary.dayBase) : [],
+    items:summary && !summary.saved ? weatherGuidedItemsForDay(dayBase,dayContext,settings) : [],
     focusHid:String(focusHid || '')
   };
 }
@@ -2465,7 +2496,7 @@ function renderWeatherContextSheet(model){
     return true;
   }
   if(title)title.textContent=summary.condition.label;
-  if(sub)sub.textContent=`${date} · ${summary.cityName} · ${weatherFreshnessText(summary.fetchedAt)}`;
+  if(sub)sub.textContent=`${date} · ${summary.cityName} · ${weatherDayFreshnessText(summary)}`;
   if(icon)icon.innerHTML=`<span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(summary.condition.emoji || '☁️')}</span>`;
   if(content){
     const range=weatherTemperatureRange(summary);
@@ -2491,8 +2522,8 @@ function renderWeatherContextSheet(model){
     const itemHtml=items.map(item=>weatherContextItemHtml(item,focusHid)).join('');
     content.innerHTML=`${switchHtml}<div class="weather-context-metrics">${metrics}</div>
       <section class="weather-overlay-panel" id="weather-overlay-host" aria-label="hourly overlay"></section>
-      ${itemHtml?`<section class="weather-context-items"><p class="overview-section-title">weather-guided plan</p>${itemHtml}</section>`:'<p class="weather-context-empty">No weather-guided items are scheduled on this day.</p>'}`;
-    weatherFillOverlayHost(model);
+      ${itemHtml?`<section class="weather-context-items"><p class="overview-section-title">weather-guided plan</p>${itemHtml}</section>`:summary.saved?'':'<p class="weather-context-empty">No weather-guided items are scheduled on this day.</p>'}`;
+    if(!summary.saved)weatherFillOverlayHost(model);
   }
   if(content)plannerDaySwitchReveal(content);
   return true;
@@ -3242,7 +3273,7 @@ async function refreshWeatherForecast(options = {}){
   const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (sortSettings || {});
   const profiles = normalizeWeatherProfiles(settings.weatherProfiles);
   const home = weatherHomeCoords(settings);
-  if((!profiles.length && !weatherAmbientEnabled(settings)) || !home)return false;
+  if(!home || (!profiles.length && settings.minimalMode))return false;
   _weatherRefreshPromise = (async()=>{
     const now = Date.now();
     const cache = weatherCacheRead();
@@ -3279,11 +3310,13 @@ async function refreshWeatherForecast(options = {}){
       return force || !displayReady || !weatherSameCoords(bucket.weekly,place.lat,place.lng)
         || now-Number(bucket.weekly?.fetchedAt)>=WEATHER_WEEKLY_TTL_MS;
     });
-    await weatherFetchPlaceBatches(WEATHER_FORECAST_URL,weeklyExtras,{hourly:common,daily,forecast_days:7},(place,payload)=>{
-      const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
-      bucket.weekly={...weatherNormalizePayload(payload,'weekly',now),lat:place.lat,lng:place.lng};
-      changed=true;
-    });
+    try{
+      await weatherFetchPlaceBatches(WEATHER_FORECAST_URL,weeklyExtras,{hourly:common,daily,forecast_days:7},(place,payload)=>{
+        const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+        bucket.weekly={...weatherNormalizePayload(payload,'weekly',now),lat:place.lat,lng:place.lng};
+        changed=true;
+      });
+    }catch(error){cache.lastError=String(error && error.message || error);}
     const airExtras=extras.filter(place=>{
       if(!weatherNeedsAir(settings,place.locationId))return false;
       const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
@@ -3317,11 +3350,13 @@ async function refreshWeatherForecast(options = {}){
       if(!force && weatherSameCoords(bucket.near,group.coords.lat,group.coords.lng)
         && now-Number(bucket.near?.fetchedAt) < WEATHER_NEAR_TTL_MS)continue;
       const params = weatherNearParamsForRows(group.rows,now);
-      const payload = await weatherFetchJson(weatherUrl(WEATHER_FORECAST_URL,group.coords.lat,group.coords.lng,{
-        current:common,minutely_15:common,forecast_minutely_15:params.count
-      }));
-      bucket.near = {...weatherNormalizePayload(payload,'near',now),lat:group.coords.lat,lng:group.coords.lng,horizonMs:params.horizon};
-      changed = true;
+      try{
+        const payload = await weatherFetchJson(weatherUrl(WEATHER_FORECAST_URL,group.coords.lat,group.coords.lng,{
+          current:common,minutely_15:common,forecast_minutely_15:params.count
+        }));
+        bucket.near = {...weatherNormalizePayload(payload,'near',now),lat:group.coords.lat,lng:group.coords.lng,horizonMs:params.horizon};
+        changed = true;
+      }catch(error){cache.lastError=String(error && error.message || error);}
     }
     const keep = new Set(extras.map(place=>place.locationId));
     if(cache.places && typeof cache.places === 'object'){
@@ -3336,7 +3371,9 @@ async function refreshWeatherForecast(options = {}){
       if(typeof bumpPlannerDataRevision === 'function')bumpPlannerDataRevision();
       if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true,{__weatherChanged:true,__forceReplan:true});
       else if(typeof render === 'function')render();
-      if(typeof renderWeatherControls === 'function')renderWeatherControls();
+      if(typeof renderWeatherControls === 'function'){
+        renderWeatherControls({includeManager:Boolean(document.getElementById('weather-manager-sheet')?.classList.contains('open'))});
+      }
       setTimeout(()=>{_weatherRefreshLocks=[];},0);
     }
     return changed;
@@ -3345,9 +3382,14 @@ async function refreshWeatherForecast(options = {}){
     cache.lastError = String(error && error.message || error);
     cache.lastAttemptAt = Date.now();
     weatherCacheWrite(cache);
-    if(typeof renderWeatherControls === 'function')renderWeatherControls();
+    if(typeof renderWeatherControls === 'function'){
+      renderWeatherControls({includeManager:Boolean(document.getElementById('weather-manager-sheet')?.classList.contains('open'))});
+    }
     return false;
-  }).finally(()=>{_weatherRefreshPromise=null;});
+  }).finally(()=>{
+    _weatherRefreshPromise=null;
+    if(typeof syncHomeDayHeaderWeather === 'function')syncHomeDayHeaderWeather();
+  });
   return _weatherRefreshPromise;
 }
 
@@ -3356,5 +3398,11 @@ function startWeatherLifecycle(){
   const tick=()=>{if(typeof document === 'undefined' || !document.hidden)void refreshWeatherForecast();};
   tick();
   if(_weatherLoopId == null)_weatherLoopId=setInterval(tick,WEATHER_NEAR_TTL_MS);
-  if(typeof document !== 'undefined')document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();});
+  if(typeof document !== 'undefined'){
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();});
+    window.addEventListener('online',async()=>{
+      await _weatherRefreshPromise;
+      tick();
+    });
+  }
 }
