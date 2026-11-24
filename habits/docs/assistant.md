@@ -9,7 +9,7 @@ For the subsequent single-action implementation and its measured limits, see
 
 Read this only when the task is the Tings assistant. For planner, home, settings, and habit work, leave this file and every `js/assistant-*.js` file closed. `js/assistant-tools.js` is about 5,300 lines and is not on that path.
 
-When Needle is the provider, the only entry is one saved item. The Add form takes a literal name and essential settings, saves them, then opens details. It has no assistant entry. The details search box finds settings as the user types; an explicit Ask Needle action sends that text to the existing focused edit chat. Enter opens the first matching setting, or Ask when no setting matches. Typing alone never invokes the model. Search and Ask are available in full and minimal mode. Manual edits must be saved or cancelled before entering chat. Edit with AI on a card and Change with AI in details also open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The chat opens on that item's Edit summary, and the working-on bar stays hidden so the name is not listed twice. Clearing the chat keeps the same item and shows that summary again. The product session edits the item the host already selected. Internal create adapters remain for regression coverage; they are not exposed on Add. Needle renames the open item only when that message explicitly asks to rename it, and otherwise leaves the name alone. It cannot switch items, add a second item, or answer a general question. Requests explicitly targeting another saved item ask the user to open that item. On that open item it can also log or undo a completion, including an earlier day, and add or remove a one-day plan. “Plan for” and “plan by” remain the due date or do-by date. Logging and planning confirm in the chat. Confirmation checks the original item ID again; deleting or replacing the item invalidates the action, while list reordering preserves the correct target. Closed editors and requests still being read cannot confirm actions. The toast after that confirmation only offers undo. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
+When Needle is the provider, the only entry is one saved item. The Add form takes a literal name and essential settings, saves them, then opens details. It has no assistant entry. The details search box finds settings as the user types; an explicit Ask Needle action sends that text to the existing focused edit chat. Enter opens the first matching setting, or Ask when no setting matches. Typing alone never invokes the model. Search and Ask are available in full and minimal mode. Manual edits must be saved or cancelled before entering chat. Edit with AI on a card and Change with AI in details also open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The chat opens on that item's Edit summary, and the working-on bar stays hidden so the name is not listed twice. Clearing the chat keeps the same item and shows that summary again. The product session edits the item the host already selected. Internal create adapters remain for regression coverage; they are not exposed on Add. Needle renames the open item only when that message explicitly asks to rename it, and otherwise leaves the name alone. It cannot switch items or add a second item. Requests explicitly targeting another saved item ask the user to open that item. On that open item it can also log or undo a completion, including an earlier day, and add or remove a one-day plan. “Plan for” and “plan by” remain the due date or do-by date. Logging and planning confirm in the chat. Confirmation checks the original item ID again; deleting or replacing the item invalidates the action, while list reordering preserves the correct target. Closed editors and requests still being read cannot confirm actions. The toast after that confirmation only offers undo. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
 
 Focused saves apply the staged fields to the current saved item. A concurrent
 change to a field in the preview requires another review; unrelated edits and
@@ -29,6 +29,34 @@ another field in a family already processed. A bounded model menu handles
 unlabeled groups; routing text cannot itself
 supply an executable value. Invalid or missing values stay unresolved. Clarification
 choices stage real values. Known field questions offer saved-place, topic and weather-profile pickers, or finite choices such as priority and yes/no. Places and topics support multiple selections; complete saved catalogs remain available. Choices validate locally and stage for Save without inference. Typing and new topics remain available. Complete catalog names tolerate spacing and small spelling errors when there is one closest match; tied matches ask. An explicit “only at” place instruction also disables Anywhere, including when the place is chosen from a clarification. After a plain place assignment, an unresolved Anywhere permission asks “Allow this anywhere too?” with direct Yes/No buttons. The place is already staged; the answer stays local and Save waits for that choice. Explicit policies and existing place restrictions avoid the follow-up.
+
+Pure questions about the open item answer locally with zero model calls. Each
+editable setting answers what it means (one help entry per field id in
+`ASSISTANT_GUIDE_HELP`, shared with the composer), what is saved and what is
+staged (shown separately when they differ, values read through the app's own
+formatters and `habitEarlyWindowDays`/`habitDelayAllowanceDays`), and how to
+change it (control location plus an example ask). "How flexible is this?"
+explains both day allowances; a flexible *start time* explains Fixed start vs
+Allowed time window; events explain their fixed schedule. Computed displays
+(score, streak, usual gap, gap history, cue line) explain their derivation,
+and action controls (export, share, duplicate, timer, calendar icon override)
+explain what the action does. Conditional fields state when they apply
+("Shortest session only applies when Splitting is on"); fields that do not
+apply to this item answer with that condition instead of declining, and
+reminder help states the mobile-app requirement in the browser. Alternate
+labels for one setting ("Times per period", "Period length", "frequency")
+fold into one entry; broad words such as "time", "days", or "location" alone
+never select a setting. Everyday wording that fits several settings names the
+candidates in the answer itself. A mixed message ("What does Early window
+mean, and set it to 2 days early?") still stages the edit and answers the
+question clause beside the proposal; question-only text stays out of
+executable evidence, including follow-up reference inference. A pure question
+returns before an edit revision exists, so the draft, unresolved choices,
+pending confirmations, edit history, and the Fix-last-request target are all
+untouched. The Summary’s Edit last request control still returns to the
+preceding edit after a question. `tests/assistant-field-help-coverage-test.js`
+checks each inventoried field and control and verifies that every shared
+detail-search label reaches its corresponding answer.
 
 Named setting assignments retain the model-selected evidence, then remove the
 instruction around the complete name: “Change the location to home” resolves

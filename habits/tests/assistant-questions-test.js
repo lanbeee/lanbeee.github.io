@@ -71,14 +71,21 @@ const FREEZE = `(() => {
           save(normalize([
             {hid:'qa-habit',name:'Gym',type:'keepup',target:7,durationMinutes:30,priority:1,topics:['Fitness'],
               allowedWeekdays:[1,3],allowedTimeStart:1080,allowedTimeEnd:1200,anywhereAllowed:false,locationIds:['home'],
-              breakable:true,minChunkMinutes:15,
+              breakable:true,minChunkMinutes:15,earlyWindowDays:2,delayAllowanceDays:0,
               logs:[day(-2),day(-3),day(-5),{ts:day(1),plan:true}]},
             {hid:'qa-task',name:'File report',type:'task',target:null,durationMinutes:60,priority:2,logs:[],
-              dueDate:day(3),eventTime:day(3) + 14 * 3600000,hardDue:false},
-            {hid:'qa-empty',name:'Stretch',type:'keepup',target:1,durationMinutes:15,logs:[]}
+              dueDate:day(3),eventTime:day(3) + 14 * 3600000,delayAllowanceDays:2},
+            {hid:'qa-empty',name:'Stretch',type:'keepup',target:1,durationMinutes:15,logs:[]},
+            {hid:'qa-nodue',name:'Call bank',type:'task',target:null,durationMinutes:20,earlyWindowDays:3,
+              delayAllowanceDays:0,logs:[]},
+            {hid:'qa-legacy',name:'Old stretch',type:'keepup',target:1,durationMinutes:10,flexibilityDays:4,logs:[]},
+            {hid:'qa-event',name:'Physio',type:'keepup',target:null,durationMinutes:45,logs:[],
+              appointment:{repeat:'weekly',startDate:'2026-11-02',weekdays:[1],startMinute:1080,until:'',exceptions:{}}}
           ]));
           const target = (spec && spec.openTarget) || 'qa-habit';
-          return assistantFocusOpen({operation:'edit', kind:target === 'qa-task' ? 'task' : 'habit', targetId:target, now:Date.now()});
+          return assistantFocusOpen({operation:'edit',
+            kind:target === 'qa-task' || target === 'qa-nodue' ? 'task' : target === 'qa-event' ? 'event' : 'habit',
+            targetId:target, now:Date.now()});
         };
       }, mode === 'live');
       const drive = async cases => await page.evaluate(async specs => {
@@ -92,6 +99,19 @@ const FREEZE = `(() => {
           try{
             for(const step of spec.steps){
               const passesBefore = (s.timing.passes || []).length;
+              if(step.fix){
+                // The Fix-last-request control: revise only the preceding
+                // editable request, ignoring any question turns since.
+                const canRevise = assistantGuideCanRevise(s);
+                const fixRequest = assistantGuideRevise(s);
+                turns.push({send:'[fix]', fixRequest, canRevise,
+                  passes:(s.timing.passes || []).length - passesBefore,
+                  answer:s.answer ? s.answer.text : null,
+                  changes:s.changes.map(row => [row.field, row.op || 'set', row.value]),
+                  unresolved:s.unresolved.map(row => row.field),
+                  itemActions:[], canSave:assistantFocusCanSave(s), requests:s.requests.slice()});
+                continue;
+              }
               if(step.pick){
                 const [field, values] = step.pick;
                 const picked = assistantFocusPickValues(s, field, values);
@@ -163,7 +183,40 @@ const FREEZE = `(() => {
         {id:'read-reminder-browser', openTarget:'qa-habit', native:false, steps:[{send:'Is there a reminder?'}]},
         {id:'why-not-scheduled-window', openTarget:'qa-habit', steps:[{send:'Why isn’t this scheduled right now?'}]},
         {id:'due-task', openTarget:'qa-task', steps:[{send:'When is it due?'}]},
-        {id:'no-unconfirmed-write-on-question', openTarget:'qa-habit', steps:[{send:'What’s the duration?'}, {send:'How many times did I do it this week?'}]}
+        {id:'no-unconfirmed-write-on-question', openTarget:'qa-habit', steps:[{send:'What’s the duration?'}, {send:'How many times did I do it this week?'}]},
+        {id:'define-early-window', openTarget:'qa-habit', steps:[{send:'What does Early window mean?'}]},
+        {id:'read-early-window', openTarget:'qa-habit', steps:[{send:'What’s my early window?'}]},
+        {id:'read-delay-staged', openTarget:'qa-habit', save:true, fields:{delayAllowanceDays:{late:'allow 2 days late'}},
+          steps:[{send:'allow 2 days late'}, {send:'What’s my delay allowance?'}]},
+        {id:'compare-early-delay', openTarget:'qa-habit', steps:[{send:'What’s the difference between Early window and Delay allowance?'}]},
+        {id:'how-change-early-window', openTarget:'qa-habit', steps:[{send:'How do I change Early window?'}]},
+        {id:'flexibility-habit', openTarget:'qa-habit', steps:[{send:'How flexible is this?'}]},
+        {id:'flexibility-legacy', openTarget:'qa-legacy', steps:[{send:'How flexible is this?'}]},
+        {id:'flexibility-task-no-due', openTarget:'qa-nodue', steps:[{send:'How flexible is this?'}]},
+        {id:'flexibility-event', openTarget:'qa-event', steps:[{send:'How flexible is this?'}]},
+        {id:'flexible-start-wording', openTarget:'qa-habit', steps:[{send:'What does a flexible start time mean?'}]},
+        {id:'define-splitting', openTarget:'qa-habit', steps:[{send:'What does Splitting mean?'}]},
+        {id:'read-na-min-chunk', openTarget:'qa-empty', steps:[{send:'What’s my shortest session?'}]},
+        {id:'mixed-question-first', openTarget:'qa-habit', save:true,
+          steps:[{send:'What does Early window mean, and set it to 2 days early?'}]},
+        {id:'mixed-edit-first', openTarget:'qa-habit', save:true,
+          steps:[{send:'Set early window to 2 days early, and what does Delay allowance mean?'}]},
+        {id:'mixed-invalid-stays-open', openTarget:'qa-habit', fields:{durationMinutes:{duration:'banana'}},
+          steps:[{send:'What does Early window mean, and set duration to banana?'}]},
+        {id:'other-item-question', openTarget:'qa-habit', steps:[{send:'What is File report’s duration?'}]},
+        {id:'computed-streak-read', openTarget:'qa-habit', steps:[{send:'What’s my streak?'}]},
+        {id:'computed-values', steps:[{send:'What are my total entries?'}, {send:'What does Since last mean?'},
+          {send:'What does the pace strip show?'}, {send:'What does the last 30 days chip show?'}]},
+        {id:'derived-deadline', openTarget:'qa-task', steps:[{send:'allow 0 days late'}, {send:'What’s my hard deadline?'}]},
+        {id:'named-native-reminder', openTarget:'qa-task', native:true, steps:[{send:'What does the due-date reminder do?'},
+          {send:'What’s my due-date reminder?'}]},
+        {id:'mixed-question-then-edit', save:true,
+          steps:[{send:'What does Early window mean? Make it 20 minutes.'}]},
+        {id:'log-polite-keeps-confirmation', steps:[{send:'Can you log a completion for yesterday?'}]},
+        {id:'fix-targets-edit', openTarget:'qa-habit',
+          steps:[{send:'set early window to 2 days early'}, {send:'What’s my early window?'}, {fix:true}]},
+        {id:'pending-action-preserved', openTarget:'qa-habit',
+          steps:[{send:'Can you log this for today?'}, {send:'What does Delay allowance mean?'}]}
       ]);
       for(const run of runs){
         if(run.error)throw new Error(`${run.id} threw: ${run.error}`);
@@ -291,6 +344,115 @@ const FREEZE = `(() => {
             assert(turn(0).passes === 0 && turn(1).passes === 0, `${mode}: question turns use zero model passes`);
             assert(run.storageUnchanged, `${mode}: repeated questions write nothing`);
             break;
+          case 'define-early-window':
+            assert(turn(0).answer && /how many days before its date/i.test(turn(0).answer), `${mode}: early window definition (${turn(0).answer})`);
+            assert(/0 gives it no early allowance|never lets work move later|never lets work/i.test(turn(0).answer), `${mode}: early window definition explains zero (${turn(0).answer})`);
+            assert(turn(0).passes === 0 && !turn(0).changes.length && !turn(0).unresolved.length && run.storageUnchanged, `${mode}: definition is read-only and stages nothing`);
+            break;
+          case 'read-early-window':
+            assert(turn(0).answer && /up to 2 calendar days/i.test(turn(0).answer), `${mode}: early window read (${turn(0).answer})`);
+            assert(turn(0).passes === 0 && !turn(0).changes.length, `${mode}: early window read is read-only`);
+            break;
+          case 'read-delay-staged':
+            assert(turn(0).changes.some(([field, , value]) => field === 'delayAllowanceDays' && value === 2), `${mode}: edit staged 2 late days`);
+            assert(turn(1).answer && /Saved:/i.test(turn(1).answer) && /2 calendar days/i.test(turn(1).answer), `${mode}: staged delay read shows saved and staged (${turn(1).answer})`);
+            assert(turn(1).changes.some(([field]) => field === 'delayAllowanceDays'), `${mode}: the question kept the staged edit`);
+            assert(run.saved && run.saved.ok && run.saved.item.delayAllowanceDays === 2, `${mode}: save applied 2 late days`);
+            break;
+          case 'compare-early-delay':
+            assert(turn(0).answer && /opposite/i.test(turn(0).answer)
+              && /[Ee]arly window/.test(turn(0).answer) && /[Dd]elay allowance/.test(turn(0).answer), `${mode}: comparison names both directions (${turn(0).answer})`);
+            assert(turn(0).passes === 0 && !turn(0).changes.length, `${mode}: comparison is read-only`);
+            break;
+          case 'how-change-early-window':
+            assert(turn(0).answer && /Summary/.test(turn(0).answer) && /2 days early/.test(turn(0).answer), `${mode}: how-to-change names the control and an example ask (${turn(0).answer})`);
+            assert(!turn(0).changes.length && !turn(0).unresolved.length && run.storageUnchanged, `${mode}: how-to-change leaves the draft alone`);
+            break;
+          case 'flexibility-habit':
+            assert(turn(0).answer && /Early window is 2/.test(turn(0).answer) && /pull an occurrence forward/i.test(turn(0).answer), `${mode}: flexibility names the early allowance (${turn(0).answer})`);
+            assert(/Delay allowance is 0/.test(turn(0).answer) && /overdue|no late days/i.test(turn(0).answer), `${mode}: flexibility names the strict late side (${turn(0).answer})`);
+            assert(turn(0).passes === 0 && !turn(0).changes.length && run.storageUnchanged, `${mode}: flexibility answer is read-only`);
+            break;
+          case 'flexibility-legacy':
+            assert(turn(0).answer && /Early window is 4/.test(turn(0).answer), `${mode}: legacy flexibilityDays counts as the early allowance (${turn(0).answer})`);
+            assert(turn(0).passes === 0, `${mode}: legacy flexibility read is local`);
+            break;
+          case 'flexibility-task-no-due':
+            assert(turn(0).answer && /Early window is 3/.test(turn(0).answer) && /no due date/i.test(turn(0).answer), `${mode}: no-due task explains the configured allowances without a deadline (${turn(0).answer})`);
+            break;
+          case 'flexibility-event':
+            assert(turn(0).answer && /fixed time|does not move/i.test(turn(0).answer), `${mode}: event flexibility explains the fixed schedule (${turn(0).answer})`);
+            break;
+          case 'flexible-start-wording':
+            assert(turn(0).answer && /fixed start/i.test(turn(0).answer) && /window|range/i.test(turn(0).answer), `${mode}: flexible-start wording explains Fixed start vs time window (${turn(0).answer})`);
+            assert(turn(0).passes === 0, `${mode}: flexible-start answer is local`);
+            break;
+          case 'define-splitting':
+            assert(turn(0).answer && /split/i.test(turn(0).answer), `${mode}: splitting definition (${turn(0).answer})`);
+            break;
+          case 'read-na-min-chunk':
+            assert(turn(0).answer && /does not apply/i.test(turn(0).answer) && /splitting/i.test(turn(0).answer), `${mode}: conditional field explains when it applies (${turn(0).answer})`);
+            assert(!turn(0).changes.length && run.storageUnchanged, `${mode}: not-applicable read stages nothing`);
+            break;
+          case 'mixed-question-first':
+            assert(turn(0).answer && /how many days before its date/i.test(turn(0).answer), `${mode}: mixed request answered the question alongside the edit (${turn(0).answer})`);
+            assert(turn(0).changes.some(([field, , value]) => field === 'earlyWindowDays' && value === 2), `${mode}: mixed request staged the edit`);
+            assert(run.saved && run.saved.ok && run.saved.item.earlyWindowDays === 2, `${mode}: mixed request saved 2 early days`);
+            break;
+          case 'mixed-edit-first':
+            assert(turn(0).changes.some(([field, , value]) => field === 'earlyWindowDays' && value === 2), `${mode}: edit-first mixed staged the edit`);
+            assert(turn(0).answer && /days after|late/i.test(turn(0).answer), `${mode}: edit-first mixed answered the question (${turn(0).answer})`);
+            assert(run.saved && run.saved.ok && run.saved.item.earlyWindowDays === 2, `${mode}: edit-first mixed saved`);
+            break;
+          case 'mixed-invalid-stays-open':
+            assert(turn(0).answer && /how many days before/i.test(turn(0).answer), `${mode}: invalid mixed still answered the question`);
+            assert(!turn(0).canSave, `${mode}: the invalid edit blocks Save`);
+            assert(run.storageUnchanged, `${mode}: invalid edit wrote nothing`);
+            break;
+          case 'other-item-question':
+            assert(turn(0).answer && /only answers for Gym/i.test(turn(0).answer) && /File report/i.test(turn(0).answer), `${mode}: question about another item answers through the open-item guard (${turn(0).answer})`);
+            assert(turn(0).passes === 0 && !turn(0).changes.length && run.storageUnchanged, `${mode}: other-item question is read-only`);
+            break;
+          case 'computed-streak-read':
+            assert(turn(0).answer && /streak.*3 right now/i.test(turn(0).answer), `${mode}: streak read (${turn(0).answer})`);
+            assert(turn(0).passes === 0 && !turn(0).changes.length, `${mode}: streak read is read-only`);
+            break;
+          case 'computed-values':
+            assert(/has 3/i.test(turn(0).answer), `${mode}: total entries excludes the plan (${turn(0).answer})`);
+            assert(/2 right now/i.test(turn(1).answer), `${mode}: since last reads the latest completion (${turn(1).answer})`);
+            assert(/mostly good/i.test(turn(2).answer), `${mode}: pace uses the formatted summary (${turn(2).answer})`);
+            assert(/3\/5/.test(turn(3).answer), `${mode}: recent activity reads the displayed ratio (${turn(3).answer})`);
+            assert(run.turns.every(row => row.passes === 0 && !row.changes.length) && run.storageUnchanged, `${mode}: computed reads stay local and read-only`);
+            break;
+          case 'derived-deadline':
+            assert(/Saved: late days allowed.*Staged for this save: firm due date/i.test(turn(1).answer), `${mode}: deadline read reflects staged delay allowance (${turn(1).answer})`);
+            assert(turn(1).passes === 0 && run.storageUnchanged, `${mode}: derived deadline read stages no additional change`);
+            break;
+          case 'named-native-reminder':
+            assert(/deadline alert/i.test(turn(0).answer), `${mode}: named reminder explains the due-date alert (${turn(0).answer})`);
+            assert(turn(1).answer === 'Off.', `${mode}: due-date read selects the due-date reminder (${turn(1).answer})`);
+            assert(run.turns.every(row => row.passes === 0) && run.storageUnchanged, `${mode}: named reminders stay local`);
+            break;
+          case 'mixed-question-then-edit':
+            assert(/how many days before/i.test(turn(0).answer), `${mode}: full question before a second sentence is answered (${turn(0).answer})`);
+            assert(run.saved?.ok && run.saved.item.durationMinutes === 20, `${mode}: edit after question punctuation is saved`);
+            break;
+          case 'log-polite-keeps-confirmation':
+            assert(!turn(0).answer && turn(0).itemActions.includes('log') && run.storageUnchanged, `${mode}: polite logging request preserves confirmation`);
+            break;
+          case 'fix-targets-edit':
+            assert(turn(0).changes.some(([field]) => field === 'earlyWindowDays'), `${mode}: edit staged before the question`);
+            assert(turn(1).answer && /2/.test(turn(1).answer) && turn(1).canSave, `${mode}: question kept the proposal usable`);
+            assert(turn(2).canRevise, `${mode}: Fix stays available after a question`);
+            assert(turn(2).fixRequest === 'set early window to 2 days early', `${mode}: Fix targets the edit, not the question (${turn(2).fixRequest})`);
+            assert(!turn(2).requests.includes('What’s my early window?'), `${mode}: the question never entered edit history`);
+            break;
+          case 'pending-action-preserved':
+            assert(turn(0).itemActions.length, `${mode}: log confirmation offered`);
+            assert(turn(1).answer && /late|days after/i.test(turn(1).answer), `${mode}: interruption answered (${turn(1).answer})`);
+            assert(turn(1).itemActions.length, `${mode}: confirmation still ready after the question`);
+            assert(!turn(1).changes.length && run.storageUnchanged, `${mode}: interruption staged and wrote nothing`);
+            break;
           default:
             throw new Error(`unhandled case ${run.id}`);
         }
@@ -383,6 +545,16 @@ const FREEZE = `(() => {
       await input.fill('Did you already save that?');
       await page.locator('#detail-ask-send').tap();
       await page.locator(`${proposal} .focus-answer`).filter({hasText:'no edit waiting to be saved'}).waitFor({timeout:10000});
+      await input.fill('make it 25 minutes');
+      await page.locator('#detail-ask-send').tap();
+      await page.locator(`${proposal} [data-focus-save]:enabled`).waitFor();
+      await input.fill('What does Duration mean?');
+      await page.locator('#detail-ask-send').tap();
+      await page.locator(`${proposal} .focus-answer`).filter({hasText:'one session lasts'}).waitFor();
+      await page.locator('#detail-ask-revise').tap();
+      assert(await input.inputValue() === 'make it 25 minutes', 'UI Fix restores the latest edit text');
+      const userMessages = await page.locator('#detail-summary-thread .assistant-bubble-user').allTextContents();
+      assert(userMessages.includes('What does Duration mean?') && !userMessages.includes('make it 25 minutes'), 'UI Fix keeps the intervening question in the chat');
       assert(!errors.length, `${minimal ? 'minimal' : 'full'} UI: no page errors (${errors.slice(0, 3).join(' | ')})`);
       await page.close();
     }

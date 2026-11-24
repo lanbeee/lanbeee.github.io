@@ -251,3 +251,4 @@ glpk-seed-pack-test.js	planner	page-both
 assistant-questions-test.js	assistant	once
 places-refinement-test.js	integrations	once
 busy-manager-test.js	ui	once
+assistant-field-help-coverage-test.js	assistant	once

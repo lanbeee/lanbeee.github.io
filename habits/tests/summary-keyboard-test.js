@@ -173,6 +173,7 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
           });
           assert.ok(await page.locator('#detail-head-card').evaluate(el=>el.getBoundingClientRect().height < 48),'typing collapses the item header to a compact Editing bar');
           assert.equal(await page.locator('.detail-ask-editing-label').isVisible(),true,'compact header shows the Editing label');
+          assert.equal(await page.locator('.detail-summary-entry').isVisible(),false,'typing hides the Item settings intro heading');
           const empty=await sample(530);
           assert.equal(await page.locator('#detail-ask-guides').isVisible(),false,'empty focus does not open a suggestions card');
           await page.locator('#detail-ask-input').blur();

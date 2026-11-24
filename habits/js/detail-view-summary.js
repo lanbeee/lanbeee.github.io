@@ -1090,7 +1090,7 @@ function renderDetailSummaryGuides(){
   const base = !$('detail-ask').hidden && !input.disabled && detailSummaryCanSend()
     && typeof assistantGuideSuggestions === 'function';
   const existing = detailSummary.session && assistantFocusAlive(detailSummary.session) ? detailSummary.session : null;
-  const canRevise = Boolean(base && existing && !existing.answer && assistantGuideCanRevise(existing));
+  const canRevise = Boolean(base && assistantGuideCanRevise(existing));
   // Chips and help only while composing or when Needle needs a pick; an idle
   // tray keeps just Edit last request so it never covers the proposal.
   const noticeOnly = existing?.unresolved?.length && !detailSummaryNeedsPick(existing) && !draft.trim();
@@ -1170,7 +1170,7 @@ function detailSummaryReviseLast(){
   const request = assistantGuideRevise(session);
   if(request == null)return;
   detailSummaryRevising = true;
-  [...detailSummaryThread().querySelectorAll('.assistant-bubble-user')].at(-1)?.remove();
+  detailSummaryThread().querySelector(`[data-detail-edit-request="${session.id}:${session.requests.length}"]`)?.remove();
   if(detailSummaryHasWork())detailSummaryShowProposal();
   else detailSummaryThread().querySelector('[data-detail-proposal]:not(.is-retired)')?.remove();
   if(!detailSummaryThread().children.length)$('detail-summary-chat').hidden = true;
@@ -1219,19 +1219,22 @@ async function detailSummarySend(text){
   const session = detailSummaryEnsureSession();
   if(!session)return false;
   const outgoing = typeof assistantGuideOutgoing === 'function' ? assistantGuideOutgoing(value,session) : value;
-  detailSummaryUserBubble(outgoing,session);
+  const bubble = detailSummaryUserBubble(outgoing,session);
+  const requestIndex = session.requests.length;
   detailSummaryRevising = false;
   detailSummaryComposer('');
   await detailSummaryRead(session,outgoing);
+  if(session.requests.length > requestIndex)bubble.dataset.detailEditRequest = `${session.id}:${requestIndex}`;
   return true;
 }
 
 function detailSummaryUserBubble(text,session){
   const bubble = detailSummaryBubble('user',text);
   const parsed = typeof assistantGuideParse === 'function' ? assistantGuideParse(text,session) : null;
-  if(!parsed)return;
+  if(!parsed)return bubble;
   const tag = `<span class="assistant-mention assistant-mention-static"><span class="assistant-mention-label">${escapeHtml(parsed.label)}</span></span>`;
   bubble.innerHTML = `<p class="assistant-user-line">${tag}${parsed.rest ? ` <span class="assistant-user-detail">${escapeHtml(parsed.rest)}</span>` : ''}</p>`;
+  return bubble;
 }
 
 function detailSummaryFieldSelector(field,session){

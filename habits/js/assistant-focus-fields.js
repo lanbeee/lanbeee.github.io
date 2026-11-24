@@ -202,6 +202,10 @@ function assistantFieldContexts(request){
   return contexts;
 }
 
+function assistantFieldInferenceContexts(state){
+  return assistantFieldContexts(state.questionClauses?.length ? state.spans.map(span => span.text).join('\n') : state.request);
+}
+
 function assistantFieldSpans(request){
   const spans=[];
   const add=(start,end)=>{while(start<end && /\s/.test(request[start]))start++;while(end>start && /\s/.test(request[end-1]))end--;
@@ -1013,7 +1017,7 @@ function assistantFieldCandidates(state){
 
 async function assistantFieldDiscover(state, extract){
   const session=state.session;
-  for(const context of assistantFieldContexts(state.request)){
+  for(const context of assistantFieldInferenceContexts(state)){
     const call=await assistantFocusModel(session,{family:'families',revision:state.revision,
       system:'Find requested setting groups. Copy exact words; do not summarize.',
       request:assistantFocusRequestLine('families',context),
@@ -1067,7 +1071,7 @@ async function assistantFieldRoute(state,row,candidates,extract){
 
 async function assistantFieldRetrieve(state, rank){
   const defs=state.catalog.filter(d=>assistantFieldApplicable(d,state.session));
-  const queries=[...new Set([...assistantFieldContexts(state.request),...state.spans.map(s=>s.text)])];
+  const queries=[...new Set([...assistantFieldInferenceContexts(state),...state.spans.map(s=>s.text)])];
   for(let offset=0;offset<queries.length;offset+=13){
     const raw=await rank({queries:queries.slice(offset,offset+13),fields:defs.map(d=>({id:d.id,text:`${d.label}. ${d.hint} ${d.aliases}`}))});
     assistantFocusEnsure(state.session,state.revision);
@@ -1104,6 +1108,9 @@ async function assistantFieldFollowup(state, priorFields, extract){
   const previous=priorEvidence.join('; ')||state.session.requests.at(-2)||'';
   for(const span of state.spans){
     const content=assistantFieldDialogue(span.text).text;
+    // Question-only text is answered from app data. It must not reach the
+    // reference router, which runs before assistantFieldPrepare claims
+    // question spans, or a correction clause would inherit it as evidence.
     if(!content || state.catalog.some(other=>other.id!==def.id && assistantFieldMentioned(other,content)
       && !(calendar.includes(def.id)&&calendar.includes(other.id))))continue;
     const candidates=[def,...state.catalog.filter(other=>other.id!==def.id&&assistantFieldMentioned(other,content)&&assistantFieldApplicable(other,state.session))];
@@ -1231,78 +1238,83 @@ const ASSISTANT_GUIDE_NEAR={
 
 // Product help only. Examples never enter extraction until the user types
 // their own value and sends it; choosing a guide supplies only a field name.
+// The optional third slot is the composer-and-Q&A detail copy: what blank,
+// zero, off or the default means, when a conditional control applies, and how
+// a setting relates to its partner. Field Q&A (assistant-focus-answers.js)
+// composes definitions from description + detail, so this stays the single
+// source of help text per setting.
 const ASSISTANT_GUIDE_HELP={
-  frequency:['How often it repeats, rather than how long it lasts.','3 times a week'],
-  durationMinutes:['How long one session lasts.','30 minutes'],
-  allowedWeekdays:['Only schedule on these days.','Tuesday and Thursday only'],
-  preferredWeekdays:['Try these days first; other allowed days can still be used.','Prefer Tuesday and Thursday'],
-  allowedMonthDays:['Only schedule on these dates of each month.','The 1st and 15th'],
-  preferredMonthDays:['Try these dates first without ruling out other dates.','Prefer the 1st and 15th'],
-  allowedOrdinalWeekdays:['Only schedule on particular weekdays of each month.','The first Monday of each month'],
-  preferredOrdinalWeekdays:['Favor particular weekdays of each month.','Prefer the last Friday of each month'],
-  allowedWindow:['The hours a session must fit inside.','Between 6 pm and 8 pm'],
-  preferredWindow:['Try these hours first; other allowed hours can still be used.','Prefer between 6 pm and 8 pm'],
-  allowedTimeFixedStart:['Choose an exact start or let the planner fit it into its allowed hours.','Start exactly at 6 pm'],
-  repeatMode:['A routine has a repeating goal. An opportunity fits when its conditions allow.','Make this a routine'],
-  conditionTrigger:['For an opportunity habit, choose weather or location as its trigger.','When I am near its place'],
-  conditionRadiusM:['For a location opportunity, how close to its place counts as nearby.','500 meters'],
-  dueDate:['The date a task is due.','November 20, 2026'],
-  dueTime:['The time a task starts on its date.','6 pm'],
-  hardDue:['Whether the due date is strict or allows flexibility.','Make this a hard deadline'],
-  planByDate:['The date to finish this habit by.','November 20, 2026'],
-  earlyWindowDays:['How many days before its date it can be planned.','2 days early'],
-  delayAllowanceDays:['How many days after its date it can be planned.','Allow 1 day late'],
-  breakable:['Whether the work can be split into smaller sessions.','Allow split sessions'],
-  minChunkMinutes:['The shortest piece when splitting work. Enable splitting first.','At least 15 minutes per session'],
-  minGapMinutes:['The shortest wait between this item’s sessions on the same day.','At least 2 hours apart'],
-  timerAutoStopMinutes:['The target length for a timer you start yourself.','30 minutes'],
-  autoMarkMinutes:['When scheduled work should be marked done automatically.','Keep completion manual'],
-  tapStartsSession:['Whether tapping starts a session instead of checking it off.','Turn on start with a tap'],
-  trackValue:['Record a number or note when checking it off.','Let me record a number'],
-  places:['The saved places where this item can happen.','Use one of your saved place names'],
-  anywhereAllowed:['Whether it can happen away from its saved places too.','Allow anywhere'],
-  locationPrefs:['Which saved places to favor.','Prefer one of your saved places'],
-  weatherProfile:['Use an existing saved weather profile.','Use one of your saved weather profile names'],
-  weatherRules:['The weather conditions this item needs.','Only when it is dry'],
-  showWeather:['Whether to show a forecast for this item.','Show the forecast'],
-  showWeatherAtLocation:['Use the activity’s place for its forecast.','Use the activity location for weather'],
-  weatherLocationId:['A saved place to use for the forecast.','Use one of your saved place names'],
-  scheduleOptions:['Alternative combinations of days, hours and places.','Monday from 6 pm to 8 pm at a saved place'],
-  scheduleLinks:['Place this before or after another saved item.','Directly after another item’s name'],
-  name:['The name shown for this item.','Evening walk'],
-  kind:['Convert this item between a habit and a task.','Make this a task'],
-  habitKind:['Build a habit, limit it, or aim to stop it.','Make this a build habit'],
-  emoji:['The icon for this item.','🌱'],
-  emojiBgColor:['The background color behind its icon.','Blue'],
-  priority:['How strongly the planner should prioritize this item.','High priority'],
-  topics:['The topics used to organize this item.','Tag it Health'],
-  pinned:['Keep this item pinned near the top of the list.','Pin it'],
-  snoozedUntil:['Hide it until a date, or show it again.','Show it again'],
-  sharedDisplay:['How this item appears on a paired shared display.','View only'],
-  links:['A link to keep with this item.','https://example.com'],
-  appointmentStartDate:['The date this event begins.','November 20, 2026'],
-  appointmentStartMinute:['The time this event starts.','6 pm'],
-  appointmentRepeat:['Whether this event is once, daily or weekly.','Repeat weekly'],
-  appointmentWeekdays:['The weekdays on which a weekly event repeats.','Tuesday and Thursday'],
-  appointmentUntil:['When this repeating event ends.','November 30, 2026'],
-  exceptionCancelled:['Skip or restore this occurrence of the event.','Skip this date'],
-  exceptionReset:['Remove this date’s overrides and use the series settings.','Use the usual values for this date'],
-  reminderDnd:['Silence the phone during this item’s session. Requires Android access.','Stop silencing my phone'],
-  reminderSound:['Tone for this item’s notifications. The default follows Settings. Saved phone sounds can be named too.','Use Warm'],
-  reminderDue:['How to be reminded about this task’s deadline.','Set the due-date reminder to notification'],
-  reminderDueDays:['Which day to send the deadline alert.','Remind me 1 day before the due date'],
-  reminderDueTime:['Local clock time for the deadline alert.','Set the due-date reminder time to 9am'],
-  reminderSecond:['How to deliver a second event alert.','Set the second reminder to notification'],
-  reminderSecondLead:['How early to send the second event alert.','Set the second reminder to 1 day before'],
-  reminderStart:['How to be reminded when this item starts.','Notify me at the start'],
-  reminderEnd:['How to be reminded when this item ends.','Notify me at the end'],
-  reminderTravelStart:['A reminder to leave for this item.','Notify me when it is time to leave'],
-  reminderTravelEnd:['A reminder at the end of travel.','Turn off the arrival reminder'],
-  reminderMissed:['A warning before the item is dropped from the plan.','Notify me before it is dropped'],
-  reminderTravelLead:['How early to send the departure reminder.','10 minutes before'],
-  reminderStartLead:['How early to send the event reminder.','15 minutes before'],
-  reminderMissedLead:['How early to send the drop warning.','5 minutes before'],
-  reminderReset:['Use the usual reminder settings for this occurrence.','Use the usual reminders']
+  frequency:['How often it repeats, rather than how long it lasts.','3 times a week','A rhythm like 3 times a week spreads its completions across the cycle, and the planner spaces them out. Blank (no rhythm) means it has no repeating goal.'],
+  durationMinutes:['How long one session lasts.','30 minutes','Splitting can break one duration into shorter pieces; Shortest session sets the smallest piece.'],
+  allowedWeekdays:['Only schedule on these days.','Tuesday and Thursday only','Blank or none means any day works. These days are hard gates — including overdue catch-up.'],
+  preferredWeekdays:['Try these days first; other allowed days can still be used.','Prefer Tuesday and Thursday','A soft preference, never a rule: blank means no preferred day, and other allowed days are still used.'],
+  allowedMonthDays:['Only schedule on these dates of each month.','The 1st and 15th','Blank means any date of the month works.'],
+  preferredMonthDays:['Try these dates first without ruling out other dates.','Prefer the 1st and 15th','A soft preference: blank means no preferred dates.'],
+  allowedOrdinalWeekdays:['Only schedule on particular weekdays of each month.','The first Monday of each month','Blank means any week of the month works.'],
+  preferredOrdinalWeekdays:['Favor particular weekdays of each month.','Prefer the last Friday of each month','A soft preference: blank means no preferred monthly weekdays.'],
+  allowedWindow:['The hours a session must fit inside.','Between 6 pm and 8 pm','Blank means any time of day. Anchors like sunrise or another item’s time can set the edges. Choose Fixed start instead when the clock time must be exact.'],
+  preferredWindow:['Try these hours first; other allowed hours can still be used.','Prefer between 6 pm and 8 pm','A soft preference: blank means no preferred hours.'],
+  allowedTimeFixedStart:['Choose an exact start or let the planner fit it into its allowed hours.','Start exactly at 6 pm','On pins the session to the exact clock time you set. Off lets the planner pick the minute anywhere inside the allowed hours.'],
+  repeatMode:['A routine has a repeating goal. An opportunity fits when its conditions allow.','Make this a routine','A routine appears on its rhythm. An opportunity has no fixed rhythm — it is offered only when its weather or location condition matches.'],
+  conditionTrigger:['For an opportunity habit, choose weather or location as its trigger.','When I am near its place','Only applies to opportunity habits. Routines never use a trigger.'],
+  conditionRadiusM:['For a location opportunity, how close to its place counts as nearby.','500 meters','Only applies when the trigger is location. The default is 200 meters.'],
+  dueDate:['The date a task is due.','November 20, 2026','Blank means no deadline is set. The delay allowance counts days past this date.'],
+  dueTime:['The time a task starts on its date.','6 pm','Blank means the planner fits it in. Set means it holds that clock start like a fixed appointment.'],
+  hardDue:['Whether the due date is strict or allows flexibility.','Make this a hard deadline','On means no late days — the due date is strict. Off lets the delay allowance decide how many days late still count on time. Applies to tasks with a due date.'],
+  planByDate:['The date to finish this habit by.','November 20, 2026','Only applies to routine habits. Blank means there is no finish-by target.'],
+  earlyWindowDays:['How many days before its date it can be planned.','2 days early','0 gives it no early allowance. A schedule link or shorter trip can bring an occurrence forward when an earlier day fits. Delay allowance controls how far past the due or rhythm day it can still count as on time.'],
+  delayAllowanceDays:['How many days after its date it can be planned.','Allow 1 day late','0 makes the due day strict: after it, the occurrence counts as overdue, though overdue work can still be caught up inside its allowed days, hours and places. Early window is the other direction.'],
+  breakable:['Whether the work can be split into smaller sessions.','Allow split sessions','Off keeps the work in one block. On lets the planner split it into pieces that still sum to the duration.'],
+  minChunkMinutes:['The shortest piece when splitting work. Enable splitting first.','At least 15 minutes per session','Only applies when Splitting is on. The default is 30 minutes per piece.'],
+  minGapMinutes:['The shortest wait between this item’s sessions on the same day.','At least 2 hours apart','0 means no wait is required between its sessions.'],
+  timerAutoStopMinutes:['The target length for a timer you start yourself.','30 minutes','Off means the timer runs until you stop it.'],
+  autoMarkMinutes:['When scheduled work should be marked done automatically.','Keep completion manual','Manual (off) means you check it off yourself. A number marks it done automatically once that many minutes are logged.'],
+  tapStartsSession:['Whether tapping starts a session instead of checking it off.','Turn on start with a tap','Off: tapping the card logs a completion. On: tapping starts a timed session instead.'],
+  trackValue:['Record a number or note when checking it off.','Let me record a number','Off: a completion is just a checkmark. On: each completion asks for a number or measurement.'],
+  places:['The saved places where this item can happen.','Use one of your saved place names','Blank means no saved place is set, so it can happen anywhere unless Anywhere is off.'],
+  anywhereAllowed:['Whether it can happen away from its saved places too.','Allow anywhere','Off restricts it to the saved places only. On also allows it anywhere else.'],
+  locationPrefs:['Which saved places to favor.','Prefer one of your saved places','Preferences only rank places — a lower-ranked place is never removed. Blank means no ranking.'],
+  weatherProfile:['Use an existing saved weather profile.','Use one of your saved weather profile names','Choosing a profile applies that profile’s saved conditions instead of custom rules.'],
+  weatherRules:['The weather conditions this item needs.','Only when it is dry','Blank or ignore means weather never blocks this item. Rules defer its sessions to a day that matches.'],
+  showWeather:['Whether to show a forecast for this item.','Show the forecast','Off hides the forecast row.'],
+  showWeatherAtLocation:['Use the activity’s place for its forecast.','Use the activity location for weather','On shows the forecast at this item’s own place; off uses the forecast place below.'],
+  weatherLocationId:['A saved place to use for the forecast.','Use one of your saved place names','Chooses which saved place the forecast comes from when this item has no place of its own.'],
+  scheduleOptions:['Alternative combinations of days, hours and places.','Monday from 6 pm to 8 pm at a saved place','Explicit alternatives to the general allowed schedule: the planner treats each row as one option. Blank means only the general schedule applies.'],
+  scheduleLinks:['Place this before or after another saved item.','Directly after another item’s name','Plain order fixes the sequence. Direct adjacency keeps the two items back-to-back. Blank means no ordering.'],
+  name:['The name shown for this item.','Evening walk',''],
+  kind:['Convert this item between a habit and a task.','Make this a task','A habit repeats on a rhythm you keep up. A task is one-off with a due date.'],
+  habitKind:['Build a habit, limit it, or aim to stop it.','Make this a build habit','Build keeps a rhythm up. Limit caps how often it may happen. Stop aims for none and drops its rhythm.'],
+  emoji:['The icon for this item.','🌱',''],
+  emojiBgColor:['The background color behind its icon.','Blue','None uses the default background.'],
+  priority:['How strongly the planner should prioritize this item.','High priority','P0 is critical and is protected hardest; P5 is someday. New items start at P2. Higher priority claims scarce room first.'],
+  topics:['The topics used to organize this item.','Tag it Health','Blank means no topics.'],
+  pinned:['Keep this item pinned near the top of the list.','Pin it','Pinned items stay near the top of the home list and keep their day on the plan.'],
+  snoozedUntil:['Hide it until a date, or show it again.','Show it again','Blank means it shows as usual. While snoozed it stays off the plan and the home list.'],
+  sharedDisplay:['How this item appears on a paired shared display.','View only','View only lets the shared display see it without marking it done. Mark done also allows completing it there. Hidden keeps it off the display.'],
+  links:['A link to keep with this item.','https://example.com','Blank means no links.'],
+  appointmentStartDate:['The date this event begins.','November 20, 2026',''],
+  appointmentStartMinute:['The time this event starts.','6 pm','The event keeps this exact clock time; the planner reserves it as-is rather than moving it.'],
+  appointmentRepeat:['Whether this event happens once or repeats.','Repeat weekly','A one-time event happens on its start date. Weekly events use selected weekdays, or every day if all seven are selected. A saved monthly event repeats on its monthly weekday rules.'],
+  appointmentWeekdays:['The weekdays on which a weekly event repeats.','Tuesday and Thursday','Only applies to weekly events.'],
+  appointmentUntil:['When this repeating event ends.','November 30, 2026','Blank means it repeats indefinitely.'],
+  exceptionCancelled:['Skip or restore this occurrence of the event.','Skip this date','Per date of a repeating event: skipped removes just that date; the series keeps its other dates.'],
+  exceptionReset:['Remove this date’s overrides and use the series settings.','Use the usual values for this date','Only applies to a date that has its own overrides.'],
+  reminderDnd:['Silence the phone during this item’s session. Requires Android access.','Stop silencing my phone','Off leaves the phone’s sound as-is. Needs Android permissions, so the browser view cannot set it.'],
+  reminderSound:['Tone for this item’s notifications. The default follows Settings. Saved phone sounds can be named too.','Use Warm','Default follows the app’s sound setting; Silent mutes this item’s notifications. Ringing alarms keep the phone alarm tone.'],
+  reminderDue:['How to be reminded about this task’s deadline.','Set the due-date reminder to notification','Off means no deadline alert. Applies to tasks with a due date.'],
+  reminderDueDays:['Which day to send the deadline alert.','Remind me 1 day before the due date','0 reminds on the due date itself; 1 or more reminds that many days before it.'],
+  reminderDueTime:['Local clock time for the deadline alert.','Set the due-date reminder time to 9am',''],
+  reminderSecond:['How to deliver a second event alert.','Set the second reminder to notification','Off means only the first event reminder is sent.'],
+  reminderSecondLead:['How early to send the second event alert.','Set the second reminder to 1 day before',''],
+  reminderStart:['How to be reminded when this item starts.','Notify me at the start','Off means no alert when it starts.'],
+  reminderEnd:['How to be reminded when this item ends.','Notify me at the end','Off means no alert when it ends.'],
+  reminderTravelStart:['A reminder to leave for this item.','Notify me when it is time to leave','Only fires when getting there takes travel time. Off means no departure heads-up.'],
+  reminderTravelEnd:['A reminder at the end of travel.','Turn off the arrival reminder','Off means no arrival alert.'],
+  reminderMissed:['A warning before the item is dropped from the plan.','Notify me before it is dropped','Off means no drop warning. Not used by opportunity habits.'],
+  reminderTravelLead:['How early to send the departure reminder.','10 minutes before',''],
+  reminderStartLead:['How early to send the event reminder.','15 minutes before',''],
+  reminderMissedLead:['How early to send the drop warning.','5 minutes before',''],
+  reminderReset:['Use the usual reminder settings for this occurrence.','Use the usual reminders','Only applies to a single date of a repeating event that has reminder overrides.']
 };
 
 function assistantGuideCatalog(session){
@@ -1315,6 +1327,8 @@ function assistantGuideHelp(id){
   return {description,example};
 }
 
+// Q&A reads the same entry: description plus the blank/zero/off/default and
+// conditional notes, so composer and answers never drift apart.
 function assistantGuideBrowse(session,query){
   const words=String(query||'').toLowerCase().trim().split(/\s+/).filter(Boolean);
   return assistantGuideCatalog(session).filter(def=>{
@@ -1394,6 +1408,7 @@ function assistantGuideRevise(session){
   }
   session.interpretationApproved=null;session.savedFingerprint='';session.watched=null;
   session._guideRevision=null;
+  session.answer=null;
   session.trace.push({family:'guide',action:'revise-last-request',request:revision.request});
   return revision.request;
 }
@@ -1690,8 +1705,8 @@ function assistantActionCue(text, ignoreSettings){
   return null;
 }
 
-function assistantActionClauses(request){
-  const re = /;\s+|\n+|\s+(?:and|then)\s+/gi;
+function assistantActionClauses(request, splitQuestions = false){
+  const re = splitQuestions ? /;\s+|\n+|\?\s+|\s+(?:and|then)\s+/gi : /;\s+|\n+|\s+(?:and|then)\s+/gi;
   const bounds = [];
   let start = 0;
   for(const match of String(request || '').matchAll(re)){
@@ -1711,10 +1726,10 @@ function assistantActionClauses(request){
   }).filter(part => part.text);
 }
 
-function assistantActionRegions(request, session){
+function assistantActionRegions(request, session, clauses = assistantActionClauses(request)){
   if(!session)return [];
   const regions = [];
-  for(const clause of assistantActionClauses(request)){
+  for(const clause of clauses){
     if(assistantActionSettingClause(clause.text))continue;
     const kind = assistantActionCue(clause.text);
     if(!kind)continue;
@@ -1746,8 +1761,14 @@ function assistantFieldExcise(request, spans, regions){
   return out;
 }
 
+function assistantFieldInstructionClauses(state){
+  const questions = state.questionClauses || [];
+  return assistantActionClauses(state.request, questions.length > 0)
+    .filter(clause => !questions.some(question => question.start === clause.start && question.end === clause.end));
+}
+
 function assistantFieldClaimActions(state){
-  const regions = assistantActionRegions(state.request, state.session);
+  const regions = assistantActionRegions(state.request, state.session, assistantFieldInstructionClauses(state));
   // Create never logs or plans. Drop those sentences so they cannot become the
   // new item's title, and do not offer a confirm button.
   if(!state.session || state.session.operation !== 'edit'){
@@ -1766,7 +1787,7 @@ function assistantFieldClaimActions(state){
 function assistantFieldClaimGuidance(state){
   if(!state.session || state.session.operation !== 'edit')return;
   const held = [];
-  for(const clause of assistantActionClauses(state.request)){
+  for(const clause of assistantFieldInstructionClauses(state)){
     const ambiguous = assistantAmbiguousPlanDay(clause.text, state.session.now);
     const rivals = assistantGuidanceRivals(state.session, clause.text);
     if(!ambiguous && rivals.length < 2)continue;
@@ -1788,10 +1809,8 @@ function assistantFieldClaimQuestions(state){
   if(!state.session || state.session.operation !== 'edit')return;
   if(typeof assistantFocusQuestionIntent !== 'function')return;
   const held = [];
-  for(const clause of assistantActionClauses(state.request)){
-    if((state.actionRegions || []).some(region => region.start < clause.end && clause.start < region.end))continue;
-    if((state.unavailableSpans || []).some(span => span.start < clause.end && clause.start < span.end))continue;
-    if(assistantActionCue(clause.text))continue;
+  const clauses = assistantActionClauses(state.request, true);
+  for(const clause of clauses){
     const intent = assistantFocusQuestionIntent(clause.text, state.session);
     if(!intent || intent.kind === 'unknown')continue;
     held.push({...clause, intent});
@@ -1800,13 +1819,17 @@ function assistantFieldClaimQuestions(state){
   // Never excise the whole request: if every clause is a question there is no
   // edit left to extract, so let the pipeline treat the text as it stands.
   const heldSpans = held.map(clause => [clause.start, clause.end]);
-  const leftover = assistantActionClauses(state.request)
+  const leftover = clauses
     .filter(clause => !heldSpans.some(([start, end]) => clause.start >= start - 2 && clause.end <= end + 2))
     .map(clause => clause.text).join(' ').replace(/[?.,;:]+/g, '').trim();
   if(!leftover || !/\w/.test(leftover))return;
   state.questionClauses = held;
   state.unavailableSpans = (state.unavailableSpans || []).concat(held);
-  state.spans = assistantFieldExcise(state.request, state.spans, held);
+  // Excising a mid-sentence question can leave its bare conjunction behind
+  // ("..., and what does X mean?" → span "and"). That remnant is filler, not
+  // evidence; keeping it would ask "Which setting should "and" change?".
+  state.spans = assistantFieldExcise(state.request, state.spans, held)
+    .filter(span => !/^(?:and|then|also|please|with)[\s.!,?;]*$/i.test(span.text.trim()));
 }
 
 function assistantFieldAdoptAction(state, kind, phrase, explicit){
@@ -1863,6 +1886,8 @@ function assistantFocusAsksQuestion(request){
     || /^(?:how\s+(?:many|much|often|long|did|is|was)|what|when\s+(?:did|was|is)|why|which|who|where|did\s+i|have\s+i|has\s+it|is\s+it|was\s+it)\b/i.test(text);
 }
 
+const ASSISTANT_OTHER_SETTING_NOUNS='duration|priority|frequency|time|schedule|due date|place|places|reminder|history|topics?|days|hours|early window|delay allowance|location|colou?r|emoji';
+
 function assistantFocusOtherTarget(session, request){
   if(session.operation!=='edit')return null;
   const current=assistantFocusFound(session);
@@ -1872,7 +1897,16 @@ function assistantFocusOtherTarget(session, request){
     const name=item.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
     const subject=new RegExp(`^(?:(?:also|please)\\s+|(?:can|could|would)\\s+(?:you|u)\\s+)*(?:(?:log|unlog|plan|unplan|schedule|book|mark|make|set|change|edit|update|open|rename)\\s+(?:the\\s+)?|switch\\s+to\\s+|for\\s+)["“]?${name}["”]?(?=$|[\\s,:;.!?]|['’]s\\b)`,'i');
     const possessive=new RegExp(`^["“]?${name}["”]?(?:['’]s\\s+(?:duration|priority|frequency|time|schedule)\\b|\\s+should\\s+be\\b)`,'i');
-    if(clauses.some(clause=>subject.test(clause.trim())||possessive.test(clause.trim())))return item;
+    // Question-shaped references ("What is Gym's duration?", "the due date of
+    // Gym?"). Restricting them to question wording keeps order-link and place
+    // values that legitimately name another item out of this guard.
+    const questionShaped=clause=>/\?\s*$/.test(clause)
+      || /^(?:what|whats|whens|when|where|which|who|whose|why|how|is|are|was|were|does|did|has|have|am)\b/i.test(clause);
+    const questionRef=new RegExp(`["“]?${name}["”]?['’]s\\s+(?:${ASSISTANT_OTHER_SETTING_NOUNS})\\b|(?:\\b(?:${ASSISTANT_OTHER_SETTING_NOUNS})\\s+of\\s+["“]?${name}\\b)`,'i');
+    if(clauses.some(clause=>{
+      const text=clause.trim();
+      return subject.test(text)||possessive.test(text)||(questionShaped(text)&&questionRef.test(text));
+    }))return item;
   }
   return null;
 }
@@ -2107,7 +2141,6 @@ function assistantFieldPrepare(state){
   const session=state.session,request=state.request,priorFields=state.priorFields;
   assistantFieldClaimActions(state);
   assistantFieldClaimGuidance(state);
-  assistantFieldClaimQuestions(state);
   // Events have no priority control. Ask about the named unsupported setting
   // before a generic router can reinterpret it as a date or title request.
   if(assistantFocusEffectiveKind(session)==='event'){
@@ -2679,7 +2712,7 @@ function assistantFieldMerge(state,row,result){
 async function assistantFieldCoverage(state,extract){
   const session=state.session;
   const staged=state.jobs.filter(j=>j.status==='staged').map(j=>`${j.def?.label||j.family}: ${j.proposal?.instructionSpan?.text||j.source||''}`).join('; ');
-  for(const context of assistantFieldContexts(state.request)){
+  for(const context of assistantFieldInferenceContexts(state)){
     const spec={family:'completeness',revision:state.revision,
       system:`Already extracted: ${staged.slice(0,1400)||'nothing'}. Find a missing setting and its exact words. Leave missing empty if complete.`,
       request:assistantFocusRequestLine('missing',context),tool:assistantFocusPackTool('missing','Extract the missing record.',{missing:{type:'string',description:'family: exact missing instruction, or empty'}},['missing'])};
@@ -2854,11 +2887,23 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     const other=assistantFocusOtherTarget(session,request);
     // Answer before starting an edit revision. A read must leave pending
     // confirmations, clarifications, and the last editable request intact.
-    if(session.operation==='edit' && !other && !guide?.rest && typeof assistantFocusQuestionIntent === 'function'){
+    // A recognized question naming another saved item answers through the
+    // open-item guard instead of reaching the edit pipeline below.
+    if(session.operation==='edit' && !guide?.rest && typeof assistantFocusQuestionIntent === 'function'){
       const intent=assistantFocusQuestionIntent(request,session);
-      const hasEdit=intent && assistantActionClauses(request)
-        .some(clause=>assistantFocusEditSignal(clause.text)||assistantActionCue(clause.text) && !assistantFocusQuestionIntent(clause.text,session));
+      const hasEdit=intent && assistantActionClauses(request, true).some((clause, index)=>{
+        if(assistantFocusEditSignal(clause.text))return true;
+        const question = assistantFocusQuestionIntent(clause.text, session);
+        if(question && question.kind !== 'unknown')return false;
+        if(assistantActionCue(clause.text))return true;
+        return index > 0 && (/\?\s*$/.test(request.slice(0, clause.start))
+          || /^(?:only|except|never)\b|\b(?:only|except)\s*[.!?]*$/i.test(clause.text));
+      });
       if(intent && !hasEdit){
+        if(other){
+          session.answer={text:`This chat only answers for ${session.source.name}. Open ${other.name} — its Summary has the same answers and assistant.`,kind:'help'};
+          return {type:'focus',session,html:assistantFocusReviewHtml(session)};
+        }
         const answer=assistantFocusQuestionAnswer(intent,session,request);
         session.answer={text:answer.text,kind:intent.kind};
         return {type:'focus',session,html:assistantFocusReviewHtml(session)};
@@ -2903,6 +2948,7 @@ async function assistantFocusRunFieldTurn(session,text,opts){
   session.continuationError='';
   try{
     if(state.needsCandidates){
+      assistantFieldClaimQuestions(state);
       state.followup=await assistantFieldFollowup(state,state.priorFields,extract);
       assistantFocusEnsure(session,state.revision);
       assistantFieldPrepare(state);
@@ -2977,7 +3023,7 @@ async function assistantFocusRunFieldTurn(session,text,opts){
         if(!(result && result.text))continue;
         session.answer={text:result.text,kind:clause.intent.kind};
         session.unresolved=session.unresolved.filter(row => !row.phrase
-          || !(assistantFocusPhraseIn(row.phrase,clause.text) || assistantFocusPhraseIn(clause.text,row.phrase)));
+          || !assistantFocusPhraseIn(row.phrase,clause.text));
         break;
       }
     }

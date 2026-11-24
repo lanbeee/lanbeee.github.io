@@ -703,6 +703,8 @@ body[data-pane-count="1"]:has(#action-toast.show) .detail-sheet.detail-ask-on > 
    bar while typing on phones, maximizing room for the chat and proposals. */
 body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing{--nav-bottom:0px;}
 body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing > .detail-page-nav{display:none;}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing .detail-summary-entry{display:none;}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing .detail-summary > .detail-group:first-child{margin-top:0;}
 .detail-ask-editing-label{display:none;}
 body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing:not(.tune-dirty):not(.detail-editing) > .detail-head{
   display:flex;align-items:center;gap:6px;box-sizing:border-box;
