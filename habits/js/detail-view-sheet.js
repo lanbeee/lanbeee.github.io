@@ -212,6 +212,7 @@ function openDetail(i){
   paintDetailChrome(h,items);
   setDetailDirty(false,h);
   renderDetailSummary(h,items);
+  if(typeof invalidateDetailSearchCache === 'function')invalidateDetailSearchCache();
   if(changedHabit){
     $('detail-search-input').value = '';
     setDetailSearchOpen(false,false);

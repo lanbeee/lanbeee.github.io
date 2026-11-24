@@ -142,7 +142,16 @@ function settingsSearchGroup(section){
   return settingsSearchText(el?.textContent);
 }
 
+let _settingsSearchEntriesCache = null;
+let _settingsSearchLastRenderSig = '';
+function invalidateSettingsSearchCache(){
+  _settingsSearchEntriesCache = null;
+  _settingsSearchLastRenderSig = '';
+}
+
 function settingsSearchEntries(){
+  const panelOpen = !$('settings-search-panel')?.hidden;
+  if(panelOpen && _settingsSearchEntriesCache)return _settingsSearchEntriesCache;
   const stack = document.querySelector('#settings-sheet .settings-stack');
   if(!stack)return [];
   const entries = [];
@@ -165,11 +174,15 @@ function settingsSearchEntries(){
       SETTINGS_SEARCH_ALIAS_LABELS[detailSearchNormalize(name)]
     ].filter(Boolean).join(' ');
     const labelN = detailSearchNormalize(name);
+    const aliasN = detailSearchNormalize(`${aliases} ${synonyms}`);
+    const pathN = detailSearchNormalize(path);
+    const descN = detailSearchNormalize(desc);
     entries.push({
-      target,label:name,path,labelN,
-      aliasN:detailSearchNormalize(`${aliases} ${synonyms}`),
-      pathN:detailSearchNormalize(path),
-      descN:detailSearchNormalize(desc),
+      target,label:name,path,labelN,aliasN,pathN,descN,
+      labelW:labelN ? labelN.split(' ') : [],
+      aliasW:aliasN ? aliasN.split(' ') : [],
+      pathW:pathN ? pathN.split(' ') : [],
+      descW:descN ? descN.split(' ') : [],
       order:entries.length
     });
   };
@@ -187,6 +200,7 @@ function settingsSearchEntries(){
   stack.querySelectorAll('.settings-range').forEach(row=>{
     add(row,row.querySelector(':scope > span')?.textContent);
   });
+  if(panelOpen)_settingsSearchEntriesCache = entries;
   return entries;
 }
 
@@ -198,8 +212,13 @@ function renderSettingsSearch(){
   const query = detailSearchNormalize(input.value).slice(0,120);
   const tokens = query.split(' ').filter(Boolean);
   const ranked = searchRankEntries(settingsSearchEntries(),tokens,SETTINGS_SEARCH_RULES,true);
-  results.replaceChildren();
-  ranked.forEach(row=>results.append(searchResultButton(row,entry=>revealSettingsSearchEntry(entry))));
+  const renderSig = `${query}|${ranked.map(r=>r.entry.order).join(',')}`;
+  if(_settingsSearchLastRenderSig !== renderSig){
+    _settingsSearchLastRenderSig = renderSig;
+    const frag = document.createDocumentFragment();
+    ranked.forEach(row=>frag.append(searchResultButton(row,entry=>revealSettingsSearchEntry(entry))));
+    results.replaceChildren(frag);
+  }
   status.textContent = !tokens.length
     ? 'Browse settings, or search by name.'
     : ranked.length
@@ -228,9 +247,11 @@ function setSettingsSearchOpen(open,focus = true){
   $('settings-search-dismiss').hidden = !open;
   $('settings-close').hidden = open;
   if(!open){
+    invalidateSettingsSearchCache();
     $('settings-search-input')?.blur();
     if(wasOpen)stack.scrollTop = settingsSearchReturnScroll;
   }else{
+    if(!wasOpen)invalidateSettingsSearchCache();
     renderSettingsSearch();
     if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
     if(focus)$('settings-search-input')?.focus({preventScroll:true});

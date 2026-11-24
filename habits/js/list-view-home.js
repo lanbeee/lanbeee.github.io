@@ -1547,7 +1547,7 @@ function renderHomeTagFilter(data,precomputedIndices = null){
 // RENDER: keep the wide-layout app-bar chrome in step with the shared filter
 // state and presence. Phone panes never show the app-bar, so this only paints
 // the tablet/desktop controls. Call after any render of the shared state.
-function syncAppBarChrome(){
+function syncAppBarChrome(dataOverride = null){
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   const filtersBtn = document.getElementById('app-bar-filters');
   if(filtersBtn){
@@ -1569,7 +1569,8 @@ function syncAppBarChrome(){
     return;
   }
   const registry = locationOptions();
-  const usedLocSet = new Set(load().flatMap(h=>typeof habitDisplayLocationIds === 'function'
+  const data = Array.isArray(dataOverride) ? dataOverride : load();
+  const usedLocSet = new Set(data.flatMap(h=>typeof habitDisplayLocationIds === 'function'
     ? habitDisplayLocationIds(h,registry) : normalizeLocationIds(h.locationIds,registry)));
   if(!registry.length || !usedLocSet.size){
     placeBtn.hidden = true;
@@ -1946,26 +1947,26 @@ function matchesHomeTopic(h,topic){
 
 let lastUnsearchedHomeCardCount = 0;
 
-function homeSearchAvailable(){
+function homeSearchAvailable(dataOverride = null){
   // The desktop bar always keeps search next to add. Phone search stays
   // tucked away until there is a list worth filtering.
   if(document.body.classList.contains('replica-display-mode'))return true;
   if(typeof paneTierActive === 'function' && paneTierActive())return true;
-  const data = load();
-  return lastUnsearchedHomeCardCount >= 10
-    || data.some(h=>h.type === 'task' && isTaskDone(h));
+  if(lastUnsearchedHomeCardCount >= 10)return true;
+  const data = Array.isArray(dataOverride) ? dataOverride : load();
+  return data.some(h=>h.type === 'task' && isTaskDone(h));
 }
 
 // RENDER: toggle overview and Search from the settled Home presentation.
 // Search results never overwrite the cached unsearched count, so narrowing a
 // query cannot make its own control disappear.
-function updateSortButton(settled = false){
-  const data = load();
+function updateSortButton(settled = false,dataOverride = null){
+  const data = Array.isArray(dataOverride) ? dataOverride : load();
   const count = data.length;
   if(settled && !searchQuery.trim()){
     lastUnsearchedHomeCardCount = document.querySelectorAll('#list .ting-card').length;
   }
-  const canSearch = homeSearchAvailable();
+  const canSearch = homeSearchAvailable(data);
   $('open-overview').classList.toggle('is-hidden',count < 1);
   $('open-overview').disabled = count < 1;
   $('open-search').classList.toggle('is-hidden',!canSearch);
@@ -2009,7 +2010,7 @@ function updateSearchUi(){
   if(wide && nav)nav.classList.remove('search-open');
   const barSearchWrap = $('app-bar-search');
   if(!wide && barSearchWrap)barSearchWrap.classList.remove('is-open');
-  input.value = searchQuery;
+  if(input.value !== searchQuery)input.value = searchQuery;
   document.body.classList.toggle('search-active',open);
   const syncSearchToggle = (btn)=>{
     if(!btn)return;
@@ -2045,6 +2046,7 @@ function setSearchOpen(open,options = {}){
   const nav = document.querySelector('.bottom-nav');
   const input = $('habit-search');
   if(!input)return;
+  if(!open && typeof cancelScheduledSearchRender === 'function')cancelScheduledSearchRender();
   // Put the field in the tier-correct wrapper FIRST: focus() silently no-ops
   // on an input inside a display:none wrapper, which reads to the user as
   // "search opened but there is nothing to type and no keyboard".

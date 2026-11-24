@@ -837,7 +837,7 @@ function visibleIndices(data,settingsOverride = null){
   // map once per pass and share it, and memoize score/category per index —
   // both are pure for the duration of one synchronous pass.
   const affinity = typeof locationAffinityMap === 'function'
-    ? locationAffinityMap(typeof load === 'function' ? load() : [],settings)
+    ? locationAffinityMap(data,settings)
     : null;
   const scoreCache = new Map();
   const scoreOf = i => {
@@ -884,6 +884,15 @@ function visibleIndices(data,settingsOverride = null){
 // `locationRegistry` (optional) is a hoisted locationOptions() result —
 // otherwise every haystack re-normalizes the registry per habit.
 
+let _searchWeekdayLongCache = null;
+function searchWeekdayLongName(day){
+  if(!_searchWeekdayLongCache){
+    _searchWeekdayLongCache = Array.from({length:7},(_,d)=>
+      new Date(2024,0,7 + d).toLocaleDateString(undefined,{weekday:'long'}));
+  }
+  return _searchWeekdayLongCache[day] || '';
+}
+
 function searchText(h,locationRegistry = null){
   const typeLabel = h.type === 'keepup' ? 'build routine keepup'
     : h.type === 'reduce' ? 'limit reduce less'
@@ -898,7 +907,7 @@ function searchText(h,locationRegistry = null){
         : `due ${dateKey(when)}`)
     : '';
   const scheduleText = [
-    ...schedule.weekdays.flatMap(day=>[weekdayShort(day),new Date(2024,0,7 + day).toLocaleDateString(undefined,{weekday:'long'})]),
+    ...schedule.weekdays.flatMap(day=>[weekdayShort(day),searchWeekdayLongName(day)]),
     ...schedule.monthDays.flatMap(day=>[String(day),monthOrdinal(day)]),
     ...pref.weekdays.flatMap(day=>[weekdayShort(day),'preferred']),
     ...pref.monthDays.flatMap(day=>[String(day),'preferred'])
@@ -932,33 +941,37 @@ function searchRank(h,query){
   return 5;
 }
 
-function filteredVisibleIndices(data,baseIndices = null){
+function filteredVisibleIndices(data,baseIndices = null,searchIndex = null){
   // `baseIndices` (optional): a visibleIndices(data) result the caller already
   // computed — render() needs the same order for its empty-state logic, so let
   // it share one sort pass instead of running three.
   const indices = baseIndices || visibleIndices(data);
   const query = searchQuery.trim().toLowerCase();
-  let base = indices;
-  if(typeof matchesHomeFilters === 'function'){
+  let base = searchIndex ? searchIndex.base : indices;
+  if(!searchIndex && typeof matchesHomeFilters === 'function'){
     base = base.filter(i=>matchesHomeFilters(data[i]));
   }
   if(!query)return base;
   // One registry for every haystack — searchText re-normalizes it per habit
   // otherwise (registry lookups dominate search filtering at scale).
-  const searchRegistry = typeof locationOptions === 'function' ? locationOptions() : null;
+  const searchRegistry = searchIndex ? null : (typeof locationOptions === 'function' ? locationOptions() : null);
+  const haystackOf = i => searchIndex ? searchIndex.haystacks[i] : searchText(data[i],searchRegistry);
+  const orderOf = searchIndex ? searchIndex.order : null;
   const matches = base
-    .filter(i=>searchText(data[i],searchRegistry).includes(query))
+    .filter(i=>haystackOf(i).includes(query))
     .sort((a,b)=>{
       const ra = searchRank(data[a],query);
       const rb = searchRank(data[b],query);
       if(ra !== rb)return ra - rb;
-      return indices.indexOf(a) - indices.indexOf(b);
+      return orderOf ? (orderOf.get(a) - orderOf.get(b)) : (indices.indexOf(a) - indices.indexOf(b));
     });
-  const completedTasks = data
-    .map((h,i)=>({h,i}))
-    .filter(({h})=>h.type === 'task' && isTaskDone(h))
-    .filter(({h})=>typeof matchesHomeFilters !== 'function' || matchesHomeFilters(h))
-    .filter(({h})=>searchText(h,searchRegistry).includes(query))
+  const completedPool = searchIndex
+    ? searchIndex.completedTasks
+    : data.map((h,i)=>({h,i}))
+        .filter(({h})=>h.type === 'task' && isTaskDone(h))
+        .filter(({h})=>typeof matchesHomeFilters !== 'function' || matchesHomeFilters(h));
+  const completedTasks = completedPool
+    .filter(({i})=>haystackOf(i).includes(query))
     .sort(({h:a},{h:b})=>{
       const ra = searchRank(a,query);
       const rb = searchRank(b,query);

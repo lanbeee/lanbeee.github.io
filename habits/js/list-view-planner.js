@@ -11,8 +11,8 @@ function opportunityProximitySignature(data,settings,coord){
   }).join(',');
 }
 
-function homeListFingerprint(now = Date.now()){
-  const data = typeof load === 'function' ? load() : [];
+function homeListFingerprint(now = Date.now(),dataOverride = null){
+  const data = Array.isArray(dataOverride) ? dataOverride : (typeof load === 'function' ? load() : []);
   const s = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
   const loc = typeof currentLocationId === 'function' ? currentLocationId() : null;
   const travel = s.travel || {};

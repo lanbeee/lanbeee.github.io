@@ -1228,6 +1228,10 @@ function assistantRenderGuides(){
   $('assistant-dock')?.classList.add('is-searchable');
   assistantSyncGuideClear();
   assistantRenderGuideBrowser();
+  if(assistantGuideSearchOpen){
+    row.hidden = false;
+    return;
+  }
   const suggestions = assistantGuideSuggestions(session, hint);
   const choosing = suggestions.some(item => /^(?:action|field):/.test(item.id));
   if(label)label.textContent=active?'Change this setting':choosing?'Which one':session.unresolved?.length?'Which setting':'Settings';
@@ -1235,7 +1239,7 @@ function assistantRenderGuides(){
   row.hidden = !assistantGuideSearchOpen && suggestions.length === 0;
   if(row.dataset.guideSignature === signature)return;
   row.dataset.guideSignature = signature;
-  list.replaceChildren();
+  const frag = document.createDocumentFragment();
   for(const item of suggestions){
     const button = document.createElement('button');
     button.type = 'button';
@@ -1245,8 +1249,9 @@ function assistantRenderGuides(){
     button.title = /^(?:action|field):/.test(item.id) ? item.label : assistantGuideHelp(item.id).description;
     button.setAttribute('aria-pressed', active && active.id === item.id ? 'true' : 'false');
     button.disabled = Boolean(_assistantBusy);
-    list.append(button);
+    frag.append(button);
   }
+  list.replaceChildren(frag);
 }
 
 function assistantToggleGuideBrowser(open, opts){
@@ -1288,19 +1293,20 @@ function assistantRenderGuideBrowser(){
   const signature=`${session.id}|${query}|${rows.map(row=>row.id).join(',')}|${assistantComposerDraft()!==assistantGuidePark?1:0}|${Boolean(_assistantBusy)}`;
   if(results.dataset.signature===signature)return;
   results.dataset.signature=signature;
-  results.replaceChildren();
+  const frag=document.createDocumentFragment();
   for(const def of rows){
     const button=document.createElement('button');button.type='button';button.className='assistant-guide';
     button.dataset.assistantGuide=def.id;button.dataset.guideLabel=def.label;button.disabled=Boolean(_assistantBusy);
     const title=document.createElement('span');title.textContent=def.label;
     const detail=document.createElement('span');detail.className='assistant-guide-description';
     detail.textContent=assistantGuideHelp(def.id).description;
-    button.append(title,detail);results.append(button);
+    button.append(title,detail);frag.append(button);
   }
   if(!rows.length){
     const empty=document.createElement('p');empty.className='assistant-guide-empty';
-    empty.textContent='No matching setting.';results.append(empty);
+    empty.textContent='No matching setting.';frag.append(empty);
   }
+  results.replaceChildren(frag);
 }
 
 function assistantApplyGuide(label){
@@ -1321,10 +1327,12 @@ function assistantApplyGuide(label){
   }, 260);
 }
 
+const assistantComposerSizesToContent = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('field-sizing','content');
 function assistantResizeComposer(){
   const input = $('assistant-input');
   if(!input)return;
-  if(typeof ASSISTANT_INPUT_MAX === 'number')input.maxLength = ASSISTANT_INPUT_MAX;
+  if(typeof ASSISTANT_INPUT_MAX === 'number' && input.maxLength !== ASSISTANT_INPUT_MAX)input.maxLength = ASSISTANT_INPUT_MAX;
+  if(assistantComposerSizesToContent)return;
   const guided = $('assistant-guides') && !$('assistant-guides').hidden;
   const max = assistantGuideSearchOpen ? 44 : guided ? 88 : 160;
   input.style.height = 'auto';
@@ -2028,7 +2036,10 @@ function bindAssistantUi(){
     assistantResizeComposer();
     assistantSyncSend();
     assistantSyncGuideClear();
-    if(assistantGuideSearchOpen)assistantRenderGuideBrowser();
+    if(assistantGuideSearchOpen){
+      assistantRenderGuideBrowser();
+      return;
+    }
     assistantScheduleGuideRender();
   });
   $('assistant-mention-remove')?.addEventListener('pointerdown', e => e.preventDefault());

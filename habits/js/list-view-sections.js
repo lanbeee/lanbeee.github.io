@@ -3,6 +3,7 @@ let _overviewSyncedWeekRef = null;
 function updateStuckSectionHeaders(){
   _stuckHeadersRaf = false;
   const headers=[...document.querySelectorAll('.section-header')];
+  if(!headers.length)return;
   // Native sticky headers can occupy the same top coordinate while the next
   // day replaces the previous one. Only the later, visibly painted header is
   // the active stuck header; marking both makes hit targeting ambiguous.
@@ -1712,24 +1713,73 @@ function appendHomeSamplesLink(list){
   }
 }
 
+let _homeSearchIndexCache = null;
+let _homeTagFilterCacheKey = '';
+function homeSearchCacheKey(settings){
+  const sig = typeof filterValueSignature === 'function' ? filterValueSignature : v => String(v || '');
+  let rawLen = -1;
+  try{
+    if(typeof KEY === 'string' && typeof localStorage !== 'undefined')rawLen = (localStorage.getItem(KEY) || '').length;
+  }catch(_){}
+  return [
+    typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0,
+    rawLen,
+    Math.floor(Date.now() / 60000),
+    settings?.preset || '',
+    settings?.showSnoozed ? 1 : 0,
+    (typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(settings?.minimalMode)) ? 1 : 0,
+    (settings?.locations || []).map(l=>`${l.id}:${l.name}:${l.address || ''}`).join('|'),
+    sig(typeof homeTopicFilter !== 'undefined' ? homeTopicFilter : 'all'),
+    sig(typeof homeLocationFilter !== 'undefined' ? homeLocationFilter : 'all'),
+    sig(typeof homeTypeFilter !== 'undefined' ? homeTypeFilter : 'all'),
+    sig(typeof homeWhenFilter !== 'undefined' ? homeWhenFilter : 'all'),
+    sig(typeof homePriorityFilter !== 'undefined' ? homePriorityFilter : 'all'),
+    sig(typeof homeDurationFilter !== 'undefined' ? homeDurationFilter : 'all'),
+    sig(typeof homeTraitFilter !== 'undefined' ? homeTraitFilter : 'all')
+  ].join('\n');
+}
+
+function getHomeSearchSnapshot(settings){
+  const key = homeSearchCacheKey(settings);
+  if(_homeSearchIndexCache && _homeSearchIndexCache.key === key)return _homeSearchIndexCache;
+  const data = load();
+  const visible = visibleIndices(data);
+  const base = typeof matchesHomeFilters === 'function'
+    ? visible.filter(i=>matchesHomeFilters(data[i]))
+    : visible;
+  const order = new Map();
+  visible.forEach((idx,pos)=>order.set(idx,pos));
+  const searchRegistry = typeof locationOptions === 'function' ? locationOptions() : null;
+  const haystacks = data.map(h=>searchText(h,searchRegistry));
+  const completedTasks = data
+    .map((h,i)=>({h,i}))
+    .filter(({h})=>h.type === 'task' && isTaskDone(h))
+    .filter(({h})=>typeof matchesHomeFilters !== 'function' || matchesHomeFilters(h));
+  _homeSearchIndexCache = {key,data,visible,base,order,haystacks,completedTasks};
+  return _homeSearchIndexCache;
+}
+
 function render(opts){
   const o = opts || {};
   const list = $('list');
   const empty = $('empty');
-  const data = load();
   if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+  const searching = Boolean(searchQuery.trim());
+  const searchSnap = searching ? getHomeSearchSnapshot(sortSettings) : null;
+  if(!searching)_homeSearchIndexCache = null;
+  const data = searchSnap ? searchSnap.data : load();
   const wantsPlannedWeek = !o.deferAgenda
     && !o.__optimizedWeek
     && !o.__optimizerFallback
     && sortSettings.preset === 'todayFirst'
-    && !searchQuery.trim()
+    && !searching
     && typeof buildWeekAgendaOffMain === 'function';
   if(wantsPlannedWeek){
     queueOptimizedHomeRender(data,o);
     return false;
   }
   finishHomeAgendaUpdate();
-  const readingPosition = o.preserveReadingPosition === false
+  const readingPosition = (searching || o.preserveReadingPosition === false)
     ? null
     : captureHomeReadingPosition(list);
   _homeRenderedWeek = null;
@@ -1738,22 +1788,24 @@ function render(opts){
   // Search is habit lookup — the quota bar can't move while typing (only a
   // save() changes stored size, and save() refreshes the bar itself), so skip
   // the full-dataset JSON.stringify it costs per keystroke render.
-  const searching = Boolean(searchQuery.trim());
   if(!searching)updateQuotaBar(sizeKb(data));
-  updateSortButton(false);
+  updateSortButton(false,data);
   updateSearchUi();
 
   // One shared sort pass: empty-state logic, the filter sheet counts, and the
   // match list all consume the same visibleIndices(data) order.
-  const visible = visibleIndices(data);
-  renderHomeTagFilter(data,visible);
-  const indices = filteredVisibleIndices(data,visible);
-  if(typeof syncAppBarChrome === 'function')syncAppBarChrome();
+  const visible = searchSnap ? searchSnap.visible : visibleIndices(data);
+  if(!searching || _homeTagFilterCacheKey !== searchSnap.key){
+    renderHomeTagFilter(data,visible);
+    _homeTagFilterCacheKey = searching ? searchSnap.key : homeSearchCacheKey(sortSettings);
+  }
+  const indices = filteredVisibleIndices(data,visible,searchSnap);
+  if(typeof syncAppBarChrome === 'function')syncAppBarChrome(data);
   if(!indices.length){
     empty.style.display = 'block';
-    if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
-    if(typeof queueNativeReminders === 'function')queueNativeReminders();
-    const hasSearch = searchQuery.trim().length > 0;
+    if(!searching && typeof renderWeekOnHome === 'function')renderWeekOnHome();
+    if(!searching && typeof queueNativeReminders === 'function')queueNativeReminders();
+    const hasSearch = searching;
     const filterLabel = typeof describeActiveHomeFilters === 'function' ? describeActiveHomeFilters() : '';
     empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed && !hasSearch);
     if(hasSearch){
@@ -1790,9 +1842,9 @@ function render(opts){
         else if(typeof openSheet === 'function')openSheet('about-sheet');
       };
     }
-    _homeListFingerprint = homeListFingerprint();
-    if(typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
-    updateSortButton(true);
+    _homeListFingerprint = homeListFingerprint(Date.now(),data);
+    if(!searching && typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
+    updateSortButton(true,data);
     restoreHomeReadingPosition(readingPosition,list);
     if(typeof window.tingsFinishLaunch === 'function')window.tingsFinishLaunch();
     return;
@@ -1859,6 +1911,8 @@ function render(opts){
     breakableCatchupShown.add(realIdx);
     return true;
   };
+
+  const appendTarget = searching ? document.createDocumentFragment() : list;
 
   const appendHabitCard = (realIdx,agendaRow,earlyReasonText,dayBase = null,scheduleLinkReason = '')=>{
     let h = data[realIdx];
@@ -2023,7 +2077,7 @@ function render(opts){
         </div>`}
       </div>`;
 
-    list.appendChild(row);
+    appendTarget.appendChild(row);
     setupSwipe(row);
     setupCardTap(row,realIdx);
     if(showBreakableSlider)setupBreakableCrown(row,realIdx);
@@ -2306,7 +2360,7 @@ function render(opts){
     // travel/blocked cards around them keep their context.
     const pinnedTodayIndices = renderIndices.filter(i=>data[i].pinned);
     if(pinnedTodayIndices.length){
-      appendSectionHeader(list,'pinned');
+      appendSectionHeader(appendTarget,'pinned');
       pinnedTodayIndices.forEach(realIdx=>{
         const agendaRow = agendaMap.get(realIdx);
         const cat = todayCategory(data[realIdx],sortSettings);
@@ -2423,11 +2477,12 @@ function render(opts){
   }
   } // end of the `else` (non-deferred) branch
 
+  if(searching)list.appendChild(appendTarget);
   appendHomeSamplesLink(list);
 
   // Fresh headers may already sit stuck at the viewport top (background
   // refresh mid-scroll) — set their tone before the next scroll tick.
-  updateStuckSectionHeaders();
+  if(!searching)updateStuckSectionHeaders();
 
   list.querySelectorAll('[data-pulse]').forEach(btn=>{
     btn.addEventListener('click',e=>{
@@ -2496,7 +2551,7 @@ function render(opts){
       }
     });
   });
-  if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+  if(!searching && typeof renderWeekOnHome === 'function')renderWeekOnHome();
   if(typeof renderOverview === 'function' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)
     && _homeRenderedWeek !== _overviewSyncedWeekRef){
     const paneEl = document.querySelector('.pane-overview');
@@ -2513,14 +2568,14 @@ function render(opts){
       if(scroller && prevTop)scroller.scrollTop = prevTop;
     }
   }
-  if(typeof queueNativeReminders === 'function')queueNativeReminders();
+  if(!searching && typeof queueNativeReminders === 'function')queueNativeReminders();
   if(typeof scheduleHouseholdAgendaPublish === 'function' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     scheduleHouseholdAgendaPublish(_homeRenderedWeek);
   }
-  if(typeof refreshSlippedSheet === 'function')refreshSlippedSheet();
-  _homeListFingerprint = homeListFingerprint();
-  if(typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
-  updateSortButton(true);
+  if(!searching && typeof refreshSlippedSheet === 'function')refreshSlippedSheet();
+  _homeListFingerprint = homeListFingerprint(Date.now(),data);
+  if(!searching && typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
+  updateSortButton(true,data);
   restoreHomeReadingPosition(readingPosition,list);
   if(typeof window.tingsFinishLaunch === 'function')window.tingsFinishLaunch();
   return true;

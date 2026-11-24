@@ -383,36 +383,49 @@ $('bar-open-about')?.addEventListener('click',()=>{
   if(typeof openSettingsSheet === 'function')openSettingsSheet();
 });
 let _searchRenderTimer = null;
+let _searchClearRaf = null;
 let _searchRenderedQuery = null;
-// Trailing window for keystroke coalescing. A search render is a filter+rank
-// over already-loaded data, so the FIRST keystroke of a burst renders inside
-// rAF (glyph and results paint in the same frame); further keystrokes within
-// the window coalesce into one trailing render. Slow typing (gaps > window)
-// renders per key, immediately — no dead time either way.
+// Trailing window for keystroke coalescing. Never invoke render() synchronously
+// or inside the keystroke's own rAF before paint, so the typed glyph paints on
+// the very next vsync even on large habit lists. Clearing yields past paint
+// before restoring the full home agenda.
 const SEARCH_RENDER_DEBOUNCE_MS = 120;
+const cancelScheduledSearchRender = () => {
+  clearTimeout(_searchRenderTimer);
+  _searchRenderTimer = null;
+  if(_searchClearRaf != null){
+    cancelAnimationFrame(_searchClearRaf);
+    _searchClearRaf = null;
+  }
+};
 const renderSearchNow = () => {
   _searchRenderedQuery = searchQuery;
   render();
 };
 const scheduleSearchRender = () => {
-  if(!searchQuery.trim()){
-    // Clearing restores the full home view — do it immediately.
-    clearTimeout(_searchRenderTimer);
-    _searchRenderTimer = null;
-    renderSearchNow();
+  const empty = !searchQuery.trim();
+  const navSearchWrap = $('nav-search');
+  const barSearchWrap = $('app-bar-search');
+  const clearBtn = $('clear-search');
+  if(navSearchWrap)navSearchWrap.classList.toggle('is-empty',empty);
+  if(barSearchWrap)barSearchWrap.classList.toggle('is-empty',empty);
+  if(clearBtn)clearBtn.setAttribute('aria-label',empty ? 'close search' : 'clear search');
+  cancelScheduledSearchRender();
+  if(empty){
+    // Yield past the backspace keystroke's paint frame before restoring the full home view.
+    _searchClearRaf = requestAnimationFrame(()=>{
+      _searchClearRaf = null;
+      _searchRenderTimer = setTimeout(()=>{
+        _searchRenderTimer = null;
+        if(searchQuery !== _searchRenderedQuery)renderSearchNow();
+      },0);
+    });
     return;
   }
-  const firstOfBurst = _searchRenderTimer == null;
-  clearTimeout(_searchRenderTimer);
   _searchRenderTimer = setTimeout(()=>{
     _searchRenderTimer = null;
     if(searchQuery !== _searchRenderedQuery)renderSearchNow();
   },SEARCH_RENDER_DEBOUNCE_MS);
-  if(!firstOfBurst || searchQuery === _searchRenderedQuery)return;
-  requestAnimationFrame(()=>{
-    if(_searchRenderTimer == null)return; // a clear/cancel already rendered
-    renderSearchNow();
-  });
 };
 $('habit-search').addEventListener('input',e=>{
   searchQuery = e.target.value;
@@ -420,9 +433,8 @@ $('habit-search').addEventListener('input',e=>{
 });
 $('habit-search').addEventListener('keydown',e=>{
   if(e.key !== 'Escape')return;
-if(searchQuery){
-    clearTimeout(_searchRenderTimer);
-    _searchRenderTimer = null;
+  if(searchQuery){
+    cancelScheduledSearchRender();
     searchQuery = '';
     _searchRenderedQuery = '';
     // render() may hand off to the async week-plan path, which returns before
@@ -457,8 +469,7 @@ document.addEventListener('keydown',e=>{
 });
 $('clear-search').addEventListener('click',()=>{
   if(searchQuery.trim()){
-    clearTimeout(_searchRenderTimer);
-    _searchRenderTimer = null;
+    cancelScheduledSearchRender();
     searchQuery = '';
     _searchRenderedQuery = '';
     $('habit-search').value = '';

@@ -149,24 +149,42 @@ const ASSISTANT_FIELD_HINTS = {
   dueDate:'Task due date, including requests saying plan by. Preserve the complete date phrase; exclude clock time.'
 };
 
-function assistantFieldCatalog(){
+let _assistantFieldCatalogCache = null;
+function assistantFieldCatalogEntry(){
+  const names=(assistantFocusSettings().locations||[]).map(place=>String(place.name||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).filter(Boolean);
+  const key=names.join('\0');
+  if(_assistantFieldCatalogCache && _assistantFieldCatalogCache.key===key){
+    return _assistantFieldCatalogCache;
+  }
   const defs = ASSISTANT_FOCUS_FIELDS.filter(f=>!['timesPerPeriod','periodDays'].includes(f.id)).map(f=>({...f, fields:[f.id]}));
   defs.splice(6,0,{id:'frequency',label:'Frequency',family:'recurrence',kinds:['habit'],fields:['timesPerPeriod','periodDays']});
-  return defs.map(f=>{
+  const namesUnion=names.join('|');
+  const catalog=defs.map(f=>{
     const search = ITEM_DETAIL_SEARCH_FIELDS.find(row=>row[0] === ASSISTANT_FIELD_SEARCH[f.id]);
     const pair = (ASSISTANT_FOCUS_EXTRACT_FIELDS[f.family] || []).find(row=>row[0]===f.id);
     let signal=ASSISTANT_FIELD_SIGNALS[f.id];
     // Saved place names are retrieval vocabulary only. A locative or a
     // preference must introduce them; an item's title is not its location.
-    const names=(assistantFocusSettings().locations||[]).map(place=>String(place.name||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).filter(Boolean);
     if(names.length&&['places','locationPrefs'].includes(f.id)){
       const qualifier=f.id==='places'?'(?:at|in|near)':'(?:prefer\\w*|avoid|favou?r\\w*|(?:de)?prioriti[sz]e)';
-      signal=new RegExp(`(?:${signal.source})|\\b${qualifier}\\s+(?:the\\s+)?(?:${names.join('|')})(?=\\s|[.,;!?]|$)${f.id==='locationPrefs'?`|\\b(?:${names.join('|')})\\s+works? best\\b`:''}`,'i');
+      signal=new RegExp(`(?:${signal.source})|\\b${qualifier}\\s+(?:the\\s+)?(?:${namesUnion})(?=\\s|[.,;!?]|$)${f.id==='locationPrefs'?`|\\b(?:${namesUnion})\\s+works? best\\b`:''}`,'i');
     }
+    const labelBody=f.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
     return {...f,key:f.id==='frequency'?'frequency':pair?.[1] || f.id,
-      signal, labelSignal:f.id==='exceptionCancelled'?null:new RegExp(`\\b${f.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+')}\\b`,'i'), aliases:search ? `${search[1]} ${search[2]}` : f.label,
+      signal, labelSignal:f.id==='exceptionCancelled'?null:new RegExp(`\\b${labelBody}\\b`,'i'),
+      _guideLooseRe:new RegExp(`^${labelBody}\\b(?:\\s*[:\\-–—]\\s*|\\s+)?([\\s\\S]*)$`,'i'),
+      _guideExactRe:new RegExp(`^${labelBody}\\s*$`,'i'),
+      _guidePrefixRe:new RegExp(`^${labelBody}\\s*[:\\-–—]\\s*([\\s\\S]*)$`,'i'),
+      aliases:search ? `${search[1]} ${search[2]}` : f.label,
       hint:ASSISTANT_FIELD_HINTS[f.id] || `The requested ${f.label.toLowerCase()} setting only.`};
   });
+  const byLabelLength=[...catalog].sort((a,b)=>b.label.length-a.label.length || a.label.localeCompare(b.label));
+  _assistantFieldCatalogCache={key,catalog,byLabelLength};
+  return _assistantFieldCatalogCache;
+}
+
+function assistantFieldCatalog(){
+  return assistantFieldCatalogEntry().catalog;
 }
 
 // Edit renames only when this message asks. Otherwise the name stays out of
@@ -1151,17 +1169,16 @@ function assistantGuidePattern(label){
 function assistantGuideRead(text, session, loose){
   const raw=String(text || '').trim();
   if(!raw || !session)return null;
-  const catalog=assistantFieldCatalog().filter(def=>assistantFieldApplicable(def,session))
-    .sort((a,b)=>b.label.length-a.label.length || a.label.localeCompare(b.label));
-  for(const def of catalog){
-    const body=assistantGuidePattern(def.label);
+  const {byLabelLength}=assistantFieldCatalogEntry();
+  for(const def of byLabelLength){
+    if(!assistantFieldApplicable(def,session))continue;
     if(loose){
-      const started=new RegExp(`^${body}\\b(?:\\s*[:\\-–—]\\s*|\\s+)?([\\s\\S]*)$`,'i').exec(raw);
+      const started=def._guideLooseRe.exec(raw);
       if(started)return {id:def.id,label:def.label,rest:started[1].trim()};
       continue;
     }
-    if(new RegExp(`^${body}\\s*$`,'i').test(raw))return {id:def.id,label:def.label,rest:''};
-    const prefixed=new RegExp(`^${body}\\s*[:\\-–—]\\s*([\\s\\S]*)$`,'i').exec(raw);
+    if(def._guideExactRe.test(raw))return {id:def.id,label:def.label,rest:''};
+    const prefixed=def._guidePrefixRe.exec(raw);
     if(prefixed)return {id:def.id,label:def.label,rest:prefixed[1].trim()};
   }
   return null;
@@ -1332,9 +1349,11 @@ function assistantGuideHelp(id){
 function assistantGuideBrowse(session,query){
   const words=String(query||'').toLowerCase().trim().split(/\s+/).filter(Boolean);
   return assistantGuideCatalog(session).filter(def=>{
-    const help=assistantGuideHelp(def.id);
-    const text=`${def.label} ${def.aliases} ${help.description} ${help.example}`.toLowerCase();
-    return words.every(word=>text.includes(word));
+    if(def._browseText === undefined){
+      const help=assistantGuideHelp(def.id);
+      def._browseText=`${def.label} ${def.aliases} ${help.description} ${help.example}`.toLowerCase();
+    }
+    return words.every(word=>def._browseText.includes(word));
   }).sort((a,b)=>a.label.localeCompare(b.label));
 }
 

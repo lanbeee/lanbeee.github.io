@@ -19,29 +19,56 @@ function resetDetailDisclosures(h){
   Object.entries(configured).forEach(([id,open])=>{if($(id))$(id).open = open;});
 }
 
+const DETAIL_SEARCH_ASCII_WORD = /^[A-Za-z0-9]+$/;
 function detailSearchNormalize(value){
-  return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+  const str = String(value || '');
+  if(DETAIL_SEARCH_ASCII_WORD.test(str))return str.toLowerCase();
+  return str.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 }
 
 // ---- Shared search primitives (detail + settings) ----
 
 // Bounded Damerau-Levenshtein: insertion, deletion, substitution, and
-// adjacent transposition. Labels are short, so the small matrix is fine.
+// adjacent transposition. Fast zero-allocation path for maxEdits === 1.
 function searchEditWithin(word,token,maxEdits){
   if(word === token)return true;
-  if(Math.abs(word.length - token.length) > maxEdits)return false;
-  let prev = new Array(token.length + 1).fill(0).map((_,j)=>j);
+  const wl = word.length, tl = token.length;
+  const diff = wl - tl;
+  if(diff > maxEdits || diff < -maxEdits)return false;
+  if(maxEdits === 1){
+    if(diff === 0){
+      let i = 0;
+      while(i < wl && word.charCodeAt(i) === token.charCodeAt(i))i++;
+      // Adjacent transposition or single substitution.
+      if(i + 1 < wl && word.charCodeAt(i) === token.charCodeAt(i + 1)
+        && word.charCodeAt(i + 1) === token.charCodeAt(i)){
+        i += 2;
+      }else{
+        i += 1;
+      }
+      while(i < wl && word.charCodeAt(i) === token.charCodeAt(i))i++;
+      return i === wl;
+    }
+    const longer = diff > 0 ? word : token;
+    const shorter = diff > 0 ? token : word;
+    const sl = shorter.length;
+    let i = 0;
+    while(i < sl && longer.charCodeAt(i) === shorter.charCodeAt(i))i++;
+    while(i < sl && longer.charCodeAt(i + 1) === shorter.charCodeAt(i))i++;
+    return i === sl;
+  }
+  let prev = new Array(tl + 1).fill(0).map((_,j)=>j);
   let prev2 = null;
-  for(let i=1;i<=word.length;i++){
+  for(let i=1;i<=wl;i++){
     const cur = [i];
-    for(let j=1;j<=token.length;j++){
+    for(let j=1;j<=tl;j++){
       let d = Math.min(prev[j] + 1,cur[j-1] + 1,prev[j-1] + (word[i-1] === token[j-1] ? 0 : 1));
       if(i > 1 && j > 1 && word[i-1] === token[j-2] && word[i-2] === token[j-1])d = Math.min(d,prev2[j-2] + 1);
       cur.push(d);
     }
     prev2 = prev;prev = cur;
   }
-  return prev[token.length] <= maxEdits;
+  return prev[tl] <= maxEdits;
 }
 
 // Conservative plural folding; the typed token always stays in the list.
@@ -76,7 +103,7 @@ function searchTokenEvidence(entry,token,rules){
   for(const field of SEARCH_FIELD_ORDER){
     const text = entry[field + 'N'];
     if(!text)continue;
-    const words = text.split(' ');
+    const words = entry[field + 'W'] || (entry[field + 'W'] = text.split(' '));
     const weights = SEARCH_FIELD_WEIGHTS[field];
     const prefixMin = (field === 'path' || field === 'desc')
       ? (rules.contextPrefixMin ?? rules.prefixMin) : rules.prefixMin;
@@ -118,14 +145,36 @@ function searchRankEntries(entries,tokens,rules,labelTiebreak){
 // Wrap the original words a token matched in this displayed field. Comparison
 // is normalized; the original word node is kept, so accents and case survive.
 // Alias-only hits leave the visible text unmarked.
-function searchMarkedText(parent,text,evidence,field){
+function searchFieldPieces(entry,text,field){
+  const key = field + 'Pieces';
+  if(entry && entry[key])return entry[key];
+  const out = [];
+  for(const piece of String(text || '').split(/([\p{L}\p{N}\p{M}]+)/u)){
+    if(!piece)continue;
+    out.push({piece,word:detailSearchNormalize(piece)});
+  }
+  if(entry)entry[key] = out;
+  return out;
+}
+
+function searchMarkedText(parent,text,evidence,field,entry = null){
+  const raw = String(text || '');
+  const tokens = Object.keys(evidence);
+  let hasFieldHit = false;
+  for(let i = 0;i < tokens.length;i++){
+    const hit = evidence[tokens[i]];
+    if(hit && hit.field === field){hasFieldHit = true;break;}
+  }
+  if(!hasFieldHit){
+    parent.textContent = raw;
+    return;
+  }
   // Token boundaries mirror normalization, including punctuation inside a
   // label ("time-window") while retaining combining accents in the word.
-  const pieces = String(text || '').split(/([\p{L}\p{N}\p{M}]+)/u);
-  for(const piece of pieces){
-    if(!piece)continue;
-    const word = detailSearchNormalize(piece);
-    const marked = Boolean(word) && Object.keys(evidence).some(token=>{
+  const pieces = searchFieldPieces(entry,raw,field);
+  for(let i = 0;i < pieces.length;i++){
+    const {piece,word} = pieces[i];
+    const marked = Boolean(word) && tokens.some(token=>{
       const hit = evidence[token];
       if(!hit || hit.field !== field)return false;
       if(hit.kind === 'exact')return word === token;
@@ -147,66 +196,124 @@ function searchResultButton(row,onPick){
   button.type = 'button';
   button.className = 'detail-search-result';
   const label = document.createElement('b');
-  searchMarkedText(label,row.entry.label,row.evidence,'label');
+  searchMarkedText(label,row.entry.label,row.evidence,'label',row.entry);
   const path = document.createElement('small');
-  searchMarkedText(path,row.entry.path,row.evidence,'path');
+  searchMarkedText(path,row.entry.path,row.evidence,'path',row.entry);
   button.append(label,path);
   button.addEventListener('click',()=>onPick(row.entry));
   return button;
 }
 
+let _detailSearchStaticCache = null;
+let _detailSearchLastRenderSig = '';
+function invalidateDetailSearchCache(){
+  _detailSearchStaticCache = null;
+  _detailSearchLastRenderSig = '';
+}
+
 function detailSearchEntries(){
   const inner = getSheetInner('detail-sheet');
   if(!inner)return [];
-  const entries = [];
+  const panelOpen = !$('detail-search-panel')?.hidden;
+  const singleView = detailIsSingleView();
   const optional = $('detail-sheet').classList.contains('opportunity-mode');
-  const add = (target,label,aliases='',desc='')=>{
-    const page = target?.closest('.detail-page');
-    if(!page || page.hidden || (target.disabled && target.id !== 'detail-due-time'))return;
-    if(detailIsSingleView()){
-      // Condition-based habits expose their place/weather controls even in
-      // minimal mode. Respect those live visibility rules as well.
-      for(let section=target.closest('.detail-full-only');section;section=section.parentElement.closest('.detail-full-only')){
-        if(getComputedStyle(section).display === 'none')return;
+  const staticKey = panelOpen
+    ? `${detailIdx}|${typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0}|${singleView?1:0}|${optional?1:0}|${$('detail-time-kind')?.value || ''}|${window.TingsNative?.sharingEnabled === false ? 0 : 1}|${typeof shareConfigured === 'function' && shareConfigured() ? 1 : 0}`
+    : '';
+  const hiddenFullOnly = new Map();
+  const isFullOnlyHidden = target => {
+    if(!singleView)return false;
+    for(let section=target.closest('.detail-full-only');section;section=section.parentElement.closest('.detail-full-only')){
+      let hidden = hiddenFullOnly.get(section);
+      if(hidden === undefined){
+        hidden = getComputedStyle(section).display === 'none';
+        hiddenFullOnly.set(section,hidden);
       }
+      if(hidden)return true;
     }
+    return false;
+  };
+  const makeEntry = (target,label,aliases,desc,order,seenTargets)=>{
+    const page = target?.closest('.detail-page');
+    if(!page || page.hidden || (target.disabled && target.id !== 'detail-due-time'))return null;
+    if(isFullOnlyHidden(target))return null;
     if(optional && (target.id === 'detail-times'
-      || target.closest('#detail-flexibility-disclosure') || label === 'Place preferences'))return;
+      || target.closest('#detail-flexibility-disclosure') || label === 'Place preferences'))return null;
     // Platform-only controls are deliberately absent, including native sharing.
-    if(target.closest('.detail-shared-display-control') && window.TingsNative?.sharingEnabled === false)return;
-    if(target.id === 'detail-share-item' && typeof shareConfigured === 'function' && !shareConfigured())return;
-    if(target.id === 'detail-export' && target.hidden)return;
-    if(target.id === 'detail-order-block' && target.hidden)return;
+    if(target.closest('.detail-shared-display-control') && window.TingsNative?.sharingEnabled === false)return null;
+    if(target.id === 'detail-share-item' && typeof shareConfigured === 'function' && !shareConfigured())return null;
+    if(target.id === 'detail-export' && target.hidden)return null;
+    if(target.id === 'detail-order-block' && target.hidden)return null;
     const sections = [];
     for(let p=target.closest('details');p;p=p.parentElement.closest('details')){
       sections.unshift(p.querySelector(':scope > summary')?.textContent.trim());
     }
     const path = [detailPageLabel(page.dataset.detailNav),...sections].filter(Boolean).join(' › ');
     const labelN = detailSearchNormalize(label);
-    if(!labelN)return;
-    if(entries.some(e=>e.target === target))return;
-    entries.push({
-      target,label,path,labelN,
-      aliasN:detailSearchNormalize(aliases),
-      pathN:detailSearchNormalize(path),
-      descN:detailSearchNormalize(desc),
-      order:entries.length
-    });
+    if(!labelN)return null;
+    if(seenTargets.has(target))return null;
+    seenTargets.add(target);
+    const aliasN = detailSearchNormalize(aliases);
+    const pathN = detailSearchNormalize(path);
+    const descN = detailSearchNormalize(desc);
+    return {
+      target,label,path,labelN,aliasN,pathN,descN,
+      labelW:labelN ? labelN.split(' ') : [],
+      aliasW:aliasN ? aliasN.split(' ') : [],
+      pathW:pathN ? pathN.split(' ') : [],
+      descW:descN ? descN.split(' ') : [],
+      order
+    };
   };
-  DETAIL_SEARCH_FIELDS.forEach(([id,label,aliases])=>{
-    if(optional && id === 'detail-days'){
-      label = 'Repeat limit';aliases += ' minimum days between occurrences at most maximum frequency';
-    }
-    if(id === 'detail-allowed-time-row' && $('detail-time-kind').value === 'fixed'){
-      label = 'Fixed start time';aliases += ' exact start class appointment';
-    }
-    add($(id),label,aliases);
-  });
-  inner.querySelectorAll('.detail-page details > summary').forEach(el=>add(el,el.textContent.trim()));
-  // Include live option/link rows and every native reminder edge. Labels come
-  // from the renderer, so added rows and changing item types cannot go stale.
-  // Only selected and displayed content is indexed: unselected options would
-  // flood results with unrelated habit and place names.
+
+  let staticEntries;
+  let seenTargets;
+  if(panelOpen && _detailSearchStaticCache && _detailSearchStaticCache.key === staticKey){
+    staticEntries = _detailSearchStaticCache.entries;
+    seenTargets = new Set(staticEntries.map(e=>e.target));
+  }else{
+    staticEntries = [];
+    seenTargets = new Set();
+    const addStatic = (target,label,aliases='',desc='')=>{
+      const entry = makeEntry(target,label,aliases,desc,staticEntries.length,seenTargets);
+      if(entry)staticEntries.push(entry);
+    };
+    DETAIL_SEARCH_FIELDS.forEach(([id,label,aliases])=>{
+      if(optional && id === 'detail-days'){
+        label = 'Repeat limit';aliases += ' minimum days between occurrences at most maximum frequency';
+      }
+      if(id === 'detail-allowed-time-row' && $('detail-time-kind').value === 'fixed'){
+        label = 'Fixed start time';aliases += ' exact start class appointment';
+      }
+      addStatic($(id),label,aliases);
+    });
+    inner.querySelectorAll('.detail-page details > summary').forEach(el=>addStatic(el,el.textContent.trim()));
+    // Reminder edges are div.native-reminder-row; the DND control is a label.
+    inner.querySelectorAll('#detail-native-reminders label, #detail-native-reminders .native-reminder-row, #detail-native-reminders .native-reminder-sound').forEach(row=>{
+      if(row.closest('[hidden]'))return;
+      const face = row.querySelector('.native-reminder-name')?.textContent || row.childNodes[0]?.textContent.trim();
+      const edge = row.querySelector('select')?.dataset.reminderEdge;
+      // Reminder rows show a timing face (“when you leave”); the searchable
+      // name is the edge title (“travel: departure”) people actually type.
+      const edgeTitle = typeof NATIVE_REMINDER_EDGES !== 'undefined'
+        ? NATIVE_REMINDER_EDGES.find(([key])=>key === edge)?.[1] : '';
+      const label = edgeTitle && edgeTitle !== face ? `${edgeTitle} (${face})` : (edgeTitle || face);
+      let aliases = row.matches('.native-reminder-sound')
+        ? 'notification sound tone chime ringtone audio custom phone sound'
+        : 'phone reminder notification ringing alarm';
+      if(edge === 'missed')aliases += ' before missed drop cutoff warning estimate';
+      if(row.querySelector('[data-reminder-lead]'))aliases += ' travel departure lead time minutes';
+      addStatic(row,label || 'Schedule option',aliases);
+    });
+    if(panelOpen)_detailSearchStaticCache = {key:staticKey,entries:staticEntries};
+  }
+
+  // Dynamic user rows (.habit-option-row, .schedule-link-editor, .link-row)
+  // are few (usually 0-3) and read live selected state so visibility changes
+  // stay accurate without re-walking the static field catalog.
+  const dynamicRows = inner.querySelectorAll('.habit-option-row, .schedule-link-editor, .link-row');
+  if(!dynamicRows.length)return staticEntries;
+  const entries = staticEntries.slice();
   const rowSelectedText = row=>{
     const parts = [];
     row.querySelectorAll('.habit-option-field-label,.schedule-chip.on,.seg-opt.on').forEach(el=>{
@@ -223,27 +330,10 @@ function detailSearchEntries(){
     });
     return parts.join(' ');
   };
-  // Reminder edges are div.native-reminder-row; the DND control is a label.
-  inner.querySelectorAll('.habit-option-row, .schedule-link-editor, .link-row, #detail-native-reminders label, #detail-native-reminders .native-reminder-row, #detail-native-reminders .native-reminder-sound').forEach(row=>{
-    // Hidden template and editor rows stay out of the index; conditional
-    // catalog fields above deliberately remain searchable for their
-    // prerequisite guidance.
+  dynamicRows.forEach(row=>{
     if(row.closest('[hidden]'))return;
     let label,aliases;
-    if(row.closest('#detail-native-reminders')){
-      const face = row.querySelector('.native-reminder-name')?.textContent || row.childNodes[0]?.textContent.trim();
-      const edge = row.querySelector('select')?.dataset.reminderEdge;
-      // Reminder rows show a timing face (“when you leave”); the searchable
-      // name is the edge title (“travel: departure”) people actually type.
-      const edgeTitle = typeof NATIVE_REMINDER_EDGES !== 'undefined'
-        ? NATIVE_REMINDER_EDGES.find(([key])=>key === edge)?.[1] : '';
-      label = edgeTitle && edgeTitle !== face ? `${edgeTitle} (${face})` : (edgeTitle || face);
-      aliases = row.matches('.native-reminder-sound')
-        ? 'notification sound tone chime ringtone audio custom phone sound'
-        : 'phone reminder notification ringing alarm';
-      if(edge === 'missed')aliases += ' before missed drop cutoff warning estimate';
-      if(row.querySelector('[data-reminder-lead]'))aliases += ' travel departure lead time minutes';
-    }else if(row.matches('.schedule-link-editor')){
+    if(row.matches('.schedule-link-editor')){
       label = `Item order: ${row.querySelector('.schedule-link-habit option:checked')?.textContent || 'choose a partner'}`;
       aliases = rowSelectedText(row);
     }else if(row.matches('.habit-option-row')){
@@ -253,7 +343,8 @@ function detailSearchEntries(){
       label = row.querySelector('.link-app-name')?.value || row.querySelector('.link-value')?.value || 'Link or call';
       aliases = rowSelectedText(row);
     }
-    add(row,label || 'Schedule option',aliases);
+    const entry = makeEntry(row,label || 'Schedule option',aliases,'',entries.length,seenTargets);
+    if(entry)entries.push(entry);
   });
   return entries;
 }
@@ -334,12 +425,18 @@ async function openDetailAssistant(instruction = '',opts = {}){
 }
 
 function renderDetailSearch(){
-  const query = detailSearchNormalize($('detail-search-input').value).slice(0,120);
+  const input = $('detail-search-input');
+  const query = detailSearchNormalize(input.value).slice(0,120);
   const tokens = query.split(' ').filter(Boolean);
   const ranked = searchRankEntries(detailSearchEntries(),tokens,DETAIL_SEARCH_RULES,false);
   const results = $('detail-search-results');
-  results.replaceChildren();
-  ranked.forEach(row=>results.append(searchResultButton(row,entry=>revealDetailSearchEntry(entry))));
+  const renderSig = `${query}|${ranked.map(r=>`${r.entry.order}:${r.entry.label}`).join(',')}`;
+  if(_detailSearchLastRenderSig !== renderSig){
+    _detailSearchLastRenderSig = renderSig;
+    const frag = document.createDocumentFragment();
+    ranked.forEach(row=>frag.append(searchResultButton(row,entry=>revealDetailSearchEntry(entry))));
+    results.replaceChildren(frag);
+  }
   syncDetailSearchAssistant();
   const assistant = detailAssistantAvailable();
   $('detail-search-status').textContent = !tokens.length
@@ -347,7 +444,7 @@ function renderDetailSearch(){
     : ranked.length ? `${ranked.length} ${ranked.length === 1 ? 'match' : 'matches'}`
     : assistant ? 'No matching settings. Try another word or ask the assistant.'
     : 'No matching settings. Try “duration”, “weather”, “reminder” or “days”.';
-  $('detail-search-clear').hidden = !$('detail-search-input').value;
+  $('detail-search-clear').hidden = !input.value;
 }
 
 let detailSearchReturnNav = null;
@@ -371,6 +468,7 @@ function setDetailSearchOpen(open,focus = true){
   $('detail-cool').setAttribute('aria-label',open ? 'close detail search' : 'close details');
   inner.querySelector('.detail-search-field').hidden = !open;
   if(!open){
+    invalidateDetailSearchCache();
     $('detail-search-input').blur();
     if(wasOpen){
       if(detailSearchReturnNav)scrollDetailToNav(detailSearchReturnNav,'auto');
@@ -378,6 +476,7 @@ function setDetailSearchOpen(open,focus = true){
     }
   }
   if(open){
+    if(!wasOpen)invalidateDetailSearchCache();
     renderDetailSearch();
     updateKeyboardLift();
     if(focus)$('detail-search-input').focus({preventScroll:true});

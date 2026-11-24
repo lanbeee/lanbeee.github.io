@@ -2178,8 +2178,23 @@ function assistantFocusReviewHtml(session, opts){
     </div>`;
 }
 
+let _assistantFocusSettingsCache = null;
 function assistantFocusSettings(){
-  return typeof loadSortSettings === 'function' ? loadSortSettings() : {};
+  if(typeof loadSortSettings !== 'function')return {};
+  let raw;
+  let canCache = false;
+  try{
+    if(typeof SORT_SETTINGS_KEY === 'string' && typeof localStorage !== 'undefined'){
+      raw = localStorage.getItem(SORT_SETTINGS_KEY);
+      canCache = true;
+    }
+  }catch(_){}
+  if(canCache && _assistantFocusSettingsCache && _assistantFocusSettingsCache.raw === raw){
+    return _assistantFocusSettingsCache.value;
+  }
+  const value = loadSortSettings();
+  if(canCache)_assistantFocusSettingsCache = {raw, value};
+  return value;
 }
 
 function assistantFocusPreflight(session, record){

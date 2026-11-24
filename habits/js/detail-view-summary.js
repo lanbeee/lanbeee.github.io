@@ -862,9 +862,10 @@ function detailSummaryNeedsPick(session){
 }
 
 function detailSummaryEnsureSession(){
+  const current = detailSummary.session;
+  if(detailIdx !== null && current && detailSummary.hid && current.targetId === detailSummary.hid && assistantFocusAlive(current))return current;
   const item = detailSummaryRecord();
   if(!item)return null;
-  const current = detailSummary.session;
   if(current && current.targetId === item.hid && assistantFocusAlive(current))return current;
   detailSummary.session = assistantFocusOpen({
     operation:'edit', kind:assistantFocusKindOf(item), targetId:item.hid,
@@ -900,6 +901,9 @@ function detailSummaryReset(hid = null,preserve = false){
   detailSummary.hid = hid;
   detailSummary.occurrenceDate = '';
   detailSummaryRevising = false;
+  detailSummaryPrefixMiss = '';
+  clearTimeout(detailSummaryGuidesTimer);
+  detailSummaryGuidesTimer = 0;
   detailSummaryThread()?.replaceChildren();
   if($('detail-summary-chat'))$('detail-summary-chat').hidden = true;
   const input = $('detail-ask-input');
@@ -992,18 +996,43 @@ function detailSummaryComposer(value){
 }
 
 // A typed "Label:" becomes the tag once the label names a setting.
+let detailSummaryPrefixMiss = '';
 function detailSummaryAbsorbTag(){
   const input = $('detail-ask-input');
   if(detailSummaryTagName() || typeof assistantGuideParse !== 'function' || !detailSummaryAskReady())return;
   const raw = input.value;
   const cut = raw.search(/[:\-–—]/);
   if(cut < 1 || cut > 48)return;
+  const head = raw.slice(0,cut).trim().toLowerCase();
+  if(!head || head === detailSummaryPrefixMiss)return;
   const session = detailSummaryEnsureSession();
   const parsed = session && assistantGuideParse(raw,session);
-  if(!parsed || !new RegExp(`^\\s*${assistantGuidePattern(parsed.label)}\\s*[:\\-–—]`,'i').test(raw))return;
+  if(!parsed || !new RegExp(`^\\s*${assistantGuidePattern(parsed.label)}\\s*[:\\-–—]`,'i').test(raw)){
+    detailSummaryPrefixMiss = head;
+    return;
+  }
+  detailSummaryPrefixMiss = '';
   detailSummarySetTag(parsed.label);
   input.value = parsed.rest;
   detailSummaryResizeComposer();
+}
+
+function syncDetailSummaryInputChrome(){
+  const inner = getSheetInner('detail-sheet');
+  const input = $('detail-ask-input');
+  if(!inner || !input)return;
+  const draft = detailSummaryDraft();
+  const hasText = Boolean(draft.trim());
+  const show = inner.classList.contains('detail-ask-on');
+  if(!inner.classList.contains('detail-search-open')){
+    $('detail-cool').setAttribute('aria-label',show && draft ? 'clear change' : 'close details');
+  }
+  $('detail-ask-send').disabled = input.disabled || !detailSummaryCanSend() || !hasText;
+  const revise = $('detail-ask-revise');
+  if(revise && !revise.hidden){
+    revise.disabled = hasText;
+    revise.title = hasText ? 'Clear the message first.' : 'Take back the last unsaved request and edit it.';
+  }
 }
 
 // The dock is the composer only while the summary is on screen; other tabs keep
@@ -1080,7 +1109,20 @@ function detailSummaryGuideHint(session,active,draft){
   return '';
 }
 
+let detailSummaryGuidesTimer = 0;
+function detailSummaryScheduleGuides(){
+  clearTimeout(detailSummaryGuidesTimer);
+  detailSummaryGuidesTimer = setTimeout(()=>{
+    detailSummaryGuidesTimer = 0;
+    renderDetailSummaryGuides();
+  },80);
+}
+
 function renderDetailSummaryGuides(){
+  if(detailSummaryGuidesTimer){
+    clearTimeout(detailSummaryGuidesTimer);
+    detailSummaryGuidesTimer = 0;
+  }
   const tray = $('detail-ask-guides');
   const list = $('detail-ask-guides-row');
   const inner = getSheetInner('detail-sheet');
@@ -1098,6 +1140,7 @@ function renderDetailSummaryGuides(){
   const session = guiding || canRevise ? detailSummaryEnsureSession() : null;
   if(!session){
     tray.hidden = true;
+    tray.dataset.layoutSig = '';
     detailSummaryGuidesHeight(inner,0);
     return;
   }
@@ -1106,9 +1149,10 @@ function renderDetailSummaryGuides(){
   const suggestions = guiding ? assistantGuideSuggestions(session,hintSource) : [];
   const choosing = suggestions.some(item=>/^(?:action|field):/.test(item.id));
   const hint = guiding ? detailSummaryGuideHint(session,active,draft) : '';
-  $('detail-ask-guides-label').hidden = !guiding;
-  $('detail-ask-guides-label').textContent = active ? 'Change this setting'
+  const labelText = active ? 'Change this setting'
     : choosing ? 'Which one?' : detailSummaryNeedsPick(session) ? 'Which setting?' : 'Settings you can change';
+  $('detail-ask-guides-label').hidden = !guiding;
+  $('detail-ask-guides-label').textContent = labelText;
   $('detail-ask-hint').hidden = !hint;
   $('detail-ask-hint').textContent = hint;
   const revise = $('detail-ask-revise');
@@ -1118,7 +1162,8 @@ function renderDetailSummaryGuides(){
   const signature = `${suggestions.map(item=>item.id).join(',')}|${active ? active.id : ''}`;
   if(list.dataset.signature !== signature){
     list.dataset.signature = signature;
-    list.replaceChildren(...suggestions.map(item=>{
+    const frag = document.createDocumentFragment();
+    for(const item of suggestions){
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'assistant-guide';
@@ -1127,14 +1172,19 @@ function renderDetailSummaryGuides(){
       button.textContent = item.label;
       button.title = /^(?:action|field):/.test(item.id) ? item.label : assistantGuideHelp(item.id).description;
       button.setAttribute('aria-pressed',active && active.id === item.id ? 'true' : 'false');
-      return button;
-    }));
+      frag.append(button);
+    }
+    list.replaceChildren(frag);
   }
   list.hidden = !suggestions.length;
   tray.hidden = !suggestions.length && !hint && !canRevise;
   if(hint)input.setAttribute('aria-describedby','detail-ask-hint');
   else input.removeAttribute('aria-describedby');
-  detailSummaryGuidesHeight(inner,tray.hidden ? 0 : tray.offsetHeight);
+  const layoutSig = tray.hidden ? '' : `${guiding?1:0}|${labelText}|${hint}|${canRevise?1:0}|${signature}`;
+  if(tray.dataset.layoutSig !== layoutSig){
+    tray.dataset.layoutSig = layoutSig;
+    detailSummaryGuidesHeight(inner,tray.hidden ? 0 : tray.offsetHeight);
+  }
 }
 
 // The page reserves the tray's height; a reader at the end stays at the end.
@@ -1431,7 +1481,8 @@ $('detail-summary-feedback').addEventListener('click',detailSummaryOpenFeedback)
 $('detail-ask-input').addEventListener('input',()=>{
   detailSummaryAbsorbTag();
   detailSummaryResizeComposer();
-  syncDetailSummaryDock();
+  syncDetailSummaryInputChrome();
+  detailSummaryScheduleGuides();
 });
 $('detail-ask-input').addEventListener('keydown',event=>{
   const input = event.currentTarget;
