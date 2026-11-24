@@ -54,6 +54,7 @@ function scheduledEventAllowed(ev,settings){
   const h = ev.h;
   if(isLocalAppointment(h))return true;
   const start = scheduledEventStart(ev), base = dayStart(start);
+  if(typeof habitHasSnoozedDate === 'function' && habitHasSnoozedDate(h,base))return false;
   if(!isDateEligibleForHabit(h,base))return false;
   const end = start + scheduledEventDuration(ev) * 60000;
   const registry = normalizeLocationRegistry(settings && settings.locations);
@@ -192,6 +193,7 @@ function buildTodayAgenda(data,settings){
 // PURE: eligible due and planned work always enters the Today agenda.
 function includeInTodayAgenda(h,settings){
   if(isLocalAppointment(h))return false;
+  if(typeof habitIsSnoozed === 'function' && habitIsSnoozed(h))return false;
   if(opportunityDoingNow(h,dayStart(Date.now())))return !completedOnDay(h,Date.now());
   if(isOpportunityHabit(h) && !hasPlannedToday(h))return false;
   if(isOpportunityHabit(h) && !opportunityPlanAllowed(h,Date.now()))return false;

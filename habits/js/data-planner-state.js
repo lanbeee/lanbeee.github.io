@@ -546,7 +546,7 @@ function temporaryOrderConflict(dayBase,edges,data = null){
 }
 
 function dataFingerprint(data){
-  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.repeatMode,h.allowedWeekdays,JSON.stringify(h.allowedOrdinalWeekdays),JSON.stringify(h.preferredOrdinalWeekdays),h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeFixedStart,h.dueDate,h.planByDate,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,JSON.stringify(h.snoozedDates || []),h.target,h.repeatMode,h.allowedWeekdays,JSON.stringify(h.allowedOrdinalWeekdays),JSON.stringify(h.preferredOrdinalWeekdays),h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeFixedStart,h.dueDate,h.planByDate,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
 }
 
 function normalizeSuggestedOccurrences(rows){
@@ -1053,6 +1053,7 @@ function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
         h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(logTs,{minutes:delta,note:'agenda auto-log'})]);
         h.lastLog = latestActualLog(h.logs);
         h.snoozedUntil = null;
+        if(typeof clearSnoozedDateForDay === 'function')clearSnoozedDateForDay(h,logTs);
         clearPlanByDateOnLog(h);
         if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
         changedData = true;
@@ -1144,6 +1145,7 @@ function sweepDoingNowOneShot(now = Date.now(),opts = {}){
       h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(snapped,{minutes:delta,note:'doing-now auto-log'})]);
       h.lastLog = latestActualLog(h.logs);
       h.snoozedUntil = null;
+      if(typeof clearSnoozedDateForDay === 'function')clearSnoozedDateForDay(h,snapped);
       clearPlanByDateOnLog(h);
       changed = true;
     }
@@ -1156,6 +1158,7 @@ function sweepDoingNowOneShot(now = Date.now(),opts = {}){
     })]);
     h.lastLog = latestActualLog(h.logs);
     h.snoozedUntil = null;
+    if(typeof clearSnoozedDateForDay === 'function')clearSnoozedDateForDay(h,snapped);
     clearPlanByDateOnLog(h);
     changed = true;
   }

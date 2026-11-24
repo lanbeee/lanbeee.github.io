@@ -835,7 +835,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       const hid=row.hid || row.h?.hid || data[row.i]?.hid,h=dataById.get(hid),owner=`item:${hid}`;
       const choices=nativeReminderChoices(prefs,owner,dateKey(today));
       if(!h || isEventItem(h) || isOpportunityHabit(h) || h.type==='zero' || present.has(hid) || !['notification','alarm'].includes(choices.missed)
-        || completedOnDay(h,today) || Number(h.snoozedUntil)>now
+        || completedOnDay(h,today) || (typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h,now) : Number(h.snoozedUntil)>now)
         || (hasDaySchedule(h) && !isDateEligibleForHabit(h,today))
         || !windowStillDoableToday(h,now,settings))continue;
       if(now+2000<nativeReminderAllowedWarningAt(h,row,currentDay,settings,now))continue;
@@ -1041,6 +1041,7 @@ function applyNativeCompletion(data,action){
     const consumed=planToConsumeForEntry(logs,logTime(log));
     if(consumed!==null){const pos=findEntryByKind(logs,consumed,true);if(pos>=0)logs.splice(pos,1);}
     h.logs=normalizeLogs([...logs,log]);h.lastLog=latestActualLog(h.logs);h.snoozedUntil=null;
+    if(typeof clearSnoozedDateForDay==='function')clearSnoozedDateForDay(h,logTime(log));
     if(typeof clearPlanByDateOnLog==='function')clearPlanByDateOnLog(h);
     if(typeof pruneOrderConstraintsOnLog==='function')pruneOrderConstraintsOnLog(h);
     return true;

@@ -74,7 +74,7 @@ function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = nu
   // Conditional items have no general overdue obligation. Only a row actually
   // shown on the agenda can turn into a missed notification.
   if(isOpportunityHabit(h) && !evidence?.rendered)return false;
-  if(h.snoozedUntil && now < h.snoozedUntil)return false;
+  if(typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h,now) : (h.snoozedUntil && now < h.snoozedUntil))return false;
   const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
   const todayBase = dayStart(now);
   // Missed is today's notification list. Retain older expectations as planner
@@ -130,7 +130,7 @@ function collectMissedFromSnapshot(data,todayHids,snap,renderedProjection = {},n
       const idx = data.findIndex(h=>h && h.hid === hid);
       const h = data[idx];
       if(!h || !habitHasMultipleDailyOccurrences(h)
-        || (h.snoozedUntil && now < h.snoozedUntil))continue;
+        || (typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h,now) : (h.snoozedUntil && now < h.snoozedUntil)))continue;
       const dayBase = missedOccurrenceDayBase(expectedDay,now);
       if(h.createdAt != null && Number(h.createdAt) >= dayBase + 86400000)continue;
       if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))continue;

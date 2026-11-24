@@ -404,7 +404,7 @@ function flexAwareDayPenalty(h,offset,urgency,pinned,pinnedDay,dayBase){
 function isWeekCandidate(h,settings,dayBase,weekday){
   if(isLocalAppointment(h))return false;
   if(h.type === 'zero')return false;
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
+  if(typeof habitIsSnoozedOnDay === 'function' ? habitIsSnoozedOnDay(h,dayBase) : (h.snoozedUntil && Date.now() < h.snoozedUntil))return false;
   // Already logged on this day — a leftover plan entry must not re-offer it.
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(h.type === 'task'){
@@ -493,7 +493,7 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   if(isOpportunityHabit(h))return hasPlannedForDay(h,dayBase);
   if(!h || dayBase == null)return false;
   if(h.type === 'zero')return false;
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
+  if(typeof habitIsSnoozedOnDay === 'function' ? habitIsSnoozedOnDay(h,dayBase) : (h.snoozedUntil && Date.now() < h.snoozedUntil))return false;
   if(hasDaySchedule(h)){
     const schedule = scheduledDays(h);
     if(schedule.weekdays.length && !schedule.weekdays.includes(weekday))return false;
@@ -819,7 +819,7 @@ function clusterNativeDueOnDay(p,dayBase,weekday,cfg){
   // Snooze is a hard eligibility gate. Candidate shells may be retained for
   // schedule-link discovery even when their initial eligible Set is empty;
   // they must not act as a native-due cluster anchor while snoozed.
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
+  if(typeof habitIsSnoozedOnDay === 'function' ? habitIsSnoozedOnDay(h,dayBase) : (h.snoozedUntil && Date.now() < h.snoozedUntil))return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase))return true;
   if(h.type === 'task'){
@@ -885,6 +885,7 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
     if(!myLocs.length)continue; // anywhere-allowed: no fixed cluster anchor
     for(const {dayBase,weekday,seedLocId} of dayMeta){
       if(c.eligible.has(dayBase))continue;
+      if(typeof habitIsSnoozedOnDay === 'function' && habitIsSnoozedOnDay(h,dayBase))continue;
       if(!isDateEligibleForHabit(h,dayBase))continue;
       if(c.pinned && !plannerPinnedAllowsDay(h,dayBase,c.pinnedDay))continue;
       // Flex clustering may open an earlier day, but a logged occurrence has

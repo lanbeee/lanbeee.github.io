@@ -303,9 +303,93 @@ function dayStart(ts){
   const d = new Date(ts);
   return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
 }
-/** PURE: true while a habit is hidden by an active snooze. */
+/** PURE: sorted YYYY-MM-DD dates marked as snoozed on a habit. */
+function habitSnoozedDates(h){
+  if(!h || !Array.isArray(h.snoozedDates) || !h.snoozedDates.length)return [];
+  return typeof normalizeSnoozedDates === 'function'
+    ? normalizeSnoozedDates(h.snoozedDates)
+    : h.snoozedDates.filter(k=>typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k));
+}
+/** PURE: today-or-future YYYY-MM-DD dates marked as snoozed on a habit. */
+function habitUpcomingSnoozedDates(h, now = Date.now()){
+  const today = dateKey(now);
+  return habitSnoozedDates(h).filter(key=>key >= today);
+}
+/** PURE: true when a habit's snoozedDates explicitly includes dayTs's calendar date. */
+function habitHasSnoozedDate(h, dayTs){
+  if(!h || !Array.isArray(h.snoozedDates) || !h.snoozedDates.length)return false;
+  const key = typeof dayTs === 'string' ? dayTs : dateKey(dayTs);
+  return h.snoozedDates.includes(key);
+}
+/** PURE: true while a habit is hidden right now by an active snooze or today's snoozedDates. */
 function habitIsSnoozed(h, now = Date.now()){
-  return Boolean(h && h.snoozedUntil && now < h.snoozedUntil);
+  if(!h)return false;
+  if(h.snoozedUntil && now < h.snoozedUntil)return true;
+  return habitHasSnoozedDate(h, now);
+}
+/** PURE: true when a habit is snoozed on a specific calendar day (planner gate). */
+function habitIsSnoozedOnDay(h, dayTs, now = Date.now()){
+  if(!h)return false;
+  if(h.snoozedUntil && now < h.snoozedUntil)return true;
+  return habitHasSnoozedDate(h, dayTs);
+}
+/** PURE: timestamp when a currently snoozed habit next becomes active, or null. */
+function habitSnoozeReturnTs(h, now = Date.now()){
+  if(!habitIsSnoozed(h, now))return null;
+  let ts = (h.snoozedUntil && now < h.snoozedUntil) ? h.snoozedUntil : null;
+  const dates = habitSnoozedDates(h);
+  if(dates.length){
+    const set = new Set(dates);
+    if(set.has(dateKey(now))){
+      let cursor = dayStart(now);
+      let guard = 0;
+      while(set.has(dateKey(cursor)) && guard < 400){
+        const next = new Date(cursor);
+        next.setDate(next.getDate() + 1);
+        cursor = dayStart(next.getTime());
+        guard += 1;
+      }
+      if(!ts || cursor > ts)ts = cursor;
+    }
+    if(ts != null && set.has(dateKey(ts))){
+      let cursor = dayStart(ts);
+      let guard = 0;
+      while(set.has(dateKey(cursor)) && guard < 400){
+        const next = new Date(cursor);
+        next.setDate(next.getDate() + 1);
+        cursor = dayStart(next.getTime());
+        guard += 1;
+      }
+      if(cursor > ts)ts = cursor;
+    }
+  }
+  return ts;
+}
+/** PURE: remove a single calendar day from h.snoozedDates (returns true if changed). */
+function clearSnoozedDateForDay(h, ts = Date.now()){
+  if(!h || !Array.isArray(h.snoozedDates) || !h.snoozedDates.length)return false;
+  const key = typeof ts === 'string' ? ts : dateKey(ts);
+  const next = h.snoozedDates.filter(k=>k !== key);
+  if(next.length === h.snoozedDates.length)return false;
+  h.snoozedDates = next;
+  return true;
+}
+/** PURE: local timestamp for a picked YYYY-MM-DD date and optional HH:MM time (rejects DST gaps). */
+function parseSnoozeDateUntil(dateStr, timeStr = ''){
+  const cleanDate = String(dateStr || '').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate))return null;
+  const [y,m,d] = cleanDate.split('-').map(Number);
+  const cleanTime = String(timeStr || '').trim();
+  let hours = 0, minutes = 0;
+  if(cleanTime){
+    if(!/^\d{2}:\d{2}$/.test(cleanTime))return null;
+    [hours,minutes] = cleanTime.split(':').map(Number);
+    if(hours < 0 || hours > 23 || minutes < 0 || minutes > 59)return null;
+  }
+  const dt = new Date(y,m - 1,d,hours,minutes,0,0);
+  if(dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d)return null;
+  if(dt.getHours() !== hours || dt.getMinutes() !== minutes)return null;
+  return dt.getTime();
 }
 /** PURE: midnight at the start of tomorrow — “until the end of today”. */
 function snoozeUntilEndOfDay(now = Date.now()){
@@ -373,6 +457,7 @@ function recordHabitCompletion(h,opts = {}){
   h.logs=normalizeLogs([...logs,entry]);
   h.lastLog=latestActualLog(h.logs);
   h.snoozedUntil=null;
+  clearSnoozedDateForDay(h,entryTs);
   if(typeof clearPlanByDateOnLog==='function')clearPlanByDateOnLog(h);
   if(typeof pruneOrderConstraintsOnLog==='function')pruneOrderConstraintsOnLog(h);
   return {entry,entryTs,consumedPlanTs};

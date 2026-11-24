@@ -1792,8 +1792,21 @@ function assistantFocusDetailSelector(field, session){
   return id ? `#${id}` : null;
 }
 
+function assistantFocusFieldTextHtml(text){
+  const raw = String(text ?? '');
+  const sep = raw.indexOf(' · ');
+  if(sep < 1)return assistantFocusEscape(raw);
+  const key = raw.slice(0, sep);
+  const rest = raw.slice(sep + 3);
+  const arrow = rest.indexOf(' → ');
+  const value = arrow > 0
+    ? `<span class="focus-field-old">${assistantFocusEscape(rest.slice(0, arrow))}</span><span class="focus-field-arrow"> → </span><span class="focus-field-new">${assistantFocusEscape(rest.slice(arrow + 3))}</span>`
+    : `<span class="focus-field-new">${assistantFocusEscape(rest)}</span>`;
+  return `<span class="focus-field-key">${assistantFocusEscape(key)}</span><span class="focus-field-sep"> · </span>${value}`;
+}
+
 function assistantFocusFieldHtml(field, text, className, session){
-  const value = `<span class="focus-field-text">${assistantFocusEscape(text)}</span>`;
+  const value = `<span class="focus-field-text">${assistantFocusFieldTextHtml(text)}</span>`;
   if(!assistantFocusDetailSelector(field, session))return `<span class="${className}">${value}</span>`;
   const label = assistantFocusField(field)?.label || (field === 'rhythm' ? 'How often' : field);
   const disabled = session._focusInFlight || (session.operation === 'create' && !String(assistantFocusMaterialize(session).name || '').trim());

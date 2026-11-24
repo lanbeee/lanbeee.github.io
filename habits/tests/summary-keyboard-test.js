@@ -164,9 +164,15 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
             assert.ok(Math.abs(frame.dock.bottom-(height-clearance))<=1,`closing dock stays at its keyboard/safe edge: ${JSON.stringify(frame.dock)}`);
           }
           await page.evaluate(()=>{detailSummaryScrollToEnd=summaryScrollToEnd;$('detail-ask-input').value='';syncDetailSummaryDock();});
-          // Empty focus opens no extra guide layer, including on dismissal.
+          // Empty focus opens no extra guide layer, including on dismissal,
+          // and keeps a compact single-line initial input height.
           await page.locator('#detail-ask-input').tap();
-          await page.waitForFunction(()=>$('detail-ask-input').getBoundingClientRect().height >= 72);
+          await page.waitForFunction(()=>{
+            const h=$('detail-ask-input').getBoundingClientRect().height;
+            return getSheetInner('detail-sheet').classList.contains('detail-ask-typing') && h >= 34 && h < 52;
+          });
+          assert.ok(await page.locator('#detail-head-card').evaluate(el=>el.getBoundingClientRect().height < 48),'typing collapses the item header to a compact Editing bar');
+          assert.equal(await page.locator('.detail-ask-editing-label').isVisible(),true,'compact header shows the Editing label');
           const empty=await sample(530);
           assert.equal(await page.locator('#detail-ask-guides').isVisible(),false,'empty focus does not open a suggestions card');
           await page.locator('#detail-ask-input').blur();

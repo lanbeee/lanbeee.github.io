@@ -117,7 +117,7 @@ function setBulkStep(step){
 // ─────────────────────────────────────────────────────────────────────────
 function bulkPickerRowVisible(h){
   if(typeof isCalendarIgnored === 'function' && isCalendarIgnored(h))return false;
-  const snoozed = Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+  const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
   const done = h.type === 'task' && isTaskDone(h);
   if(snoozed && !bulkFilters.snoozed)return false;
   if(done && !bulkFilters.completed)return false;
@@ -209,7 +209,7 @@ function renderBulkPicker(){
     const sub = bulkSummaryFor(h);
     const badges = [];
     if(h.type === 'task' && isTaskDone(h))badges.push('completed');
-    if(h.snoozedUntil && Date.now() < h.snoozedUntil)badges.push('snoozed');
+    if(typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : (h.snoozedUntil && Date.now() < h.snoozedUntil))badges.push('snoozed');
     return `<li>
       <label class="bulk-row${checked ? ' on' : ''}">
         <input type="checkbox" data-bulk-check="${escapeHtml(h.hid)}"${checked ? ' checked' : ''} />
@@ -992,7 +992,7 @@ async function bulkApplyChanges(){
       if(before?.type === 'task' && typeof cancelPush === 'function' && typeof reminderSignature === 'function')cancelPush(reminderSignature(before));
     }
     const usesWeather = review.undoEntries.some(entry=>(entry.changes || []).some(change=>['weatherProfileMode','weatherProfileId','weatherLocationId','showWeather','showWeatherAtLocation'].includes(change.field)));
-    const snoozeChanged = review.undoEntries.some(entry=>entry.changes.some(change=>change.field === 'snoozedUntil'));
+    const snoozeChanged = review.undoEntries.some(entry=>entry.changes.some(change=>change.field === 'snoozedUntil' || change.field === 'snoozedDates'));
     const reminderEnabled = review.reminderEnabled && {...review.reminderEnabled,appliedItems:review.reminderAfter.items};
     showActionToast(`Updated ${review.changing} item${review.changing === 1 ? '' : 's'}`,{type:'bulk-edit',changes:review.undoEntries,reminderEnabled,openAction:false,undoLabel:'undo'});
     // Work is committed — close without the discard guard.

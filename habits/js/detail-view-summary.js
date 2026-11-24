@@ -945,7 +945,8 @@ function detailSummaryResizeComposer(){
   const input = $('detail-ask-input');
   if(!input || detailComposerSizesToContent)return;
   input.style.height = 'auto';
-  input.style.height = `${Math.min(Math.max(input.scrollHeight,44),124)}px`;
+  const minHeight = getSheetInner('detail-sheet')?.classList.contains('detail-ask-typing') ? 36 : 44;
+  input.style.height = `${Math.min(Math.max(input.scrollHeight,minHeight),108)}px`;
 }
 
 // Older WebViews need to remeasure wrapped lines when Search or Send changes

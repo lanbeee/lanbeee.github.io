@@ -90,6 +90,21 @@ function directLaunchValue(launch,value){
   return clean && clean !== value ? clean : '';
 }
 
+/** PURE: clean a habit's snoozedDates list — sorted unique YYYY-MM-DD local calendar dates. */
+function normalizeSnoozedDates(raw){
+  if(!Array.isArray(raw))return [];
+  const seen = new Set();
+  for(const item of raw){
+    const key = typeof item === 'string' ? item.trim() : '';
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(key))continue;
+    const [y,m,d] = key.split('-').map(Number);
+    const dt = new Date(y,m - 1,d);
+    if(dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d)continue;
+    seen.add(key);
+  }
+  return [...seen].sort().slice(0,366);
+}
+
 /** PURE: clean a habit's link list — drops unusable and duplicate entries. */
 function normalizeLinks(raw){
   if(!Array.isArray(raw))return [];
@@ -363,6 +378,7 @@ function normalize(items){
       allowSharedDisplayCompletion:raw.allowSharedDisplayCompletion !== false,
       sample:Boolean(raw.sample),
       snoozedUntil: raw.snoozedUntil || null,
+      snoozedDates: normalizeSnoozedDates(raw.snoozedDates),
       topics:normalizeTopics(raw.topics),
       allowedWeekdays:normalizeAllowedWeekdays(raw.allowedWeekdays),
       allowedMonthDays:normalizeAllowedMonthDays(raw.allowedMonthDays),

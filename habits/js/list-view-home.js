@@ -1063,7 +1063,7 @@ function itemMatchesTrait(h, key){
   if(key === 'windowed')return itemHasDayOrTimeRules(h);
   if(key === 'linked')return Array.isArray(h.links) && h.links.length > 0;
   if(key === 'weather')return h.weatherProfileMode === 'profile' || Boolean(h.weatherProfileId);
-  if(key === 'snoozed')return Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+  if(key === 'snoozed')return typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
   return false;
 }
 
@@ -2232,7 +2232,7 @@ function cardCue(h){
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
   const plan = nextPlannedLog(h);
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'Snoozed for now';
+  if(typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : (h.snoozedUntil && Date.now() < h.snoozedUntil))return 'Snoozed for now';
   if(h.type === 'task')return taskCue(h);
   if(plan && dateKey(plan) === dateKey(Date.now()) && h.type !== 'zero')return 'Planned today';
   const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
@@ -2304,7 +2304,7 @@ function compactHomeDuration(minutes){
 // PURE: compute card tone class
 function cardTone(h){
   if(isLocalAppointment(h))return 'plan';
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'quiet';
+  if(typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : (h.snoozedUntil && Date.now() < h.snoozedUntil))return 'quiet';
   if(hasPlannedToday(h) && h.type !== 'zero')return 'plan';
   return scoreTone(progressScore(h));
 }
@@ -2398,8 +2398,11 @@ function cardMeta(h,options = {}){
     }
     parts.push(`<span class="context-pill plan ${label ? '' : 'icon-only'}" title="${escapeHtml(titleBits.join(' · '))}"><i class="ti ti-calendar-event" aria-hidden="true"></i>${escapeHtml(label)}</span>`);
   }
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil && (options.forceSnoozedUntil || sortSettings.showSnoozedUntilOnCards)){
-    parts.push(`<span class="context-pill quiet" title="${escapeHtml(`snoozed until ${entryWhen(h.snoozedUntil)}`)}"><i class="ti ti-moon" aria-hidden="true"></i>${escapeHtml(entryWhen(h.snoozedUntil))}</span>`);
+  const snoozeReturn = typeof habitSnoozeReturnTs === 'function'
+    ? habitSnoozeReturnTs(h)
+    : ((h.snoozedUntil && Date.now() < h.snoozedUntil) ? h.snoozedUntil : null);
+  if(snoozeReturn != null && (options.forceSnoozedUntil || sortSettings.showSnoozedUntilOnCards)){
+    parts.push(`<span class="context-pill quiet" title="${escapeHtml(`snoozed until ${entryWhen(snoozeReturn)}`)}"><i class="ti ti-moon" aria-hidden="true"></i>${escapeHtml(entryWhen(snoozeReturn))}</span>`);
   }
   return parts.join('');
 }

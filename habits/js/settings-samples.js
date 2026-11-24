@@ -205,6 +205,7 @@ function sortSampleHabit(name,type,target,logs,options = {}){
     pinned:Boolean(options.pinned),
     sample:true,
     snoozedUntil:options.snoozedUntil || null,
+    snoozedDates:typeof normalizeSnoozedDates === 'function' ? normalizeSnoozedDates(options.snoozedDates) : [],
     topics:normalizeTopics(options.topics),
     locationIds,
     preferredLocationId:normalizePreferredLocation(options.preferredLocationId,locationIds),

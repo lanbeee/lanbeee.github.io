@@ -25,7 +25,8 @@ function paintDetailFields(h){
   // The header subtitle is the item's state (the canonical cardCue); the
   // summary tab shows history and settings, so nothing repeats.
   $('detail-sub').textContent = detailHeaderLine(h);
-  $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${isEventItem(h)?' event-card':''}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
+  const detailSnoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+  $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${isEventItem(h)?' event-card':''}${detailSnoozed?' snoozed':''}`;
   $('detail-head-card').style.setProperty('--card-accent',accent);
   $('detail-head-card').style.setProperty('--card-priority',priorityColor(effectivePriority(h)));
   $('detail-about').textContent = aboutText(h);

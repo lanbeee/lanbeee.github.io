@@ -582,7 +582,7 @@ function buildOverviewStretchLists(data,tally,start,end){
     const id = h.hid || h.name;
     if(seenCare.has(id))return;
     if(h.type !== 'keepup' || h.lastLog === null)return;
-    if(typeof isSnoozed === 'function' && isSnoozed(h))return;
+    if(typeof habitIsSnoozed === 'function' && habitIsSnoozed(h))return;
     if(typeof isOpportunityHabit === 'function' && isOpportunityHabit(h))return;
     const elapsed = typeof daysSince === 'function' ? daysSince(h.lastLog) : null;
     const target = typeof effectiveTarget === 'function' ? effectiveTarget(h,sortSettings) : Number(h.target || 0);

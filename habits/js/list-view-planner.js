@@ -31,7 +31,7 @@ function homeListFingerprint(now = Date.now()){
   const currentEdgeSig = typeof currentCoordEdgeSignature === 'function' ? currentCoordEdgeSignature() : '';
   const habitSig = data.map(h=>[
     h.name, h.emoji || '', h.emojiBgColor || '', h.type, h.lastLog, h.dueDate, h.eventTime,
-    h.pinned ? 1 : 0, h.snoozedUntil || '',
+    h.pinned ? 1 : 0, h.snoozedUntil || '', (h.snoozedDates || []).join(','),
     (h.locationIds || []).join(','),
     (h.locationTypes || []).join(','),
     h.durationMinutes, h.priority, habitEarlyWindowDays(h), habitDelayAllowanceDays(h),
@@ -1420,6 +1420,7 @@ function homeCardFaceSignature(data = (typeof load === 'function' ? load() : [])
       h.priority ?? '',
       h.pinned ? 1 : 0,
       h.snoozedUntil || 0,
+      (h.snoozedDates || []).join(','),
       h.lastLog || 0,
       h.dueDate || 0,
       h.eventTime || 0,

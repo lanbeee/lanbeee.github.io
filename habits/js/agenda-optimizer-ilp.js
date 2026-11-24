@@ -718,6 +718,8 @@ function listPlaceFitsOnDay(
   state,fill,dayCandidates = [],candidateBoundaryEdges = [],protectedBoundaryEdges = []
 ){
   if(typeof tryPlaceOnDay !== 'function')return [];
+  if(fill && fill.h && state && typeof habitIsSnoozedOnDay === 'function'
+    && habitIsSnoozedOnDay(fill.h,state.dayBase))return [];
   const doing = doingNowForDay(state);
   let placeFill = fill;
   const doingOpts = (doing && fill && fill.h && fill.h.hid === doing.hid)

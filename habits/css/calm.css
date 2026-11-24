@@ -50,6 +50,10 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail > .detail-shee
 :is(.pane-overview,.pane-detail) :is(.overview-card,.overview-insight,.detail-head,.detail-page.tune-section,.detail-card,.month-card,.pace-card,.settings-block,.settings-group,.settings-card,.about-block){
   background:var(--bg);
 }
+:is(.pane-overview,.pane-detail) .detail-page.detail-summary-page{
+  --summary-surface:var(--bg);
+  --summary-card-bg:var(--bg2);
+}
 :is(.pane-overview,.pane-detail) .score-card:not(.hit,.warn,.miss){background:var(--bg);}
 :is(.pane-overview,.pane-detail) .overview-card :is(.cal-day,.mini-nav){background:var(--bg2);}
 :is(.pane-overview,.pane-detail) .overview-card .cal-day.today{background:var(--purple-bg);}

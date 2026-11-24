@@ -813,7 +813,11 @@ function applySnoozeSheetChoice(kind,value){
     if(!doSnoozeHours(snoozeIdx,value))return false;
   }else if(kind === 'eod')doSnoozeEndOfDay(snoozeIdx);
   else if(kind === 'repetitions')doSnoozeRepetitions(snoozeIdx,value);
-  else if(kind === 'show')doUnsnooze(snoozeIdx);
+  else if(kind === 'until-date'){
+    if(!doSnoozeUntilDate(snoozeIdx,value?.date,value?.time))return false;
+  }else if(kind === 'snooze-dates'){
+    if(!doSnoozeDates(snoozeIdx,value))return false;
+  }else if(kind === 'show')doUnsnooze(snoozeIdx);
   else return false;
   closeSnoozeSheet();
   return true;
@@ -821,6 +825,64 @@ function applySnoozeSheetChoice(kind,value){
 $('snooze-sheet').addEventListener('click',e=>{
   if(e.target === e.currentTarget){
     closeSnoozeSheet();
+    return;
+  }
+  const calMode = e.target.closest('[data-snooze-cal-mode]');
+  if(calMode){
+    snoozeCalMode = calMode.dataset.snoozeCalMode === 'days' ? 'days' : 'until';
+    renderSnoozeCalendar();
+    return;
+  }
+  if(e.target.closest('#snooze-cal-prev')){
+    if(snoozeCalOffset > 0){
+      snoozeCalOffset -= 1;
+      renderSnoozeCalendar();
+    }
+    return;
+  }
+  if(e.target.closest('#snooze-cal-next')){
+    snoozeCalOffset += 1;
+    renderSnoozeCalendar();
+    return;
+  }
+  const calDay = e.target.closest('[data-snooze-cal-day]');
+  if(calDay && !calDay.disabled){
+    const key = calDay.dataset.snoozeCalDay;
+    if(snoozeCalMode === 'until'){
+      snoozeCalUntilKey = snoozeCalUntilKey === key ? '' : key;
+    }else{
+      if(snoozeCalSelectedDates.has(key))snoozeCalSelectedDates.delete(key);
+      else snoozeCalSelectedDates.add(key);
+    }
+    renderSnoozeCalendar();
+    return;
+  }
+  if(e.target.closest('#snooze-until-time-clear')){
+    const input = $('snooze-until-time');
+    if(input)input.value = '';
+    renderSnoozeCalendar();
+    return;
+  }
+  if(e.target.closest('#snooze-dates-clear')){
+    if(snoozeCalMode === 'until'){
+      snoozeCalUntilKey = '';
+      const input = $('snooze-until-time');
+      if(input)input.value = '';
+    }else{
+      snoozeCalSelectedDates.clear();
+    }
+    renderSnoozeCalendar();
+    return;
+  }
+  if(e.target.closest('#snooze-dates-apply')){
+    if(snoozeCalMode === 'until'){
+      applySnoozeSheetChoice('until-date',{
+        date:snoozeCalUntilKey,
+        time:$('snooze-until-time')?.value || ''
+      });
+    }else{
+      applySnoozeSheetChoice('snooze-dates',[...snoozeCalSelectedDates].sort());
+    }
     return;
   }
   const days = e.target.closest('[data-snooze-days]');
@@ -837,6 +899,8 @@ $('snooze-sheet').addEventListener('click',e=>{
   else if(showNow)applySnoozeSheetChoice('show');
   else if(hoursApply)applySnoozeSheetChoice('hours',$('snooze-hours')?.value);
 });
+$('snooze-until-time')?.addEventListener('input',()=>renderSnoozeCalendar());
+$('snooze-until-time')?.addEventListener('change',()=>renderSnoozeCalendar());
 $('snooze-hours')?.addEventListener('keydown',e=>{
   if(e.key !== 'Enter')return;
   e.preventDefault();

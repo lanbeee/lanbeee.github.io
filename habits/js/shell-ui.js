@@ -104,17 +104,183 @@ function unmountPane() {
   syncBrowserBack();
 }
 
+// PURE: concise human label for a YYYY-MM-DD snooze date
+function snoozeDateLabel(key,now = Date.now()){
+  if(!key || !/^\d{4}-\d{2}-\d{2}$/.test(key))return '';
+  const todayKey = dateKey(now);
+  if(key === todayKey)return 'today';
+  const [y,m,d] = key.split('-').map(Number);
+  const dt = new Date(y,m - 1,d,12,0,0,0);
+  const diff = Math.round((dayStart(dt.getTime()) - dayStart(now)) / 86400000);
+  if(diff === 1)return 'tomorrow';
+  const sameYear = dt.getFullYear() === new Date(now).getFullYear();
+  return dt.toLocaleDateString(undefined,{
+    weekday:'short',
+    month:'short',
+    day:'numeric',
+    ...(sameYear ? {} : {year:'numeric'})
+  });
+}
+
+// PURE: clock label for an optional snooze return time
+function snoozeFormatClock(ts){
+  return new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+
+// PURE: month offset >= 0 from today's calendar month to a YYYY-MM-DD key
+function snoozeMonthDiffFromToday(key,now = Date.now()){
+  if(!key || !/^\d{4}-\d{2}-\d{2}$/.test(key))return 0;
+  const [y,m] = key.split('-').map(Number);
+  const ref = new Date(now);
+  return Math.max(0,(y - ref.getFullYear()) * 12 + ((m - 1) - ref.getMonth()));
+}
+
+// RENDER: syncs the inline date / multi-day calendar inside the snooze sheet
+function renderSnoozeCalendar(){
+  const grid = $('snooze-cal-grid');
+  if(!grid)return;
+  const now = Date.now();
+  const todayKey = dateKey(now);
+  const todayBase = dayStart(now);
+  const frame = typeof monthFrame === 'function'
+    ? monthFrame(snoozeCalOffset)
+    : (()=>{
+      const ref = new Date(now);
+      const anchor = new Date(ref.getFullYear(),ref.getMonth() + snoozeCalOffset,1);
+      const year = anchor.getFullYear();
+      const month = anchor.getMonth();
+      const first = new Date(year,month,1);
+      const last = new Date(year,month + 1,0);
+      return {year,month,first,last,label:first.toLocaleDateString(undefined,{month:'short',year:'numeric'}),today:todayKey};
+    })();
+
+  const monthEl = $('snooze-cal-month');
+  if(monthEl)monthEl.textContent = frame.label;
+  const prevBtn = $('snooze-cal-prev');
+  if(prevBtn)prevBtn.disabled = snoozeCalOffset <= 0;
+
+  document.querySelectorAll('[data-snooze-cal-mode]').forEach(btn=>{
+    const on = btn.dataset.snoozeCalMode === snoozeCalMode;
+    btn.classList.toggle('on',on);
+    btn.setAttribute('aria-selected',String(on));
+  });
+
+  const timeRow = $('snooze-cal-time-row');
+  const timeInput = $('snooze-until-time');
+  const timeClear = $('snooze-until-time-clear');
+  const timeVal = timeInput ? String(timeInput.value || '').trim() : '';
+  if(timeRow)timeRow.hidden = snoozeCalMode !== 'until';
+  if(timeClear)timeClear.hidden = !timeVal;
+
+  const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head" aria-hidden="true">${day}</div>`);
+  const blanks = Array.from({length:frame.first.getDay()},()=>'<div class="cal-day blank" aria-hidden="true"></div>');
+  const days = Array.from({length:frame.last.getDate()},(_,idx)=>{
+    const date = new Date(frame.year,frame.month,idx + 1);
+    const key = dateKey(date.getTime());
+    const past = key < todayKey;
+    const isToday = key === todayKey;
+    const markedDay = snoozeCalSelectedDates.has(key);
+    let selected = false;
+    let inRange = false;
+    if(snoozeCalMode === 'until'){
+      selected = Boolean(snoozeCalUntilKey && key === snoozeCalUntilKey);
+      inRange = Boolean(snoozeCalUntilKey && snoozeCalUntilKey > todayKey && key >= todayKey && key < snoozeCalUntilKey);
+    }else{
+      selected = markedDay;
+    }
+    const classes = ['cal-day'];
+    if(past)classes.push('past');
+    else classes.push('pickable');
+    if(isToday)classes.push('today');
+    if(inRange)classes.push('in-range');
+    if(selected)classes.push('selected');
+    if(snoozeCalMode === 'until' && markedDay && !selected)classes.push('has-snoozed-day');
+    const ariaLabel = snoozeDateLabel(key,now) || key;
+    return `<button type="button" class="${classes.join(' ')}" data-snooze-cal-day="${key}"${past ? ' disabled' : ''} aria-label="${escapeHtml(ariaLabel)}" aria-pressed="${selected ? 'true' : 'false'}">${idx + 1}</button>`;
+  });
+  grid.innerHTML = [...heads,...blanks,...days].join('');
+
+  const summary = $('snooze-cal-summary');
+  const applyBtn = $('snooze-dates-apply');
+  const clearBtn = $('snooze-dates-clear');
+  const h = snoozeIdx !== null ? load()[snoozeIdx] : null;
+  const savedUpcoming = h && typeof habitUpcomingSnoozedDates === 'function' ? habitUpcomingSnoozedDates(h,now) : [];
+
+  if(snoozeCalMode === 'until'){
+    if(clearBtn)clearBtn.hidden = !snoozeCalUntilKey;
+    if(!snoozeCalUntilKey){
+      if(summary)summary.textContent = 'Tap a return date — hidden from now until that day.';
+      if(applyBtn){applyBtn.disabled = true;applyBtn.textContent = 'hide until date';}
+      return;
+    }
+    const ts = typeof parseSnoozeDateUntil === 'function' ? parseSnoozeDateUntil(snoozeCalUntilKey,timeVal) : null;
+    if(ts == null){
+      if(summary)summary.textContent = 'That local clock time is invalid. Pick another time.';
+      if(applyBtn){applyBtn.disabled = true;applyBtn.textContent = 'hide until date';}
+      return;
+    }
+    if(ts <= now){
+      if(summary)summary.textContent = 'Pick a return time later today, or choose a future date.';
+      if(applyBtn){applyBtn.disabled = true;applyBtn.textContent = 'hide until date';}
+      return;
+    }
+    const label = snoozeDateLabel(snoozeCalUntilKey,now);
+    const clock = timeVal ? snoozeFormatClock(ts) : '';
+    const diffDays = Math.round((dayStart(ts) - todayBase) / 86400000);
+    if(summary){
+      if(diffDays === 0)summary.textContent = `Returns today at ${clock}`;
+      else if(diffDays === 1)summary.textContent = clock ? `Hidden through today · returns tomorrow at ${clock}` : 'Hidden through today · returns tomorrow';
+      else summary.textContent = clock ? `Hidden ${diffDays} days · returns ${label} at ${clock}` : `Hidden ${diffDays} days · returns ${label}`;
+    }
+    if(applyBtn){
+      applyBtn.disabled = false;
+      applyBtn.textContent = clock ? `hide until ${label} · ${clock}` : `hide until ${label}`;
+    }
+    return;
+  }
+
+  const selected = [...snoozeCalSelectedDates].filter(k=>k >= todayKey).sort();
+  if(clearBtn)clearBtn.hidden = selected.length === 0;
+  if(!selected.length){
+    if(savedUpcoming.length){
+      if(summary)summary.textContent = 'All snoozed days cleared.';
+      if(applyBtn){applyBtn.disabled = false;applyBtn.textContent = 'clear snoozed days';}
+    }else{
+      if(summary)summary.textContent = 'Tap any days to snooze (today or future).';
+      if(applyBtn){applyBtn.disabled = true;applyBtn.textContent = 'snooze days';}
+    }
+    return;
+  }
+  const labels = selected.slice(0,3).map(k=>snoozeDateLabel(k,now));
+  const extra = selected.length > 3 ? ` +${selected.length - 3}` : '';
+  if(summary){
+    summary.textContent = selected.length === 1
+      ? `Snooze ${labels[0]}`
+      : `${selected.length} days: ${labels.join(', ')}${extra}`;
+  }
+  if(applyBtn){
+    applyBtn.disabled = false;
+    applyBtn.textContent = selected.length === 1 ? 'snooze 1 day' : `snooze ${selected.length} days`;
+  }
+}
+
 // RENDER: syncs the detail snooze row for the current hide state
 function syncDetailSnoozeAction(h){
   const btn = $('detail-snooze');
   if(!btn)return;
   const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h && h.snoozedUntil && Date.now() < h.snoozedUntil);
+  const upcoming = !snoozed && typeof habitUpcomingSnoozedDates === 'function' ? habitUpcomingSnoozedDates(h) : [];
   const icon = btn.querySelector('i');
   const title = btn.querySelector('b');
   const sub = btn.querySelector('small');
   if(icon)icon.className = snoozed ? 'ti ti-moon-off' : 'ti ti-moon';
   if(title)title.textContent = snoozed ? 'show' : 'snooze';
-  if(sub)sub.textContent = snoozed ? 'Bring it back, or hide longer' : 'Hide for a few hours or days';
+  if(sub){
+    if(snoozed)sub.textContent = 'Bring it back, or hide longer';
+    else if(upcoming.length === 1)sub.textContent = `Snoozed on ${snoozeDateLabel(upcoming[0])}`;
+    else if(upcoming.length > 1)sub.textContent = `Snoozed on ${upcoming.length} upcoming days`;
+    else sub.textContent = 'Hide for a few hours or days';
+  }
 }
 
 // HYBRID: opens snooze sheet and seeds its UI from state
@@ -123,7 +289,10 @@ function openSnooze(i){
   if(!h)return;
   snoozeIdx = i;
   $('snooze-name').textContent = h.name;
-  const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+  const now = Date.now();
+  const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h,now) : Boolean(h.snoozedUntil && now < h.snoozedUntil);
+  const hasActiveUntil = Boolean(h.snoozedUntil && now < h.snoozedUntil);
+  const upcomingDates = typeof habitUpcomingSnoozedDates === 'function' ? habitUpcomingSnoozedDates(h,now) : [];
   const showNow = $('snooze-show-now');
   if(showNow){
     showNow.hidden = !snoozed;
@@ -131,15 +300,41 @@ function openSnooze(i){
   }
   const sub = $('snooze-sub');
   if(sub){
-    sub.textContent = snoozed
-      ? 'Show this habit now, or hide it longer.'
-      : 'Choose how long to hide this habit.';
+    if(snoozed){
+      sub.textContent = 'Show this habit now, or hide it longer.';
+    }else if(upcomingDates.length){
+      sub.textContent = upcomingDates.length === 1
+        ? `Snoozed on ${snoozeDateLabel(upcomingDates[0],now)}. Edit days below or hide now.`
+        : `Snoozed on ${upcomingDates.length} upcoming days. Edit days below or hide now.`;
+    }else{
+      sub.textContent = 'Choose how long to hide this habit.';
+    }
   }
   document.querySelectorAll('[data-snooze-repetitions]').forEach(btn=>{
     btn.hidden = h.type === 'zero';
   });
   const hoursInput = $('snooze-hours');
   if(hoursInput)hoursInput.value = '';
+  snoozeCalSelectedDates = new Set(upcomingDates);
+  const timeInput = $('snooze-until-time');
+  if(hasActiveUntil){
+    snoozeCalUntilKey = dateKey(h.snoozedUntil);
+    snoozeCalOffset = snoozeMonthDiffFromToday(snoozeCalUntilKey,now);
+    if(timeInput){
+      if(h.snoozedUntil !== dayStart(h.snoozedUntil)){
+        const dt = new Date(h.snoozedUntil);
+        timeInput.value = `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+      }else{
+        timeInput.value = '';
+      }
+    }
+  }else{
+    snoozeCalUntilKey = '';
+    if(timeInput)timeInput.value = '';
+    snoozeCalOffset = upcomingDates.length ? snoozeMonthDiffFromToday(upcomingDates[0],now) : 0;
+  }
+  snoozeCalMode = (upcomingDates.length > 0 && !hasActiveUntil) ? 'days' : 'until';
+  renderSnoozeCalendar();
   const fromDetail = snoozeFromDetail;
   openSheet('snooze-sheet',{reopen:()=>{
     const index = load().findIndex(item=>item.hid === h.hid);
@@ -166,7 +361,8 @@ function closeSnoozeSheet(){
     const h = load()[detailIdx];
     if(h){
       syncDetailSnoozeAction(h);
-      $('detail-head-card').classList.toggle('snoozed',Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil));
+      const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+      $('detail-head-card').classList.toggle('snoozed',snoozed);
     }
   }
   snoozeIdx = null;
@@ -179,10 +375,11 @@ function doSnoozeUntil(i,until,label = ''){
   const data = load();
   if(!data[i])return;
   const previous = data[i].snoozedUntil || null;
+  const previousDates = Array.isArray(data[i].snoozedDates) ? data[i].snoozedDates.slice() : [];
   const name = toastItemName(data[i]);
   data[i].snoozedUntil = until;
   if(save(data)){
-    showActionToast(`${snoozeUndoLabel(until,label)} · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'show'});
+    showActionToast(`${snoozeUndoLabel(until,label)} · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,snoozedDates:previousDates,openAction:false,undoLabel:'show'});
     render();
     // A snooze may leave the plan's clocks unchanged; still repaint its saved
     // visibility and Show action from the mounted week immediately.
@@ -190,16 +387,54 @@ function doSnoozeUntil(i,until,label = ''){
   }
 }
 
-// HANDLER: clears an active snooze so the habit is visible again
+// HANDLER: snoozes until a picked local date (and optional HH:MM return time)
+function doSnoozeUntilDate(i,dateKeyStr,timeStr = ''){
+  const until = typeof parseSnoozeDateUntil === 'function' ? parseSnoozeDateUntil(dateKeyStr,timeStr) : null;
+  if(until == null || until <= Date.now())return false;
+  const labelDate = snoozeDateLabel(dateKeyStr);
+  const label = timeStr ? `Hidden until ${labelDate} ${snoozeFormatClock(until)}` : `Hidden until ${labelDate}`;
+  doSnoozeUntil(i,until,label);
+  return true;
+}
+
+// HANDLER: saves specific calendar dates to snooze (single or multiple days)
+function doSnoozeDates(i,dates){
+  const data = load();
+  if(!data[i])return false;
+  const todayKey = todayIso();
+  const clean = (typeof normalizeSnoozedDates === 'function' ? normalizeSnoozedDates(dates) : [])
+    .filter(k=>k >= todayKey);
+  const previous = data[i].snoozedUntil || null;
+  const previousDates = Array.isArray(data[i].snoozedDates) ? data[i].snoozedDates.slice() : [];
+  const name = toastItemName(data[i]);
+  data[i].snoozedDates = clean;
+  if(save(data)){
+    const msg = clean.length === 0
+      ? `Cleared snoozed days · ${name}`
+      : (clean.length === 1 ? `Snoozed ${snoozeDateLabel(clean[0])} · ${name}` : `Snoozed ${clean.length} days · ${name}`);
+    showActionToast(msg,{type:'hide',idx:i,snoozedUntil:previous,snoozedDates:previousDates,openAction:false,undoLabel:'undo'});
+    if(typeof refreshOpenViews === 'function')refreshOpenViews();
+    else render();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    return true;
+  }
+  return false;
+}
+
+// HANDLER: clears an active snooze so the habit is visible again today
 function doUnsnooze(i){
   const data = load();
   if(!data[i])return;
+  const now = Date.now();
+  const isSnoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(data[i],now) : Boolean(data[i].snoozedUntil && now < data[i].snoozedUntil);
+  if(!isSnoozed)return;
   const previous = data[i].snoozedUntil || null;
-  if(!previous || Date.now() >= previous)return;
+  const previousDates = Array.isArray(data[i].snoozedDates) ? data[i].snoozedDates.slice() : [];
   const name = toastItemName(data[i]);
   data[i].snoozedUntil = null;
+  if(typeof clearSnoozedDateForDay === 'function')clearSnoozedDateForDay(data[i],now);
   if(save(data)){
-    showActionToast(`Showing · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'hide'});
+    showActionToast(`Showing · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,snoozedDates:previousDates,openAction:false,undoLabel:'hide'});
     if(typeof refreshOpenViews === 'function')refreshOpenViews();
     else render();
     if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
@@ -449,9 +684,10 @@ function updateKeyboardLift(){
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
   const feedbackOpen = $('feedback-sheet')?.classList.contains('open');
   const bulkEditOpen = $('bulk-edit-sheet')?.classList.contains('open');
+  const snoozeOpen = $('snooze-sheet')?.classList.contains('open');
   const picker = $('location-picker-sheet');
   const pickerOpen = picker?.classList.contains('open');
-  const needsLift = (pickerOpen || addOpen || settingsOpen || managerOpen || feedbackOpen || bulkEditOpen || ((!paneTierActive() || detailMounted)
+  const needsLift = (pickerOpen || addOpen || settingsOpen || managerOpen || feedbackOpen || bulkEditOpen || snoozeOpen || ((!paneTierActive() || detailMounted)
     && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
@@ -1303,7 +1539,7 @@ function closeSheet(id){
   $(id).style.zIndex = '';
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
-  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet' || id === 'locations-manager-sheet' || id === 'weather-manager-sheet' || id === 'busy-manager-sheet')updateKeyboardLift();
+  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet' || id === 'home-filter-sheet' || id === 'calendar-filter-sheet' || id === 'locations-manager-sheet' || id === 'weather-manager-sheet' || id === 'busy-manager-sheet' || id === 'snooze-sheet')updateKeyboardLift();
 }
 
 // HYBRID: opens a day drill-down item in detail without leaving the day sheet

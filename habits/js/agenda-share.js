@@ -148,6 +148,7 @@ function replicaHabitDefinition(habit){
   delete copy.logs;
   delete copy.lastLog;
   delete copy.snoozedUntil;
+  delete copy.snoozedDates;
   return replicaStableValue(copy);
 }
 
@@ -1311,6 +1312,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     h.logs = normalizeLogs([...logs,entry]);
     h.lastLog = latestActualLog(h.logs);
     h.snoozedUntil = null;
+    if(typeof clearSnoozedDateForDay === 'function')clearSnoozedDateForDay(h,entryTs);
     if(typeof clearPlanByDateOnLog === 'function') clearPlanByDateOnLog(h);
     if(typeof pruneOrderConstraintsOnLog === 'function') pruneOrderConstraintsOnLog(h);
     applied.push(operationId);

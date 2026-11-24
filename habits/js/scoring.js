@@ -721,7 +721,7 @@ function mixedPriorityScore(parts,mix){
  * @returns {number}
  */
 function attentionScore(h,index,settingsOverride = null,affinity = null){
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
+  if(typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : (h.snoozedUntil && Date.now() < h.snoozedUntil))return -1000 - index;
   if(isOpportunityHabit(h) && !hasPlannedToday(h))return 5 - index / 100;
   const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
   const focus = settings.focus || 'balanced';
@@ -774,7 +774,7 @@ function todayCategory(h,settings){
   // overdue. preferredTimeStart/End is soft and does not affect this.
   const isAvailableToday = scheduleDistance === 0 && windowStillDoableToday(h);
 
-  if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 3;
+  if(typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : (h.snoozedUntil && Date.now() < h.snoozedUntil))return 3;
   if(h.type === 'zero')return 3;
   if(habitHasMultipleDailyOccurrences(h) && (Number(h.target) <= 1 || habitOccurrenceLogsForDay(h,Date.now()).length)
     && !completedToday(h))return isAvailableToday ? 0 : 1;
@@ -861,7 +861,8 @@ function visibleIndices(data,settingsOverride = null){
     const h = data[i];
     if(isCalendarIgnored(h,settings))return false;
     if(h.type === 'task' && isTaskDone(h))return false;
-    return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !settings.showSnoozed);
+    const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+    return !(snoozed && !settings.showSnoozed);
   });
   indices.sort((a,b)=>{
     if(data[a].pinned && data[b].pinned)return a - b;

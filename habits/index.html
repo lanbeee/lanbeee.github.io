@@ -419,6 +419,7 @@
         <div class="ting-info detail-title-wrap">
           <div class="ting-main">
             <span class="ting-title">
+              <span class="detail-ask-editing-label" aria-hidden="true">Editing</span>
               <button type="button" class="ting-name" id="detail-name" aria-label="edit name"></button>
             </span>
           </div>
@@ -461,7 +462,7 @@
           </div>
           <div class="detail-summary-chat" id="detail-summary-chat" hidden>
             <div class="detail-summary-chat-head">
-              <span class="settings-sublabel">assistant</span>
+              <span class="settings-sublabel"><i class="ti ti-sparkles" aria-hidden="true"></i>assistant</span>
               <div class="detail-summary-chat-actions">
                 <button type="button" class="mini-text-btn" id="detail-summary-feedback" hidden aria-label="Send feedback about this conversation">feedback</button>
                 <button type="button" class="mini-text-btn" id="detail-summary-clear">clear</button>
@@ -1783,7 +1784,7 @@
 
   <!-- snooze sheet -->
   <div class="sheet-wrap" id="snooze-sheet">
-    <div class="sheet">
+    <div class="sheet snooze-sheet">
       <p class="sheet-name" id="snooze-name"></p>
       <p class="sheet-sub" id="snooze-sub">Choose how long to hide this habit.</p>
       <button class="btn primary" id="snooze-show-now" type="button" hidden>show now</button>
@@ -1809,6 +1810,34 @@
           <span>hours</span>
         </label>
         <button class="btn" id="snooze-hours-apply" type="button">hide</button>
+      </div>
+      <div class="snooze-cal-box" id="snooze-dates-section">
+        <div class="snooze-cal-top">
+          <div class="seg snooze-cal-mode" role="tablist" aria-label="Date snooze mode">
+            <button type="button" class="seg-opt on" data-snooze-cal-mode="until" role="tab" aria-selected="true">until date</button>
+            <button type="button" class="seg-opt" data-snooze-cal-mode="days" role="tab" aria-selected="false">pick days</button>
+          </div>
+          <div class="snooze-cal-nav">
+            <button type="button" class="mini-nav" id="snooze-cal-prev" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+            <span class="snooze-cal-month" id="snooze-cal-month"></span>
+            <button type="button" class="mini-nav" id="snooze-cal-next" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+          </div>
+        </div>
+        <div class="month-grid snooze-cal-grid" id="snooze-cal-grid" role="grid" aria-label="Pick snooze dates"></div>
+        <div class="snooze-cal-time-row" id="snooze-cal-time-row">
+          <label class="snooze-cal-time-label" for="snooze-until-time">return time <span>(optional)</span></label>
+          <div class="snooze-cal-time-controls">
+            <input type="time" id="snooze-until-time" class="plan-time-input snooze-until-time" aria-label="optional return time" />
+            <button type="button" class="btn snooze-time-clear" id="snooze-until-time-clear" hidden aria-label="reset to start of day">start of day</button>
+          </div>
+        </div>
+        <div class="snooze-cal-footer">
+          <p class="snooze-cal-summary" id="snooze-cal-summary"></p>
+          <div class="snooze-cal-actions">
+            <button type="button" class="btn" id="snooze-dates-clear" hidden>clear</button>
+            <button type="button" class="btn primary" id="snooze-dates-apply" disabled>hide until date</button>
+          </div>
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn" id="snooze-cancel">cancel</button>

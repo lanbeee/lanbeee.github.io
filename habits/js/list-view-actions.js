@@ -730,12 +730,18 @@ function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   const pos = findEntryByKind(logs,fromTs,fromPlan);
   if(pos < 0)return false;
   const snoozedUntilBefore = data[idx].snoozedUntil || null;
+  const snoozedDatesBefore = Array.isArray(data[idx].snoozedDates) ? data[idx].snoozedDates.slice() : [];
   logs.splice(pos,1);
   logs.push(toPlan ? {ts:toTs,plan:true} : toTs);
   data[idx].logs = normalizeLogs(logs);
   data[idx].lastLog = latestActualLog(data[idx].logs);
-  if(!toPlan)data[idx].snoozedUntil = null;
-  else if(!fromPlan && pendingAction?.snoozedUntil !== undefined)data[idx].snoozedUntil = pendingAction.snoozedUntil;
+  if(!toPlan){
+    data[idx].snoozedUntil = null;
+    if(typeof clearSnoozedDateForDay === 'function')clearSnoozedDateForDay(data[idx],toTs);
+  }else if(!fromPlan && pendingAction?.snoozedUntil !== undefined){
+    data[idx].snoozedUntil = pendingAction.snoozedUntil;
+    if(Array.isArray(pendingAction.snoozedDates))data[idx].snoozedDates = pendingAction.snoozedDates.slice();
+  }
   const snoozedUntilAfter = data[idx].snoozedUntil || null;
   if(!save(data))return false;
   showActionToast(label,{
@@ -746,6 +752,7 @@ function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
     toTs,
     toPlan:Boolean(toPlan),
     snoozedUntilBefore,
+    snoozedDatesBefore,
     snoozedUntilAfter,
     openAction:false
   });
@@ -783,6 +790,7 @@ function logTing(i,opts = {}){
     if(next)minutes = next;
   }
   const snoozedUntil=h.snoozedUntil || null;
+  const snoozedDates=Array.isArray(h.snoozedDates) ? h.snoozedDates.slice() : [];
   const {entry,entryTs}=recordHabitCompletion(h,{...opts,at:now,minutes});
   const action = withEntryToastAction({
     type:'entry',
@@ -791,6 +799,7 @@ function logTing(i,opts = {}){
     plan:false,
     consumedPlanTs,
     snoozedUntil,
+    snoozedDates,
     entry
   });
   // Assistant confirms in chat. The toast that follows only offers undo.
@@ -852,7 +861,8 @@ function logTingAt(i,ts,options = {}){
     plan:isPlan,
     toastContext:options.toastContext,
     consumedPlanTs,
-    snoozedUntil:data[i].snoozedUntil || null
+    snoozedUntil:data[i].snoozedUntil || null,
+    snoozedDates:Array.isArray(data[i].snoozedDates) ? data[i].snoozedDates.slice() : []
   });
   if(consumedPlanTs !== null){
     const pos = findEntryByKind(logs,consumedPlanTs,true);
@@ -862,6 +872,7 @@ function logTingAt(i,ts,options = {}){
   data[i].lastLog = latestActualLog(data[i].logs);
   if(!isPlan){
     data[i].snoozedUntil = null;
+    if(typeof clearSnoozedDateForDay === 'function')clearSnoozedDateForDay(data[i],entryTs);
     if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(data[i]);
     if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(data[i]);
   }
@@ -1072,7 +1083,7 @@ function executeUndo(){
           if(bulkSameValue(item[change.field],change.after)){
             item[change.field] = bulkClone(change.before);
             recordTouched = true;
-            if(change.field === 'snoozedUntil')snoozeChanged = true;
+            if(change.field === 'snoozedUntil' || change.field === 'snoozedDates')snoozeChanged = true;
           }else conflicts += 1;
         }
       }
@@ -1148,7 +1159,7 @@ function executeUndo(){
     || pendingAction.type === 'restore-block-adjust';
   const data = load();
   if(pendingAction.type === 'entry'){
-    const {idx,ts,snoozedUntil,consumedPlanTs} = pendingAction;
+    const {idx,ts,snoozedUntil,snoozedDates,consumedPlanTs} = pendingAction;
     if(!data[idx])return;
     const logs = normalizeLogs(data[idx].logs);
     const occurrenceKey = logOccurrenceKey(pendingAction.entry);
@@ -1160,11 +1171,13 @@ function executeUndo(){
     data[idx].logs = logs;
     data[idx].lastLog = latestActualLog(logs);
     data[idx].snoozedUntil = snoozedUntil;
+    if(Array.isArray(snoozedDates))data[idx].snoozedDates = snoozedDates.slice();
   }
   if(pendingAction.type === 'hide'){
-    const {idx,snoozedUntil} = pendingAction;
+    const {idx,snoozedUntil,snoozedDates} = pendingAction;
     if(!data[idx])return;
     data[idx].snoozedUntil = snoozedUntil;
+    if(Array.isArray(snoozedDates))data[idx].snoozedDates = snoozedDates.slice();
   }
   if(pendingAction.type === 'delete'){
     const {idx,habit} = pendingAction;
@@ -1206,7 +1219,7 @@ function executeUndo(){
     }
   }
   if(pendingAction.type === 'replace-entry'){
-    const {idx,fromTs,fromPlan,toTs,toPlan,snoozedUntilBefore} = pendingAction;
+    const {idx,fromTs,fromPlan,toTs,toPlan,snoozedUntilBefore,snoozedDatesBefore} = pendingAction;
     if(data[idx]){
       const logs = normalizeLogs(data[idx].logs);
       const pos = findEntryByKind(logs,toTs,toPlan);
@@ -1215,6 +1228,7 @@ function executeUndo(){
       data[idx].logs = normalizeLogs(logs);
       data[idx].lastLog = latestActualLog(data[idx].logs);
       data[idx].snoozedUntil = snoozedUntilBefore;
+      if(Array.isArray(snoozedDatesBefore))data[idx].snoozedDates = snoozedDatesBefore.slice();
     }
   }
   if(pendingAction.type === 'breakable-set'){

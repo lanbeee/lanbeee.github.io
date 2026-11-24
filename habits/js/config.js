@@ -619,6 +619,10 @@ function isThreePaneTier() {
 let detailIdx = null;
 let snoozeIdx = null;
 let snoozeFromDetail = false;
+let snoozeCalMode = 'until';
+let snoozeCalOffset = 0;
+let snoozeCalUntilKey = '';
+let snoozeCalSelectedDates = new Set();
 let activityIdx = null;
 let detailStripOffset = 0; // 14-day strip window shifts (see detailStripWindow)
 let detailVizMode = 'calendar'; // merged pane slot: 'calendar' strip | 'gaps' graph

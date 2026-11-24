@@ -1448,7 +1448,12 @@ const BULK_FIELD_OPS = [
     valueKind:'datetime',
     valueless:['clear'],
     applies:()=>true,
-    current:h=>h.snoozedUntil && Date.now() < h.snoozedUntil ? new Date(h.snoozedUntil).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'shown',
+    current:h=>{
+      if(h.snoozedUntil && Date.now() < h.snoozedUntil)return new Date(h.snoozedUntil).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      const upcoming = typeof habitUpcomingSnoozedDates === 'function' ? habitUpcomingSnoozedDates(h) : [];
+      if(upcoming.length)return upcoming.length === 1 ? `skip ${upcoming[0]}` : `skip ${upcoming.length} days`;
+      return 'shown';
+    },
     plan:(h,op,value)=>{
       if(op === 'clear')return {ok:true};
       const ts = bulkWhen(value);
@@ -1458,6 +1463,10 @@ const BULK_FIELD_OPS = [
     },
     apply:(h,op,value)=>{
       h.snoozedUntil = op === 'clear' ? null : bulkWhen(value);
+      if(op === 'clear'){
+        h.snoozedDates = [];
+        return ['snoozedUntil','snoozedDates'];
+      }
       return ['snoozedUntil'];
     },
     changeLabel:(h,op,value)=>op === 'clear' ? 'Snooze → show now' : `Snooze → hide until ${value && value.date} ${value && value.time}`

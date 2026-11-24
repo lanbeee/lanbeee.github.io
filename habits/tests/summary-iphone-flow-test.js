@@ -235,8 +235,10 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.waitForFunction(idle=>{
         const rect=$('detail-ask-input').getBoundingClientRect();
         const row=$('detail-cool-row').getBoundingClientRect();
-        return rect.height>=72 && rect.width>idle.width && rect.width>=row.width-16;
+        const head=$('detail-head-card').getBoundingClientRect();
+        return rect.height>=34 && rect.height<52 && rect.width>idle.width && rect.width>=row.width-16 && head.height<48;
       },idleInput);
+      assert.equal(await page.locator('.detail-ask-editing-label').isVisible(),true,'compact header shows the Editing label while typing');
       await keyboard(true,32);await snapshot(`${mode}-02-keyboard`);
       await input.fill('Please make this change\nwith a longer message\nthat fills several lines\nwhile I review the item\nand decide what to send.');
       await snapshot(`${mode}-02b-multiline`);

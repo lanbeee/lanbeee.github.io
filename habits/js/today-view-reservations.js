@@ -54,6 +54,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
   if(state.placed.has(placeKey))return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
+  if(typeof habitIsSnoozedOnDay === 'function' && habitIsSnoozedOnDay(fill.h,dayBase))return null;
   if(!isDateEligibleForHabit(fill.h,dayBase))return null;
   // Untimed day plans store locationId on the plan log. That override wins over
   // reorder/pick defaults stamped onto the fill (preferred location, travel
@@ -1150,6 +1151,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
   const min = typeof clampMinChunk === 'function' ? clampMinChunk(minChunkMinutes) : Math.max(15,minChunkMinutes || 30);
   if(rem <= 0)return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
+  if(typeof habitIsSnoozedOnDay === 'function' && habitIsSnoozedOnDay(fill.h,dayBase))return null;
   if(!isDateEligibleForHabit(fill.h,dayBase))return null;
   const budgetLeft = state.remaining;
   const usedMinutes = state.usedMinutes;

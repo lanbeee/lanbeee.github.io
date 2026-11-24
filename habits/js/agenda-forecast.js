@@ -49,7 +49,7 @@ function replayAgendaClockWeek(data,settings,count,opts = {}){
       if(performance.now()-started>12)return null;
       const h=data[row.i];
       if(!h || (row.hid && h.hid!==row.hid) || hasHabitScheduleOptions(h))return null;
-      if(completedOnDay(h,prior.dayBase) || (h.snoozedUntil && now<h.snoozedUntil))return null;
+      if(completedOnDay(h,prior.dayBase) || (typeof habitIsSnoozedOnDay === 'function' ? habitIsSnoozedOnDay(h,prior.dayBase,now) : (h.snoozedUntil && now<h.snoozedUntil)))return null;
       const pinnedDay=plannerPinnedDayBase(h,settings,prior.dayBase);
       if(!weekFillEligibleOnDay(h,settings,prior.dayBase,day.weekday,pinnedDay))return null;
       const fill={h,i:row.i,priority:effectivePriority(h),locationId:row.locationId,

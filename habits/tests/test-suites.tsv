@@ -129,6 +129,7 @@ unplaced-on-missed-sheet-test.js	ui	once
 snap-and-sleep-test.js	data	once
 snooze-until-planned.js	ui	once
 snooze-options-test.js	ui	once
+snooze-dates-test.js	planner	once
 snoozed-cluster-eligibility-test.js	planner	once
 tag-chip-scroll-test.js	ui	once
 tap-reliability-test.js	ui	once

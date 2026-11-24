@@ -273,7 +273,8 @@ const UI_PRIVACY_BLOCKS = [
     'Tings is a set of files in your browser. Your list is saved in this browser’s own storage (localStorage) on this phone or computer — not in a Tings inbox.',
     'The person who put this site online cannot see your habits, notes, addresses, or logs. Clearing this site’s data, switching browsers, or getting a new phone wipes the list unless you exported a backup (Settings → backup).',
     'Live GPS is used on this phone to match a saved place. Filling city the first time sends a coarse location to Photon or Nominatim. Driving estimates send coordinates to OSRM, an open routing service — saved-place pins, and the live GPS origin when estimating a drive from here.',
-    'On the Android app, optional closed-app refresh can save the latest location fix on this phone so reminders can follow you to a saved place even when the app is closed. That fix is never used after ten minutes. A driving estimate can send that origin to OSRM, same as when the app is open. Closed refresh also works from your last saved place without background location.'
+    'On the Android app, optional closed-app refresh can save the latest location fix on this phone so reminders can follow you to a saved place even when the app is closed. That fix is never used after ten minutes. A driving estimate can send that origin to OSRM, same as when the app is open. Closed refresh also works from your last saved place without background location.',
+    'The Android app can also read events from the calendars already on this phone — only if you allow calendar access, to plan around busy times. Calendar events are used here and are never uploaded.'
   ]},
   {id:'privacy-why-body', label:'Why a website can still be private', summary:'Tings is open source. The hosted files are the app; planning runs here.', body:[
     'The site you open is the program. There is no Tings account and no hidden backend for your list. Anyone can read how it works.',
@@ -361,7 +362,14 @@ function mountUiKit(){
     host.innerHTML = uiPrioritySegHtml(host.dataset.uiPriority === 'add');
   });
   const privacy = document.querySelector('[data-ui-privacy-stack]');
-  if(privacy)privacy.innerHTML = UI_PRIVACY_BLOCKS.map(uiAboutBlockHtml).join('');
+  if(privacy){
+    // The launch build compiles sharing out, so its privacy stack skips the
+    // two blocks that describe the relay; absent or older shims keep all blocks.
+    const sharingOff = globalThis.TingsNative?.sharingEnabled === false;
+    privacy.innerHTML = UI_PRIVACY_BLOCKS
+      .filter(block=>!sharingOff || (block.id !== 'privacy-display-body' && block.id !== 'privacy-share-body'))
+      .map(uiAboutBlockHtml).join('');
+  }
   const policyLink = document.getElementById('privacy-policy-url');
   if(policyLink && typeof PRIVACY_POLICY_URL === 'string'){
     policyLink.href = PRIVACY_POLICY_URL;

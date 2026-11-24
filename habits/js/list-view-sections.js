@@ -207,7 +207,7 @@ function attachWeatherIndicator(header,day){
 
 function missedPlannerFingerprint(data,settings){
   const habits = (data || []).map(h=>[
-    h.hid,h.type,h.target,h.repeatMode,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
+    h.hid,h.type,h.target,h.repeatMode,h.lastLog,h.createdAt,h.snoozedUntil,h.snoozedDates,h.dueDate,h.eventTime,h.planByDate,
     h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,
     habitEarlyWindowDays(h),habitDelayAllowanceDays(h),
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
@@ -637,7 +637,7 @@ function collectUnplacedAgendaItems(data, settings, missedRows, now = Date.now()
     const h = data[i];
     if(!h || !h.hid || missedHids.has(h.hid) || placed.has(h.hid))continue;
     if(h.type === 'zero')continue;
-    if(h.snoozedUntil && now < h.snoozedUntil)continue;
+    if(typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h,now) : (h.snoozedUntil && now < h.snoozedUntil))continue;
     if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h))continue;
     if(typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
@@ -1770,7 +1770,7 @@ function render(opts){
         render();
         if(typeof syncSharedFilterSurfaces === 'function')syncSharedFilterSurfaces('home');
       };
-    }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>h.snoozedUntil && Date.now() < h.snoozedUntil)){
+    }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : (h.snoozedUntil && Date.now() < h.snoozedUntil))){
       empty.innerHTML = 'hidden for now<br><span class="empty-sub">tap to show</span>';
       empty.onclick = ()=>{
         saveSortSettings({...sortSettings,showSnoozed:true});
@@ -1997,7 +1997,7 @@ function render(opts){
           ${rightSwipeHtml}
         </div>
       </div>
-      <div class="ting-card ${cardScoreTone}${event?' event-card':''}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+      <div class="ting-card ${cardScoreTone}${event?' event-card':''}${snoozed?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
         <${event?'span':'button'} class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" ${event?'aria-hidden="true"':`data-pulse="${realIdx}" aria-label="${h.tapStartsSession ? (timerRunning ? 'stop session for' : 'start session for') : (h.type === 'task' ? 'complete' : 'log')} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}"`} style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${h.tapStartsSession && timerRunning ? '<i class="ti ti-player-stop" aria-hidden="true"></i>' : iconHtml(h,c)}

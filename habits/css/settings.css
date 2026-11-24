@@ -524,6 +524,63 @@ select{
 .snooze-hours-field span{color:var(--text3);font-size:13px;font-weight:650;flex:0 0 auto;}
 .snooze-hours-row .btn{flex:0 0 auto;padding:12px 18px;}
 #snooze-show-now{width:100%;margin-bottom:12px;}
+#snooze-sheet .sheet{padding-bottom:calc(36px + var(--content-safe-bottom) + var(--keyboard-lift,0px));}
+.snooze-cal-box{
+  margin:4px 0 12px;padding:12px;border-radius:var(--radius-sm);
+  border:0.5px solid var(--border2);background:var(--bg2);
+}
+.snooze-cal-top{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  flex-wrap:wrap;margin-bottom:10px;
+}
+.snooze-cal-mode{margin:0;flex:1 1 160px;min-width:0;}
+.snooze-cal-mode .seg-opt{padding:7px 8px;font-size:12px;}
+.snooze-cal-nav{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;}
+.snooze-cal-month{
+  font-size:12.5px;font-weight:650;color:var(--text);
+  min-width:74px;text-align:center;
+}
+.snooze-cal-nav .mini-nav:disabled{opacity:0.32;pointer-events:none;}
+.snooze-cal-grid{gap:4px;margin-bottom:8px;}
+.snooze-cal-grid .cal-day{
+  height:34px;font-size:12.5px;font-weight:600;border-radius:9px;
+  position:relative;
+}
+.snooze-cal-grid .cal-day.past{
+  opacity:0.32;background:transparent;color:var(--text3);cursor:default;
+}
+.snooze-cal-grid .cal-day.in-range{
+  background:color-mix(in srgb,var(--purple-bg) 72%,var(--bg));
+  color:var(--purple-text);
+}
+.snooze-cal-grid .cal-day.selected{
+  background:var(--text);color:var(--bg);font-weight:700;
+}
+.snooze-cal-grid .cal-day.has-snoozed-day:not(.selected)::after{
+  content:'';position:absolute;bottom:4px;left:50%;transform:translateX(-50%);
+  width:4px;height:4px;border-radius:50%;background:var(--purple-icon);
+}
+.snooze-cal-time-row{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:8px 0 4px;border-top:0.5px solid var(--border);
+}
+.snooze-cal-time-row[hidden]{display:none;}
+.snooze-cal-time-label{font-size:12px;font-weight:650;color:var(--text2);}
+.snooze-cal-time-label span{font-weight:500;color:var(--text3);}
+.snooze-cal-time-controls{display:inline-flex;align-items:center;gap:6px;}
+.snooze-until-time{min-height:36px;padding:6px 10px;font-size:14px;width:auto;}
+.snooze-time-clear{padding:7px 10px;font-size:11.5px;}
+.snooze-time-clear[hidden]{display:none;}
+.snooze-cal-footer{
+  display:flex;flex-direction:column;gap:8px;
+  padding-top:8px;border-top:0.5px solid var(--border);
+}
+.snooze-cal-summary{margin:0;font-size:12px;line-height:1.35;color:var(--text2);min-height:16px;}
+.snooze-cal-actions{display:flex;gap:8px;align-items:stretch;}
+.snooze-cal-actions .btn{padding:11px 14px;font-size:13px;}
+.snooze-cal-actions #snooze-dates-apply{flex:1;}
+.snooze-cal-actions #snooze-dates-clear[hidden]{display:none;}
+.snooze-cal-actions .btn:disabled{opacity:0.42;pointer-events:none;}
 .agenda-pair-approval{
   position:fixed;inset:0;z-index:10000;display:grid;place-items:center;
   padding:20px;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);

@@ -36,6 +36,7 @@
  * @property {boolean} allowSharedDisplayCompletion — false makes the item view-only on a shared display; missing defaults true
  * @property {boolean} sample                 — true if created by the sort-lab sample builder
  * @property {number|null} snoozedUntil       — ms timestamp; habit hidden on home until then
+ * @property {string[]} snoozedDates          — sorted YYYY-MM-DD local dates marked as snoozed (skipped in planner & hidden on those days)
  * @property {string[]} topics                — user-defined tags (max 24, each max 32 chars)
  * @property {number[]} allowedWeekdays       — 0=Sun … 6=Sat; empty means every day
  * @property {number[]} allowedMonthDays      — 1-31; empty means every day
