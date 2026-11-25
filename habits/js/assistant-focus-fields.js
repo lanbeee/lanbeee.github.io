@@ -9,7 +9,7 @@ const ASSISTANT_FIELD_SEARCH = {
   allowedOrdinalWeekdays:'detail-ordinal-rules', preferredOrdinalWeekdays:'detail-preferred-ordinal-rules',
   allowedWindow:'detail-allowed-time-row', preferredWindow:'detail-preferred-time-row', allowedTimeFixedStart:'detail-time-kind',
   tapStartsSession:'detail-tap-session', durationMinutes:'detail-duration', breakable:'detail-breakable', minChunkMinutes:'detail-min-chunk', minGapMinutes:'detail-min-gap', timerAutoStopMinutes:'detail-timer-auto-stop', autoMarkMinutes:'detail-auto-mark', trackValue:'detail-track-value',
-  places:'detail-places-label', anywhereAllowed:'detail-places-label', locationPrefs:'detail-place-chips', weatherProfile:'detail-weather-profile', weatherRules:'detail-weather-profile', showWeather:'detail-show-weather', showWeatherAtLocation:'detail-show-weather-location', weatherLocationId:'detail-weather-location',
+  autoCompleteOnVisit:'detail-auto-visit', places:'detail-places-label', anywhereAllowed:'detail-places-label', locationPrefs:'detail-place-chips', weatherProfile:'detail-weather-profile', weatherRules:'detail-weather-profile', showWeather:'detail-show-weather', showWeatherAtLocation:'detail-show-weather-location', weatherLocationId:'detail-weather-location',
   scheduleOptions:'detail-habit-option-add', scheduleLinks:'detail-schedule-link-add', topics:'detail-topic-chips', pinned:'detail-pinned', snoozedUntil:'detail-snooze', sharedDisplay:'detail-shared-display', links:'detail-link-add'
 };
 // Signals select original-text windows, never executable values. Broader shared
@@ -79,6 +79,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   autoMarkMinutes:/\b(?:auto[ -]?(?:mark|complete|completion)|automatic completion|completion threshold|automatically (?:complete|mark)|(?:mark|log|complete)[^,;]*\bautomatically|consider it done|manual completion|count[^,;]*as done|tracked time[^,;]*tick it off|logged (?:minutes|mins)[^,;]*finish)\b/i,
   trackValue:/\b(?:track|log|record|recording|capture|enter|ask|enable)\b.{0,35}\b(?:value|number|numeric|weight|note|measurement|reading)\b|\bvalue tracking\b/i,
   places:/\b(?:at (?:home|work)|places?|locations?|locaton|loction|venue|(?:done|happen|take place|do (?:it|this))\s+(?:at|in))\b/i,
+  autoCompleteOnVisit:/\b(?:mark done on visit|auto.?complete on visit|(?:mark|check|complete).*(?:visit|arriv|go to|reach|enter)|(?:visit|arriv|go to|reach|enter).*\b(?:done|complete))\b/i,
   anywhereAllowed:/\b(?:anywhere|wherever|any (?:place|location|loction)|(?:no|regardless of) (?:place|location|geographic)|(?:not|doesn['’]t) require a (?:particular|specific) place|only (?:at|in) (?:the )?saved places)\b/i,
   locationPrefs:/\b(?:prefer\w*|avoid|favou?r\w*|(?:de)?prioriti[sz]e|would rather)\b.{0,40}\b(?:place|location|home|work|at|in)\b|\b(?:place|location|loction) preference\b|\bbest (?:place|location)\b/i,
   weatherProfile:/\b(?:weather profile|(?:use|apply|choose) .{0,20} (?:weather|profile))\b/i,
@@ -323,7 +324,7 @@ const ASSISTANT_FIELD_READERS = {
   preferredWindow:{shares:['dueTime','appointmentStartMinute','allowedWindow']},
   earlyWindowDays:{retainPrefix:true}, delayAllowanceDays:{retainPrefix:true},
   tapStartsSession:{retainPrefix:true}, reminderDnd:{retainPrefix:true},
-  hardDue:{retainPrefix:true}, anywhereAllowed:{retainPrefix:true}, trackValue:{retainPrefix:true},
+  autoCompleteOnVisit:{retainPrefix:true}, hardDue:{retainPrefix:true}, anywhereAllowed:{retainPrefix:true}, trackValue:{retainPrefix:true},
   showWeatherAtLocation:{retainPrefix:true}, weatherLocationId:{retainPrefix:true}, sharedDisplay:{retainPrefix:true},
   reminderDue:{retainPrefix:true}, reminderDueDays:{retainPrefix:true}, reminderDueTime:{retainPrefix:true}, reminderSecond:{retainPrefix:true}, reminderSecondLead:{retainPrefix:true},
   reminderStart:{retainPrefix:true}, reminderEnd:{retainPrefix:true}, reminderTravelStart:{retainPrefix:true}, reminderTravelEnd:{retainPrefix:true}, reminderMissed:{retainPrefix:true},
@@ -1289,6 +1290,7 @@ const ASSISTANT_GUIDE_HELP={
   tapStartsSession:['Whether tapping starts a session instead of checking it off.','Turn on start with a tap','Off: tapping the card logs a completion. On: tapping starts a timed session instead.'],
   trackValue:['Record a number or note when checking it off.','Let me record a number','Off: a completion is just a checkmark. On: each completion asks for a number or measurement.'],
   places:['The saved places where this item can happen.','Use one of your saved place names','Blank means no saved place is set, so it can happen anywhere unless Anywhere is off.'],
+  autoCompleteOnVisit:['Whether arriving at a saved allowed place checks this item off.','Enable mark done on visit','Requires location access, a fresh accurate fix, allowed days and hours, and a due occurrence within its early window. Splitting, value tracking, events, stop and limit habits are excluded. Undo suppresses another completion during the same stay.'],
   anywhereAllowed:['Whether it can happen away from its saved places too.','Allow anywhere','Off restricts it to the saved places only. On also allows it anywhere else.'],
   locationPrefs:['Which saved places to favor.','Prefer one of your saved places','Preferences only rank places — a lower-ranked place is never removed. Blank means no ranking.'],
   weatherProfile:['Use an existing saved weather profile.','Use one of your saved weather profile names','Choosing a profile applies that profile’s saved conditions instead of custom rules.'],
@@ -1692,7 +1694,7 @@ function assistantFocusAskGuidance(session, phrase, fallback){
 
 function assistantActionSettingClause(text){
   if(assistantFieldPreference(text))return true;
-  if(ASSISTANT_FIELD_SIGNALS.autoMarkMinutes.test(text)||ASSISTANT_FIELD_SIGNALS.tapStartsSession.test(text))return true;
+  if(ASSISTANT_FIELD_SIGNALS.autoMarkMinutes.test(text)||ASSISTANT_FIELD_SIGNALS.autoCompleteOnVisit.test(text)||ASSISTANT_FIELD_SIGNALS.tapStartsSession.test(text))return true;
   if(ASSISTANT_FIELD_SIGNALS.trackValue.test(text)&&!/\b(?:with|a) value of\b/i.test(text)&&!/\bwith (?:a |the )?note\b/i.test(text))return true;
   if((ASSISTANT_FIELD_SIGNALS.earlyWindowDays.test(text)||ASSISTANT_FIELD_SIGNALS.delayAllowanceDays.test(text))&&/\b(?:days?|weeks?|hours?)\b/i.test(text))return true;
   if(/\b(?:schedule|plan)\b/i.test(text)
@@ -2499,7 +2501,7 @@ function assistantFieldNormalize(def,text,session){
   if(def.id==='topics')value=assistantFieldStripPrefix(value,/^(?:it|as|to)\s+/i);
   if(def.id==='topics')value=value.replace(/^(['"])([\s\S]*)\1$/,'$2');
   if(def.id==='topics' && (!value || /\p{Extended_Pictographic}|\b(?:minutes?|hours?|priority|emoji|tag it)\b/iu.test(value)))return {ok:false,error:'Name the requested topics.'};
-  const booleans=['tapStartsSession','reminderDnd','pinned','breakable','trackValue','hardDue','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
+  const booleans=['autoCompleteOnVisit','tapStartsSession','reminderDnd','pinned','breakable','trackValue','hardDue','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
   if(booleans.includes(def.id) && assistantParseBool(value)==null){
     const polarity=value.replace(def.id==='reminderDnd'?/\bdo not disturb\b/gi:/$^/g,'DND').replace(/\bno (?:shorter|less) than\b/gi,'at least')
       .replace(def.id==='tapStartsSession'?/\bkick off\b/gi:/$^/g,'start')

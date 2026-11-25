@@ -70,11 +70,10 @@ const {chromium,BASE,baseHabit,openEveningSettings,glpkAvailable} = require('./h
         const departure=reminders.find(r=>r.reminderEdge==='travelStart');
         const fixedReminders=Boolean(firstReminder && !firstReminder.upNext && departure && !departure.upNext);
         const workerChecks={};
-        // Workers have their own real clock. The main-thread FrozenDate above
-        // cannot put them on Oct 11; use their current calendar day instead.
-        const workerDate=new RealDate();workerDate.setHours(0,0,0,0);
-        const workerDay=workerDate.getTime(),workerStart=workerDay+17*3600000;
-        const workerEvent={...event,dueDate:workerDay,eventTime:workerStart};
+        // Worker requests inherit the caller's clock, so the same fixture
+        // must retain its fixed start in both realms.
+        const workerStart=at(17);
+        const workerEvent={...event};
         for(const mode of exact ? ['fast','exact'] : ['fast']){
           const week=await buildWeekAgendaOffMain([workerEvent],settings,2,mode,{glpkLimitSeconds:4});
           const row=week.days[0].timeline.find(row=>row.breakableStart);

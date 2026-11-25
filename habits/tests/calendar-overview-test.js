@@ -591,6 +591,7 @@ function seedScript(){
     const now = Date.now();
     const base = dayStart(now);
     const keyAt = (n) => dateKey(base + n * 86400000);
+    const caughtUpAt = Math.min(now, base + 9*3600000);
     const data = load();
     // Add a one-off local appointment, a weekly local appointment, a habit already done today
     // (with an older wide gap that must NOT trigger a false attention alarm), an overdue habit,
@@ -611,9 +612,9 @@ function seedScript(){
       },
       {
         name:'Already Caught Up', type:'keepup', target:1,
-        logs:[base - 5*86400000, base + 9*3600000], emoji:'✅',
+        logs:[base - 5*86400000, caughtUpAt], emoji:'✅',
         topics:['qa'], locationIds:[], durationMinutes:15, priority:2,
-        createdAt:now - 10*86400000, lastLog:base + 9*3600000
+        createdAt:now - 10*86400000, lastLog:caughtUpAt
       },
       {
         name:'Really Overdue', type:'keepup', target:2,

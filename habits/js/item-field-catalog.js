@@ -15,6 +15,7 @@ const ITEM_DETAIL_SEARCH_FIELDS = [
   ['detail-preferred-ordinal-rules','Preferred monthly weekdays','best first second third fourth fifth last weekday of each month'],
   ['detail-preferred-time-row','Preferred time window','best hours start end clock sunrise sunset prayer anchor'],
   ['detail-places-label','Allowed places','location anywhere home work venues address gps map'],
+  ['detail-auto-visit','Mark done on visit','automatic completion arrival gps geofence visit allowed location'],
   ['detail-place-chips','Place preferences','preferred location venue little high avoid ranking prioritize prioritise favor favour'],
   ['detail-show-weather','Show weather','forecast temperature rain wind humidity'],
   ['detail-show-weather-location','Use this item’s place for weather','forecast location'],

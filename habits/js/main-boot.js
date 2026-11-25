@@ -1992,6 +1992,7 @@ function applyDetailTuneToRecord(h,data){
   h.tapStartsSession = Boolean(current.tapStartsSession);
   h.autoMarkMinutes = normalizeAutoMark(current.autoMarkMinutes);
   h.trackValue = Boolean(current.trackValue);
+  h.autoCompleteOnVisit = Boolean(current.autoCompleteOnVisit);
   h.earlyWindowDays = current.earlyWindowDays;
   h.delayAllowanceDays = current.delayAllowanceDays;
   h.flexibilityDays = current.earlyWindowDays;

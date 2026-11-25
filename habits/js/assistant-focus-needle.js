@@ -31,7 +31,7 @@ const ASSISTANT_FOCUS_EXTRACT_FIELDS = {
   dates:[['dueDate','due'],['dueTime','time'],['hardDue','hard'],['planByDate','planBy'],['earlyWindowDays','early'],['delayAllowanceDays','late']],
   schedule:[['allowedWeekdays','weekdays'],['allowedMonthDays','monthDays'],['allowedOrdinalWeekdays','ordinalWeekdays'],['allowedWindow','window'],['allowedTimeFixedStart','fixed'],['preferredWeekdays','preferredDays'],['preferredMonthDays','preferredMonthDays'],['preferredOrdinalWeekdays','preferredOrdinalWeekdays'],['preferredWindow','preferredWindow']],
   effort:[['tapStartsSession','tap'],['durationMinutes','duration'],['breakable','split'],['minChunkMinutes','chunk'],['minGapMinutes','gap'],['timerAutoStopMinutes','timer'],['autoMarkMinutes','auto'],['trackValue','value']],
-  places:[['places','places'],['anywhereAllowed','anywhere'],['locationPrefs','prefs']],
+  places:[['autoCompleteOnVisit','visit'],['places','places'],['anywhereAllowed','anywhere'],['locationPrefs','prefs']],
   weather:[['weatherRules','rules'],['showWeather','show'],['showWeatherAtLocation','atPlace'],['weatherLocationId','forecastPlace'],['weatherProfile','profile']],
   alternatives:[['scheduleOptions','options']],
   order:[['scheduleLinks','order']],

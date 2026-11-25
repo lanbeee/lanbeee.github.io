@@ -789,6 +789,10 @@ function logTing(i,opts = {}){
     return false;
   }
   const logs = normalizeLogs(h.logs);
+  // A manual confirmation may have opened before GPS completed this item.
+  // Keep its visit Undo available when that older confirmation arrives.
+  if(h.autoCompleteOnVisit && completedToday(h,now) && logs.some(log=>log.source === 'location_visit'
+    && dateKey(logTime(log)) === dateKey(now)))return false;
   if(!h.breakable && opts.occurrenceKey && logs.some(log=>!isPlanLog(log) && logOccurrenceKey(log) === opts.occurrenceKey)){
     // A recovered/repeated tap must not dismiss the undo for that same log.
     if(pendingAction?.type === 'entry' && !pendingAction.plan && pendingAction.hid === h.hid
@@ -1059,6 +1063,10 @@ function movePlanTo(idx,fromKey,toKey){
 // HYBRID: revert last action and refresh
 function executeUndo(){
   if(!pendingAction)return;
+  if(pendingAction.type === 'location-visit'){
+    if(undoLocationVisit(pendingAction.changes)){hideActionToast();refreshOpenViews();showToast('undone');}
+    return;
+  }
   if(pendingAction.type === 'calendar-ignore'){const entry=pendingAction.entry;hideActionToast();restoreCalendarIgnored(entry);return;}
   if(pendingAction.type === 'focus-edit'){
     if(typeof assistantFocusUndo === 'function')assistantFocusUndo(pendingAction.snapshot);

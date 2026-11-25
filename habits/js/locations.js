@@ -1191,6 +1191,7 @@ function setLocationOptIn(on){
 function applyGeoPosition(pos,{updateAnchor = true} = {}){
   if(!pos || !pos.coords)return null;
   currentCoord = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+  if(typeof queueLocationVisit === 'function')queueLocationVisit(pos).catch(()=>{});
   if(updateAnchor){
     // Seed lastKnown with the auto-detected match — but do NOT touch the
     // manual pin (a pinned "I am at" still wins in currentLocationId).

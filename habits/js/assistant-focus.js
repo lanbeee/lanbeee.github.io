@@ -162,6 +162,7 @@ function assistantFocusBlank(session){
     timerAutoStopMinutes:null,
     tapStartsSession:false,
     trackValue:false,
+    autoCompleteOnVisit:false,
     priority:defaults.priority,
     locationIds:[],
     anywhereAllowed:true,
@@ -567,7 +568,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     if(mins == null)return fail('Use a clock time such as 6pm or 18:00.');
     return {ok:true, op:'set', value:mins};
   }
-  if(fieldId === 'tapStartsSession' || fieldId === 'reminderDnd' || fieldId === 'hardDue' || fieldId === 'breakable' || fieldId === 'trackValue' || fieldId === 'pinned' || fieldId === 'anywhereAllowed' || fieldId === 'showWeather' || fieldId === 'showWeatherAtLocation'){
+  if(fieldId === 'autoCompleteOnVisit' || fieldId === 'tapStartsSession' || fieldId === 'reminderDnd' || fieldId === 'hardDue' || fieldId === 'breakable' || fieldId === 'trackValue' || fieldId === 'pinned' || fieldId === 'anywhereAllowed' || fieldId === 'showWeather' || fieldId === 'showWeatherAtLocation'){
     const flag = typeof assistantParseBool === 'function' ? assistantParseBool(text) : null;
     if(flag == null)return fail('Say yes or no.');
     return {ok:true, op:'set', value:flag === true};
@@ -875,7 +876,7 @@ function assistantFocusQuestionPicker(session, question){
       appointmentRepeat:['once','weekly'],
       reminderDueDays:['0','1','2','7']
     };
-    const booleans = ['tapStartsSession','reminderDnd','hardDue','breakable','trackValue','pinned','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
+    const booleans = ['autoCompleteOnVisit','tapStartsSession','reminderDnd','hardDue','breakable','trackValue','pinned','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
     let values = enums[field.id];
     if(booleans.includes(field.id))values = ['yes','no'];
     if(/^reminder(?:Start|Second|Due|End|TravelStart|TravelEnd|Missed)$/.test(field.id))values = ASSISTANT_FOCUS_REMINDER_MODES;
@@ -1203,6 +1204,7 @@ function assistantFocusWrite(record, change, session, scratch, data){
   else if(change.field === 'tapStartsSession')record.tapStartsSession = value === true;
   else if(change.field === 'trackValue')record.trackValue = value === true;
   else if(change.field === 'places')record.locationIds = op === 'clear' ? [] : value.slice();
+  else if(change.field === 'autoCompleteOnVisit')record.autoCompleteOnVisit = value === true;
   else if(change.field === 'anywhereAllowed')record.anywhereAllowed = value === true;
   else if(change.field === 'locationPrefs'){
     record.locationPrefs = op === 'clear' ? {} : Object.assign({}, value);
@@ -1367,6 +1369,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {
   if(fieldId === 'tapStartsSession')return record.tapStartsSession ? 'tap starts a session' : 'tap logs completion';
   if(fieldId === 'trackValue')return record.trackValue ? 'log a value' : 'off';
   if(fieldId === 'places')return assistantFocusSummaryText(fieldId, record, session, lookups);
+  if(fieldId === 'autoCompleteOnVisit')return record.autoCompleteOnVisit ? 'mark done on an eligible visit' : 'visit completion off';
   if(fieldId === 'anywhereAllowed')return record.anywhereAllowed === false ? 'only the saved places' : 'anywhere is allowed';
   if(fieldId === 'locationPrefs')return assistantFocusSummaryText(fieldId, record, session, lookups);
   if(fieldId === 'weatherProfile' || fieldId === 'weatherRules'){

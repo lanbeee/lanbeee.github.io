@@ -109,6 +109,7 @@ const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   breakable:{type:['boolean','string','null'], description:'true/split, or false/one session'},
   minChunkMinutes:{type:['integer','string','null'], description:'Shortest split in the user\'s words or minutes, such as "15 minutes" or "1.5 hours"'},
   autoMarkMinutes:{type:['integer','string','null'], description:'The user\'s words or minutes, such as "30 minutes" or "1.5 hours", or manual/off'},
+  autoCompleteOnVisit:{type:['boolean','string','null'], description:'Mark done after visiting an explicitly allowed saved place during allowed hours and within the early window. Requires location access and a check-off item.'},
   trackValue:{type:['boolean','string','null'], description:'log a numeric value'},
   pinned:{type:['boolean','string','null']},
   snooze:{type:['string','null'], description:'off, 2 hours, until tomorrow, 3 days'},
@@ -715,6 +716,7 @@ function assistantCompactDraft(draft){
   if(draft.breakable != null)out.breakable = draft.breakable;
   if(draft.minChunkMinutes != null)out.minChunkMinutes = draft.minChunkMinutes;
   if(draft.autoMarkMinutes !== undefined)out.autoMarkMinutes = draft.autoMarkMinutes;
+  if(draft.autoCompleteOnVisit != null)out.autoCompleteOnVisit = draft.autoCompleteOnVisit;
   if(draft.trackValue)out.trackValue = true;
   if(draft.pinned)out.pinned = true;
   if(draft.hardDue)out.hardDue = true;

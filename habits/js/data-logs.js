@@ -104,8 +104,9 @@ function normalizeLogs(logs){
         if(occurrenceKey)entry.occurrenceKey = occurrenceKey;
         if(optionId)entry.scheduleOptionId = optionId;
         if(scheduledDay)entry.scheduledDay = scheduledDay;
+        if(log.source === 'location_visit' && /^[0-9a-f]{32}$/.test(log.visitId || ''))entry.visitId = log.visitId;
         if(log.source === 'calendar')entry.source = 'calendar';
-        if(['shared_display','native_alarm','native_widget'].includes(log.source) && /^[0-9a-f]{32}$/.test(String(log.operationId || ''))){
+        if(['shared_display','native_alarm','native_widget','location_visit'].includes(log.source) && /^[0-9a-f]{32}$/.test(String(log.operationId || ''))){
           entry.source = log.source;
           entry.operationId = String(log.operationId);
         }
@@ -166,10 +167,11 @@ function makeActualLog(ts,opts = {}){
   if(occurrenceKey)entry.occurrenceKey = occurrenceKey;
   if(optionId)entry.scheduleOptionId = optionId;
   if(scheduledDay)entry.scheduledDay = scheduledDay;
-  if(['shared_display','native_alarm','native_widget'].includes(opts.source) && /^[0-9a-f]{32}$/.test(String(opts.operationId || ''))){
+  if(['shared_display','native_alarm','native_widget','location_visit'].includes(opts.source) && /^[0-9a-f]{32}$/.test(String(opts.operationId || ''))){
     entry.source = opts.source;
     entry.operationId = String(opts.operationId);
   }
+  if(opts.source === 'location_visit' && /^[0-9a-f]{32}$/.test(opts.visitId || ''))entry.visitId = opts.visitId;
   if(entry.value === undefined && entry.minutes === undefined && entry.note === undefined
     && !entry.source && !entry.occurrenceKey)return ts;
   return entry;
@@ -447,8 +449,8 @@ function planToConsumeForEntry(logs,entryTs){
 function recordHabitCompletion(h,opts = {}){
   const now=opts.at;
   const logs=normalizeLogs(h.logs);
-  const consumedPlanTs=planToConsumeForEntry(logs,now);
-  const entryTs=snapLogTimestamp(h,now);
+  const consumedPlanTs=opts.consumePlan === false ? null : planToConsumeForEntry(logs,now);
+  const entryTs=opts.preserveTimestamp ? now : snapLogTimestamp(h,now);
   const entry=makeActualLog(entryTs,opts);
   if(consumedPlanTs !== null){
     const pos=findEntryByKind(logs,consumedPlanTs,true);

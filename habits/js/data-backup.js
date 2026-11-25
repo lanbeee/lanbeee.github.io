@@ -64,6 +64,13 @@ function restoreBackup(raw,{keepCalendarHides=true,keepPhoneCalendarCopies=true}
   }
   if(!save(parsed.habits))return {ok:false,reason:'Could not save that backup on this device.'};
   if(parsed.settings)saveSortSettings(settings);
+  // A restore starts a fresh visit session; old native commands cannot credit
+  // an occurrence from the restored history. Device evidence stays local.
+  if(typeof LOCATION_VISIT_STATE_KEY !== 'undefined'){
+    localStorage.removeItem(LOCATION_VISIT_STATE_KEY);
+    localStorage.removeItem(LOCATION_VISIT_EPOCH_KEY);
+    locationVisitEpoch();
+  }
   // Mark restored provider rows locally. Reconnect only after the phone returns
   // a matching occurrence, since provider IDs can be reused on another phone.
   const restoredIds=parsed.habits.filter(h=>h.source==='device' && h.externalId &&

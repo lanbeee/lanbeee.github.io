@@ -904,8 +904,9 @@ function nativeBackgroundSharingOff(){
   return window.TingsNative?.sharingEnabled === false;
 }
 function nativeBackgroundSnapshot(){
+  locationVisitEpoch();
   const storage = {};
-  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,MISSED_HIDDEN_KEY,WEATHER_CACHE_KEY,RESTORED_DEVICE_CALENDAR_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
+  for(const key of [KEY,SORT_SETTINGS_KEY,LOCATION_VISIT_STATE_KEY,LOCATION_VISIT_EPOCH_KEY,...PLANNER_WORKER_STORAGE_KEYS,MISSED_HIDDEN_KEY,WEATHER_CACHE_KEY,RESTORED_DEVICE_CALENDAR_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
     const value = localStorage.getItem(key);if(value != null)storage[key] = value;
   }
   // Last-refresh display text is not a planner input.
@@ -930,7 +931,12 @@ function nativeBackgroundSnapshot(){
   // empty sync object keeps that job unscheduled. The key mirrors the same
   // effective inputs so relay-side churn cannot re-upload the snapshot.
   const sync=nativeBackgroundSharingOff() ? {} : {shareState:localStorage.getItem(SHARE_STATE_KEY),enrollment:localStorage.getItem(AGENDA_DISPLAY_KEY)};
-  return {storage,prefs,sync,quiet:compileNativeQuietSchedule(data,sortSettings,rawPrefs),week:compatible ? leanAgendaWeek(mounted) : null,
+  const visitEnabledIds = data.filter(h=>h.autoCompleteOnVisit && locationVisitSupported(h) && !(h.type === 'task' && isTaskDone(h))
+    && habitPrefLocationIds(h,sortSettings.locations).length > 0
+    && !(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(h.hid))).map(h=>h.hid);
+  const visitLocationIds = [...new Set(data.filter(h=>visitEnabledIds.includes(h.hid))
+    .flatMap(h=>habitPrefLocationIds(h,sortSettings.locations)))];
+  return {storage,prefs,sync,visitEnabledIds,visitLocationIds,quiet:compileNativeQuietSchedule(data,sortSettings,rawPrefs),week:compatible ? leanAgendaWeek(mounted) : null,
     widgets:compileNativeWidgetSnapshot(compatible ? mounted : null,data,sortSettings),
     weatherRevision:sortSettings?._weatherContext?.revision || '',
     coord:typeof currentCoordLocation === 'function' ? currentCoordLocation() : null};
@@ -1030,6 +1036,19 @@ function applyNativeCompletion(data,action){
   // Remote logs have already passed the encrypted sync importer. Retain their
   // exact identity (including legacy numeric logs) so foreground sync can fold
   // the same operation without duplicating it or sending it back to the relay.
+  if(action.source === 'location_visit'){
+    const result = applyLocationVisitCompletion(h,action);
+    if(result){
+      Object.defineProperty(action,'_visitChange',{value:result,configurable:true});
+      const state = locationVisitState();
+      const stay = state[action.locationId];
+      if(!stay || stay.id === action.visitId){
+        state[action.locationId] = {id:action.visitId,credited:[...new Set([...(stay?.credited || []),h.hid])]};
+        localStorage.setItem(LOCATION_VISIT_STATE_KEY,JSON.stringify(state));
+      }
+    }
+    return Boolean(result);
+  }
   if(action.source==='shared_display' && action.remoteLog !== undefined){
     if(!h)return false;
     const log=normalizeLogs([action.remoteLog])[0];
@@ -1074,7 +1093,7 @@ async function refreshNativeCompletionPublication(){
 async function consumeNativeAlarmCompletions(){
   const api=window.TingsNative?.alarms;
   if(!api?.completions || !api.acknowledge)return;
-  const {actions,publication}=await api.completions();let changed=false;
+  const {actions,publication}=await api.completions();let changed=false;const visitChanges=[];
   if(publication && typeof adoptAgendaPublication==='function')adoptAgendaPublication(publication);
   for(const action of actions || []){
     const data=load();
@@ -1084,11 +1103,15 @@ async function consumeNativeAlarmCompletions(){
       }else if(!save(data))throw new Error('Could not save completion.');
       const index=data.findIndex(h=>h.hid===action.hid);
       if(typeof onHabitCompletionSaved==='function')onHabitCompletionSaved(data[index],index);
+      if(action._visitChange)visitChanges.push({hid:action.hid,action,...action._visitChange});
       changed=true;
     }
     await api.acknowledge(action.id,nativeBackgroundSnapshot());
   }
   if(changed){nativeReminderLastSignature='';refreshOpenViews();queueNativeBackgroundSnapshot();}
+  if(visitChanges.length && typeof showActionToast === 'function'){
+    showActionToast('Visit marked items done',{type:'location-visit',changes:visitChanges,toastOnlyUndo:true});
+  }
 }
 async function reconcileNativeRemindersNow(){
   const api = window.TingsNative?.notifications;

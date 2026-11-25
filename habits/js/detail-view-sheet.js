@@ -94,6 +94,10 @@ function paintDetailEditorFields(h,items = null){
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-early-window').value = habitEarlyWindowDays(h);
   $('detail-delay-allowance').value = habitDelayAllowanceDays(h);
+  $('detail-auto-visit')?.setAttribute('aria-pressed',h.autoCompleteOnVisit ? 'true' : 'false');
+  if($('detail-visit-row'))$('detail-visit-row').hidden = !locationVisitSupported(h);
+  if($('detail-visit-help'))$('detail-visit-help').hidden = !locationVisitSupported(h);
+  if($('detail-visit-help'))$('detail-visit-help').textContent = 'An accurate fix at a saved allowed place checks this off within its allowed days, hours and early window. Enable location in Settings. Browser detection needs Tings open. Android background detection requires background location access.' + (window.TingsNative?.isNative && (sortSettings.locations || []).length > 32 ? ' Android monitors up to 32 places at once, prioritizing places used by enabled items.' : '');
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',h.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
   if($('detail-min-gap'))$('detail-min-gap').value = String(clampMinGapMinutes(h.minGapMinutes));
@@ -316,6 +320,7 @@ function detailTuneSnapshot(h){
     tapStartsSession:Boolean(h.tapStartsSession),
     autoMarkMinutes:h.autoMarkMinutes ?? null,
     trackValue:Boolean(h.trackValue),
+    autoCompleteOnVisit:Boolean(h.autoCompleteOnVisit),
     earlyWindowDays:habitEarlyWindowDays(h),
     delayAllowanceDays:habitDelayAllowanceDays(h),
     priority:effectivePriority(h),

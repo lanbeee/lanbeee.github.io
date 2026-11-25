@@ -83,7 +83,7 @@ function assert(ok, message){
             preferredWeekdays:'Monday',preferredMonthDays:'1, 15',preferredWindow:'6pm to 8pm',
             allowedOrdinalWeekdays:'last Friday of every month',preferredOrdinalWeekdays:'second Tuesday of every month',
             durationMinutes:'30 minutes',breakable:'yes',minChunkMinutes:'15 minutes',minGapMinutes:'20 minutes',
-            timerAutoStopMinutes:'30 minutes',autoMarkMinutes:'5 minutes',tapStartsSession:'yes',trackValue:'yes',places:'Home',anywhereAllowed:'no',locationPrefs:'prefer Home',
+            timerAutoStopMinutes:'30 minutes',autoMarkMinutes:'5 minutes',tapStartsSession:'yes',trackValue:'yes',places:'Home',anywhereAllowed:'no',autoCompleteOnVisit:'yes',locationPrefs:'prefer Home',
             weatherProfile:'Dry',weatherRules:'temperature above 10 C',showWeather:'yes',showWeatherAtLocation:'yes',weatherLocationId:'Home',
             scheduleOptions:'Monday from 6pm to 8pm',scheduleLinks:'after Meeting',topics:'Fitness',pinned:'yes',snoozedUntil:'tomorrow',sharedDisplay:'view',links:'https://example.com',
             appointmentRepeat:'weekly',appointmentStartDate:'2026-11-09',appointmentWeekdays:'Monday',appointmentUntil:'2026-12-01',appointmentStartMinute:'9am',

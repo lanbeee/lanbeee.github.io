@@ -198,10 +198,12 @@ async function installFailingWorkerStub(page){
       const syncWeek = buildWeekAgenda(data, settings, 7, {fullToday:true,fastGraph:false,skipDropAnnotation:true});
       const syncRaw = projectionMapFromWeek(data, syncWeek);
       // Worker build with the clock pinned to the same frozen instant.
-      let workerErr = null, workerRaw = null;
+      let workerErr = null, workerRaw = null, defaultClockRaw = null;
       try{
         const workerWeek = await buildWeekAgendaOffMain(data, settings, 7, 'fast', {greedy:true, nowTs:now});
         workerRaw = projectionMapFromWeek(data, workerWeek);
+        const defaultClockWeek = await buildWeekAgendaOffMain(data, settings, 7, 'fast', {greedy:true});
+        defaultClockRaw = projectionMapFromWeek(data, defaultClockWeek);
       }catch(err){ workerErr = String(err && err.message || err); }
       let diffDay = null;
       for(const key of Object.keys(syncRaw)){
@@ -232,6 +234,7 @@ async function installFailingWorkerStub(page){
         syncDayCount:Object.keys(syncRaw).length,
         workerDayCount:workerRaw ? Object.keys(workerRaw).length : 0,
         rawParity:JSON.stringify(syncRaw) === JSON.stringify(workerRaw),
+        defaultClockParity:JSON.stringify(syncRaw) === JSON.stringify(defaultClockRaw),
         occKeys,
         walkExpectedToday:(todayRaw.hids || []).includes('walk-1'),
         landedParity:JSON.stringify(landed) === JSON.stringify(expected),
@@ -245,6 +248,7 @@ async function installFailingWorkerStub(page){
     assert(r.syncDayCount === 7 && r.workerDayCount === 7,
       `both builds cover 7 days (sync ${r.syncDayCount}, worker ${r.workerDayCount})`);
     assert(r.rawParity, `worker projection diverges from the synchronous projection on day ${r.diffDay}`);
+    assert(r.defaultClockParity, 'worker requests inherit the page clock when no timestamp override is supplied');
     assert(r.occKeys.length >= 2,
       `multi-occurrence habit projects multiple keyed occurrences today (got ${r.occKeys.length}: ${r.occKeys.join(', ')})`);
     assert(r.walkExpectedToday, 'window-closed habit still projects as expected on today (fullToday)');

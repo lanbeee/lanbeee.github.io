@@ -157,6 +157,7 @@ const ASSISTANT_FOCUS_FIELD_READS = [
   ['dueDate', /\bwhen is it due\b|\bwhat(?:'s| is) the due\b|\bdue date\b|\bdeadline\b|\bwhen(?:'s| is) (?:it|this) due\b/i],
   ['planByDate', /\b(?:do|done|finish|plan) by\b|\bplan[- ]by\b/i],
   ['places', /\bwhere\b|\bwhich (?:places?|locations?)\b|\bwhat locations?\b/i],
+  ['autoCompleteOnVisit', /\b(?:mark done on visit|visit completion|auto.?complete on visit)\b/i],
   ['anywhereAllowed', /\banywhere\b/i],
   ['locationPrefs', /\b(?:place|location) (?:preferences?|ranking|order|preference)/i],
   ['topics', /\btopics?\b|\btags?\b/i],
@@ -248,6 +249,7 @@ const ASSISTANT_FIELD_QUESTION_ALIASES = {
   tapStartsSession:['start with a tap', 'tap to start'],
   trackValue:['value tracking', 'track a value', 'log a value'],
   places:['places', 'allowed places', 'saved places', 'locations'],
+  autoCompleteOnVisit:['mark done on visit', 'visit completion', 'auto complete on visit'],
   anywhereAllowed:['anywhere'],
   locationPrefs:['place preferences', 'preferred places', 'place ranking'],
   weatherProfile:['weather profile', 'weather guidance'],
@@ -488,6 +490,10 @@ function assistantFocusQuestionIntent(text, session){
   if(/\b\d+(?:\.\d+)?\s*(?:min(?:ute)?s?|hours?|hrs?)\b/i.test(request))return null;
   const plan = assistantFocusPlanIntent(request);
   if(plan)return plan;
+  if(assistantFocusFieldHelpMatches(request,session).some(row=>row.ids[0] === 'autoCompleteOnVisit')){
+    const visitField = assistantFocusFieldIntent(request,session);
+    if(visitField)return visitField;
+  }
   if(action)return null;
   const field = assistantFocusFieldIntent(request, session);
   if(field)return field;

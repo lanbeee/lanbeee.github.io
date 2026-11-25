@@ -13,7 +13,7 @@
  * (e.g. weight), minutes (chunk progress on breakable items), and/or a
  * free-form text note. Day plans may carry `timed` (hard clock) and
  * `locationId` (one-day place override); plan-by (`planByDate`) is separate.
- * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string,source?:'calendar'|'shared_display'|'native_alarm'|'native_widget',operationId?:string})} LogEntry
+ * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string,source?:'calendar'|'shared_display'|'native_alarm'|'native_widget'|'location_visit',operationId?:string})} LogEntry
  */
 
 /**
@@ -118,6 +118,7 @@
  * @property {number|null} timerAutoStopMinutes — optional manual-session target (legacy field name; null = use durationMinutes)
  * @property {Object|null} appointment — explicit local calendar rule: once/weekly, startDate, optional until, weekdays, startMinute, and per-date exceptions. Reserves time independently of cadence; no automatic attendance.
  * @property {number|null} autoMarkMinutes — null = manual. Non-breakables complete after their trigger plus this delay; breakables reconcile captured agenda chunks after their end plus this delay.
+ * @property {boolean} autoCompleteOnVisit — check off a supported item on an eligible observed visit; defaults false
  * @property {boolean} tapStartsSession        — pulse starts/stops a session instead of logging; defaults false
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.

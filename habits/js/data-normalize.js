@@ -412,6 +412,7 @@ function normalize(items){
       ...normalizeCombineFields(raw, 'allowedTimeEnd'),
       ...normalizeCombineFields(raw, 'preferredTimeStart'),
       ...normalizeCombineFields(raw, 'preferredTimeEnd'),
+      autoCompleteOnVisit:raw.autoCompleteOnVisit === true,
       earlyWindowDays,
       delayAllowanceDays,
       // Transitional export alias for older Tings builds. New scheduling code

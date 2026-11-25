@@ -481,6 +481,7 @@ function assistantEmptyDraft(){
     breakable:null,
     minChunkMinutes:null,
     autoMarkMinutes:undefined,
+    autoCompleteOnVisit:null,
     trackValue:null,
     pinned:null,
     snoozedUntil:undefined,
@@ -1122,7 +1123,7 @@ function assistantNormalizeDraftArgs(args, now){
   if(out.autoMarkMinutes !== undefined && typeof assistantParseAutoMark === 'function'){
     out.autoMarkMinutes = assistantParseAutoMark(out.autoMarkMinutes);
   }
-  ['hardDue','trackValue','pinned','sharedDisplay','sharedComplete','showWeather','weatherAtPlace','anywhere'].forEach(key => {
+  ['autoCompleteOnVisit','hardDue','trackValue','pinned','sharedDisplay','sharedComplete','showWeather','weatherAtPlace','anywhere'].forEach(key => {
     if(out[key] != null && typeof assistantParseBool === 'function'){
       const parsed = assistantParseBool(out[key]);
       if(parsed != null)out[key] = parsed;
@@ -1380,6 +1381,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data, opts){
   if(typeof raw.breakable === 'boolean')next.breakable = raw.breakable;
   if(raw.minChunkMinutes != null)next.minChunkMinutes = raw.minChunkMinutes;
   if(raw.autoMarkMinutes !== undefined)next.autoMarkMinutes = raw.autoMarkMinutes;
+  if(typeof raw.autoCompleteOnVisit === 'boolean')next.autoCompleteOnVisit = raw.autoCompleteOnVisit;
   if(typeof raw.trackValue === 'boolean')next.trackValue = raw.trackValue;
   if(typeof raw.pinned === 'boolean')next.pinned = raw.pinned;
   if(raw.snoozedUntil !== undefined)next.snoozedUntil = raw.snoozedUntil;
@@ -3627,6 +3629,7 @@ function assistantHabitToDraft(habit, index, settings, data){
   draft.breakable = Boolean(habit.breakable);
   draft.minChunkMinutes = habit.minChunkMinutes != null ? habit.minChunkMinutes : null;
   draft.autoMarkMinutes = habit.autoMarkMinutes !== undefined ? habit.autoMarkMinutes : null;
+  draft.autoCompleteOnVisit = Boolean(habit.autoCompleteOnVisit);
   draft.trackValue = Boolean(habit.trackValue);
   draft.pinned = Boolean(habit.pinned);
   draft.snoozedUntil = habit.snoozedUntil || null;
@@ -4895,6 +4898,7 @@ function assistantDraftFingerprint(draft){
     br:draft.breakable,
     mc:draft.minChunkMinutes,
     am:draft.autoMarkMinutes,
+    av:draft.autoCompleteOnVisit,
     tv:draft.trackValue,
     pin:draft.pinned,
     sn:draft.snoozedUntil,
@@ -5002,6 +5006,9 @@ function assistantDraftSummary(draft, settings){
   if(draft.habitKind === 'zero')parts.push('stop');
   if(Array.isArray(draft.topics) && draft.topics.length)parts.push(draft.topics.join(', '));
   if(draft.breakable)parts.push('split');
+  const previousVisitSetting = draft.hid && load().find(h=>h.hid === draft.hid)?.autoCompleteOnVisit;
+  if(draft.autoCompleteOnVisit === true)parts.push('mark done on visit');
+  else if(draft.autoCompleteOnVisit === false && previousVisitSetting)parts.push('visit completion off');
   if(draft.pinned)parts.push('pinned');
   if(draft.snoozedUntil && Number(draft.snoozedUntil) > Date.now())parts.push('snoozed');
   else if(draft.applyNote)parts.push(draft.applyNote);
@@ -5083,6 +5090,7 @@ function assistantDraftToHabit(draft, settings, now, data){
     earlyWindowDays:draft.earlyWindowDays != null ? draft.earlyWindowDays : s.defaultEarlyWindowDays,
     delayAllowanceDays:draft.delayAllowanceDays != null ? draft.delayAllowanceDays : s.defaultDelayAllowanceDays,
     autoMarkMinutes:draft.autoMarkMinutes !== undefined ? draft.autoMarkMinutes : s.defaultAutoMarkMinutes,
+    autoCompleteOnVisit:Boolean(draft.autoCompleteOnVisit),
     trackValue:Boolean(draft.trackValue),
     showWeather:Boolean(draft.showWeather),
     showWeatherAtLocation:Boolean(draft.showWeatherAtLocation),

@@ -278,7 +278,7 @@ function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {
         // nowTs pins the worker realm's clock to the caller's (they must agree
         // on "now" or the projection diverges from the main-thread build).
         greedy:Boolean(opts.greedy),
-        nowTs:Number.isFinite(opts.nowTs) ? opts.nowTs : null,
+        nowTs:Number.isFinite(opts.nowTs) ? opts.nowTs : Date.now(),
         dirtyKey:opts.dirtyKey || (typeof homePlannerDirtyKey === 'function' ? homePlannerDirtyKey(data) : ''),
         day0Only:Boolean(opts.day0Only),
         refine:Boolean(opts.refine),

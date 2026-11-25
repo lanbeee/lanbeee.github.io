@@ -125,6 +125,7 @@ const {chromium,webkit} = require('playwright');
     await fill('autoMark','set','0');
     await fill('sessionTarget','set','35');
     await set('tapSession','on');
+    await set('autoCompleteOnVisit','on');
     await set('trackValue','on');
     await set('snooze','clear');
     await set('sharedDisplay','off');
@@ -171,6 +172,16 @@ const {chromium,webkit} = require('playwright');
     assert.equal(saved[1].eventTime,Date.parse('2026-11-01T02:30:00-05:00'),'start time uses the local clock across DST');
     await page.locator('#action-undo').click();
     assert.deepEqual(await page.evaluate(()=>load()),before,'one undo restores coupled fields, including the old anchors and places');
+
+    await chooseItems(['Audit habit','Audit task']);
+    await set('autoCompleteOnVisit','on');
+    await page.locator('#bulk-review-continue').click();
+    assert.match(await page.locator('#bulk-review-lines').innerText(),/Mark done on visit → on: 2 items/);
+    await page.locator('#bulk-apply').click();
+    assert.deepEqual(await page.evaluate(()=>load().map(h=>h.autoCompleteOnVisit)),[true,true,false],
+      'visit completion enables only the selected items');
+    await page.locator('#action-undo').click();
+    assert.deepEqual(await page.evaluate(()=>load()),before,'undo restores the visit-completion settings');
 
     await chooseItems(['Audit habit']);
     await set('planBy','set');

@@ -510,6 +510,10 @@ bindDetailTimerTap($('detail-timer-toggle'),()=>{
     showToast(h.type === 'zero' ? 'timer not available' : 'already done');
   }
 });
+$('detail-auto-visit')?.addEventListener('click',function(){
+  this.setAttribute('aria-pressed',String(this.getAttribute('aria-pressed') !== 'true'));
+  setDetailDirty();
+});
 $('detail-breakable')?.addEventListener('click',function(){
   const pressed = this.getAttribute('aria-pressed') === 'true';
   this.setAttribute('aria-pressed',String(!pressed));

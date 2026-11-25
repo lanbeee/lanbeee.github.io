@@ -49,6 +49,7 @@ const ASSISTANT_FOCUS_FIELDS = [
   {id:'trackValue', label:'Value tracking', family:'effort', kinds:['habit','task'], persist:'trackValue', clear:false},
 
   {id:'places', label:'Places', family:'places', kinds:['habit','task','event'], persist:'locationIds', clear:true},
+  {id:'autoCompleteOnVisit', label:'Mark done on visit', family:'places', kinds:['habit','task'], persist:'autoCompleteOnVisit', clear:false},
   {id:'anywhereAllowed', label:'Anywhere', family:'places', kinds:['habit','task'], persist:'anywhereAllowed', clear:false},
   {id:'locationPrefs', label:'Place preferences', family:'places', kinds:['habit','task'], persist:'locationPrefs', clear:true},
 

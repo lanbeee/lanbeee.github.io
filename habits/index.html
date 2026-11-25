@@ -630,6 +630,11 @@
             <span class="settings-sublabel" id="detail-places-label">places</span>
             <p class="field-hint" id="detail-places-hint">These places use the time window above.</p>
             <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
+            <label class="setting-toggle compact-toggle" id="detail-visit-row">
+              <span>mark done when visiting an allowed place</span>
+              <button class="setting-switch" id="detail-auto-visit" type="button" aria-pressed="false"><span class="switch-ui" aria-hidden="true"></span></button>
+            </label>
+            <p class="field-hint" id="detail-visit-help">An accurate location fix at a saved allowed place can check this off during its allowed hours and early window. Enable location in Settings. Browser detection works while Tings is open. Check-off tasks and build habits only, with splitting and value tracking off.</p>
           </div>
           </details>
           <details class="detail-disclosure detail-full-only" id="detail-options-disclosure">
@@ -2614,6 +2619,7 @@
 <script src="./js/calendar-ics.js" defer></script>
 <script src="./js/calendar-device.js" defer></script>
 <script src="./js/locations.js" defer></script>
+<script src="./js/location-completion.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>
 <script src="./js/weather.js" defer></script>
 <script src="./js/scoring.js" defer></script>

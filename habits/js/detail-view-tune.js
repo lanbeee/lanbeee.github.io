@@ -109,6 +109,7 @@ function currentDetailTune(){
     ...combineFieldsFromEndpoint('detail-preferred-time-start','preferredTimeStart'),
     ...combineFieldsFromEndpoint('detail-preferred-time-end','preferredTimeEnd'),
     durationMinutes:clampDuration($('detail-duration').value),
+    autoCompleteOnVisit:$('detail-auto-visit')?.getAttribute('aria-pressed') === 'true',
     breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
     minGapMinutes:clampMinGapMinutes($('detail-min-gap')?.value),

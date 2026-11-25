@@ -168,6 +168,8 @@ const cases=[
   ['trackValue','Track a value',true],
   ['places','Set place to Home',['home']],
   ['places','At Home',['home'],{id:'place-locative-saved-name'}],
+  ['autoCompleteOnVisit','Enable mark done on visit',true,{record:{autoCompleteOnVisit:true},selectAll:true}],
+  ['autoCompleteOnVisit','Disable mark done on visit',false,{id:'visit-completion-off',seed:{autoCompleteOnVisit:true},record:{autoCompleteOnVisit:false},selectAll:true}],
   ['locationPrefs','Prefer Home',{home:'high'},{id:'place-preference-saved-name'}],['anywhereAllowed','Allow anywhere',true,{seed:{anywhereAllowed:false}}],
   ['locationPrefs','Prefer Home as the place',{home:'high'}],
   ['weatherProfile','Use weather profile Dry',{mode:'profile',profileId:'dry'}],

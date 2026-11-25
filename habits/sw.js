@@ -1,4 +1,4 @@
-const CACHE = 'tings-v1035';
+const CACHE = 'tings-v1039';
 const MAPS_CACHE = 'tings-maps-v3';
 // Map tiles accumulate forever in a cache-first cache; this is the ceiling
 // where the oldest tiles get dropped (bounded, insertion-order eviction).
@@ -122,6 +122,7 @@ const PRECACHE = [
   './js/calendar-ics.js',
   './js/calendar-device.js',
   './js/locations.js',
+  './js/location-completion.js',
   './js/prayer-times.js',
   './js/weather.js',
   './js/scoring.js',

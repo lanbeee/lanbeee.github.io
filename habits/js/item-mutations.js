@@ -720,6 +720,17 @@ function bulkReminderCatalog(){
 // ─────────────────────────────────────────────────────────────────────────
 const BULK_FIELD_OPS = [
   {
+    id:'autoCompleteOnVisit',group:'Places',label:'Mark done on visit',
+    hint:'Check off during an eligible visit to a saved allowed place. Requires location access.',
+    choices:[BULK_KEEP,{key:'on',label:'On'},{key:'off',label:'Off'}],
+    applies:h=>locationVisitSupported(h),
+    blockedReason:()=>'requires a check-off task or build habit without splitting or value tracking',
+    current:h=>h.autoCompleteOnVisit ? 'on' : 'off',
+    plan:()=>({ok:true}),
+    apply:(h,op)=>{h.autoCompleteOnVisit = op === 'on';return ['autoCompleteOnVisit'];},
+    changeLabel:(h,op)=>`Mark done on visit → ${op}`
+  },
+  {
     id:'priority',group:'Organization',label:'Priority',common:true,
     hint:'When time is limited, higher-priority items get time first.',
     choices:bulkKeepSet(),

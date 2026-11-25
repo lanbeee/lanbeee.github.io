@@ -395,10 +395,16 @@ async function openPicker(page){
     visualViewport.dispatchEvent(new Event('resize'));
     visualViewport.dispatchEvent(new Event('scroll'));
   },{height,offsetTop});
-  const inView = (ids, top, bottom) => page.evaluate(({ids,top,bottom})=>ids.every(id=>{
-    const r = $(id).getBoundingClientRect();
-    return r.height && r.top >= top - 1 && r.bottom <= bottom + 1 && r.left >= 0 && r.right <= innerWidth;
-  }),{ids,top,bottom});
+  const inView = async (ids, top, bottom) => {
+    const visible = ({ids,top,bottom})=>ids.every(id=>{
+      const r = document.getElementById(id).getBoundingClientRect();
+      return r.height && r.top >= top - 1 && r.bottom <= bottom + 1 && r.left >= 0 && r.right <= innerWidth;
+    });
+    // Keyboard geometry and focus scrolling settle on the next animation frame.
+    // A viewport variable alone can already match before that frame runs.
+    await page.waitForFunction(visible,{ids,top,bottom},{timeout:2000}).catch(()=>{});
+    return page.evaluate(visible,{ids,top,bottom});
+  };
   const pin = () => page.evaluate(()=>[$('picker-lat').value,$('picker-lng').value].join(','));
   await viewport(640);
   await page.locator('#locations-manager-add').click();
