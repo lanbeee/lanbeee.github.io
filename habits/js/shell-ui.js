@@ -2300,10 +2300,10 @@ document.addEventListener('pointerup',e=>{
   if(Date.now() - time >= 1200)return;
 
   const headerPill = btn.matches('.weather-day-button,.free-pill,.dropped-pill');
-  // Header pills always use the settled synthesized path. Sticky repositioning
-  // can swallow a browser-native exact tap even when the pointer never moved;
-  // the scroll snapshots below still prevent a pan from activating a pill.
-  const shouldClick = moved > 8 || headerPill || armedBySlop;
+  // Recover touch taps when sticky repositioning swallows the native click.
+  // An exact mouse press already produces a click. Deferring it would let
+  // unrelated scrolling after release cancel a completed click.
+  const shouldClick = moved > 8 || (headerPill && e.pointerType !== 'mouse') || armedBySlop;
   if(!shouldClick)return;
 
   suppressNativeButton = btn;
