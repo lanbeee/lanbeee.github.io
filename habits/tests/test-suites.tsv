@@ -258,3 +258,4 @@ typing-smoothness-test.js	ui	once
 navigation-smoothness-test.js	ui	once
 
 location-visit-completion-test.js	integrations	page-both
+untimed-plan-placement-test.js	planner	once

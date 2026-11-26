@@ -726,9 +726,10 @@ function compareWeekClaimPriority(a,b,dayStates){
 // open time and protected-window spare. It may displace the reservation only
 // when it has strictly higher priority; otherwise the occurrence remains a
 // visible miss/catch-up instead of silently shortening an equal/higher daily.
-function requiredOccurrenceCanClaimDay(c,state,candidates,lastLogTs,completionOffset = 0){
-  if(!mustPlaceOccurrenceByDay(c,state && state.dayBase,lastLogTs,completionOffset))return false;
-  if(!state)return false;
+function requiredOccurrenceCanClaimDay(c,state,candidates,lastLogTs,completionOffset = 0,allowPlan = false){
+  if(!state || !c || !c.h)return false;
+  if(!mustPlaceOccurrenceByDay(c,state.dayBase,lastLogTs,completionOffset)
+    && !(allowPlan && fillIsPlannedOnDay(c.h,state.dayBase,state.settings)))return false;
   const reservations = dailyBreakableReservations(state,candidates);
   if(!reservations.length)return true;
   const dur = clampDuration(c && c.h && c.h.durationMinutes);

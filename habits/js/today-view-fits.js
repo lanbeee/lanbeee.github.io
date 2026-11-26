@@ -1431,19 +1431,20 @@ function diagnosticsFromRenderedDay(data,settings,day){
     weekday:day.weekday,
     startClock
   });
+  const timeline = Array.isArray(day.timeline) ? day.timeline : [];
+  const placedIndices = new Set(timeline.filter(row=>row.kind === 'fill').map(row=>row.i));
   const candidates = [];
   for(let i = 0;i < data.length;i += 1){
     const h = data[i];
     if(!h || (typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable)))continue;
     if(!h.breakable && hasTimedPlanForDay(h,day.dayBase))continue;
-    const pinned = isWeekPinnedToday(h,settings);
-    if((pinned && day.isToday) || (!pinned && isWeekCandidate(h,settings,day.dayBase,day.weekday))){
+    const pin = plannerPinnedDayBase(h,settings,dayStart(Date.now()));
+    if(placedIndices.has(i) || weekFillEligibleOnDay(h,settings,day.dayBase,day.weekday,pin)){
       candidates.push({h,i,priority:effectivePriority(h)});
     }
   }
 
-  const timeline = Array.isArray(day.timeline) ? day.timeline : [];
   state.rows = timeline.filter(row=>row.kind === 'scheduled').map(row=>({...row,h:data[row.i] || row.h}));
   const travels = timeline.filter(row=>row.kind === 'travel');
   const chunkCounts = new Map();
@@ -1674,8 +1675,7 @@ function buildPlannerDecisionTrace(data,settings,context){
     const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
     const attention = typeof attentionScore === 'function'
       ? attentionScore(h,i,settings) : null;
-    const pinned = typeof isWeekPinnedToday === 'function'
-      ? isWeekPinnedToday(h,settings) : false;
+    const pinned = fillIsPlannedOnDay(h,dayBase,settings);
     const orderInputs = [];
     if(h.hid){
       for(const edge of constraints){
@@ -1732,7 +1732,7 @@ function buildPlannerDecisionTrace(data,settings,context){
       `urgency ${Math.round(urgency)}`,
       Number.isFinite(attention) ? `attention ${attention.toFixed(2)}` : '',
       plannerTraceScarcityInput(meta.scarcity),
-      pinned ? 'planned for today' : 'not a day plan',
+      pinned ? 'planned for this day' : 'not a day plan',
       timedBreakable ? `fixed first start ${agendaTimeLabel(h.eventTime)}; may pause and resume after that` : '',
       timedBreakable
         ? `remaining sessions may use ${hardLabels.join('; ')}`
@@ -1919,6 +1919,12 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     .filter(item=>item && item.subjectHid)
     .map(item=>[item.subjectHid,item.reason || 'linked placement could not be honored']));
 
+  const priorStates = (week?.days || []).filter(day=>day.dayBase < dayBase).map(day=>({
+    dayBase:day.dayBase,
+    rows:day.timeline || [],
+    fills:(day.timeline || []).filter(row=>row.kind === 'fill').map(row=>({fill:{i:row.i}}))
+  }));
+  const placedIndices = new Set(timeline.filter(row=>row.kind === 'fill').map(row=>row.i));
   const eligible = visibleIndices(data,settings).filter(i=>{
     const h = data[i];
     if(!h || h.type === 'zero')return false;
@@ -1926,7 +1932,22 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
       ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable))))return false;
     if(!h.breakable && hasTimedPlanForDay(h,dayBase))return false;
     if(!isToday && opts.weekMode){
-      return isWeekCandidate(h,settings,dayBase,new Date(dayBase).getDay());
+      if(placedIndices.has(i))return true;
+      const weekday = new Date(dayBase).getDay();
+      const pin = plannerPinnedDayBase(h,settings,dayStart(now));
+      if(!weekFillEligibleOnDay(h,settings,dayBase,weekday,pin))return false;
+      const priorRows = priorStates.flatMap(state=>state.rows.filter(row=>
+        row.i === i && (row.kind === 'fill' || row.kind === 'scheduled')));
+      if(!priorRows.length)return true;
+      if(h.type === 'task'){
+        return h.breakable && priorRows.reduce((sum,row)=>sum+(row.end-row.start)/60000,0)
+          < remainingDurationMinutes(h);
+      }
+      // Earlier projected completions advance the rhythm just as they do in
+      // the solver. Only a new eligible occurrence belongs in this day's load.
+      const auditState = {dayBase,weekday,settings,registry:settings.locations,
+        fills:timeline.filter(row=>row.kind === 'fill').map(row=>({fill:{i:row.i,h:data[row.i]}}))};
+      return candidateOccurrenceFitsOnDay({h,i},auditState,priorStates);
     }
     return includeInTodayAgenda(h,settings) && windowStillDoableToday(h,now);
   });
@@ -1944,8 +1965,6 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   }
   const assignmentLabel = (i)=>{
     const h = data[i];
-    const pinned = typeof isWeekPinnedToday === 'function'
-      ? isWeekPinnedToday(h,settings) : false;
     // A later row is meaningful for a one-shot/sparse occurrence even after
     // its delay allowance expired: at that point it is catch-up evidence, not
     // proof that today's due occurrence was legitimately postponed. Daily
@@ -2058,9 +2077,8 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     const mustPlace = typeof mustPlaceOccurrenceByDay === 'function'
       ? mustPlaceOccurrenceByDay(candidate,dayBase)
       : ((h.type === 'task' && h.dueDate != null) ? dayBase >= dayStart(h.dueDate) : false);
-    const pinnedToday = typeof isWeekPinnedToday === 'function'
-      && isWeekPinnedToday(h,settings);
-    if(mustPlace || pinnedToday)return pinnedToday ? 'planned-today work' : 'due work';
+    const pinnedToday = fillIsPlannedOnDay(h,dayBase,settings);
+    if(mustPlace || pinnedToday)return pinnedToday ? 'work planned for this day' : 'due work';
     if(h.hid && auditOrderEdges.some(edge=>edge
       && (edge.beforeHid === h.hid || edge.afterHid === h.hid)
       && placedTodayHids.has(edge.beforeHid === h.hid ? edge.afterHid : edge.beforeHid))){
@@ -2156,7 +2174,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     .map(mapAgendaRow);
   const traceAgendaRows = timeline
     .filter(row=>row.kind === 'fill' || row.kind === 'scheduled' || row.kind === 'travel')
-    .map(mapAgendaRow);
+    .map(row=>({...mapAgendaRow(row),h:data[row.i] || row.h}));
   const schedulerPlacementRowCount = timeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').length;
   const displayedPlacementRowCount = homeTimeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').length;
 

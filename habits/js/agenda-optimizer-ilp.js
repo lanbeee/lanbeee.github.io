@@ -2788,6 +2788,23 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     }
     recordFixedChoices(state,chosen);
   }
+  // Option caps or a relaxed fixed pack can omit an explicit day plan even
+  // when shifting a flexible neighbor would retain all selected work.
+  const planBudget = {remaining:192,searches:0,accepted:0};
+  for(const c of candidates){
+    if(!c.pinned || c.h.breakable || !fillIsPlannedOnDay(c.h,c.pinnedDay,settings)
+      || dayStates.some(day=>day.placed.has(c.i)))continue;
+    const state = dayStates.find(day=>day.dayBase === c.pinnedDay);
+    if(!state || !candidateOccurrenceFitsOnDay(c,state,dayStates)
+      || !requiredOccurrenceCanClaimDay(c,state,candidates,undefined,0,true))continue;
+    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    const fit = fastGraphPlacement(state,fill,{settings,allowNetwork:false},candidates,dayStates,planBudget);
+    if(!fit)continue;
+    if(fit.replacement)applyPlacementState(state,fit.replacement);
+    else commitPlacement(state,fill,fit.fit);
+    syncDayAgendaItemsFromFills(state);
+    total += 1;
+  }
   // A bounded recovery pass catches a fixed item whose only usable start became
   // visible after the ILP commits. It runs before flexible work consumes gaps.
   if(typeof rescueLeftoverWeekFits === 'function'){

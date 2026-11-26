@@ -97,6 +97,22 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
     || a.fit.placeStart - b.fit.placeStart
     || a.fill.i - b.fill.i).slice(0,7);
   if(!movable.length)return null;
+  // A manual plan often needs just one flexible blocker to slide. Try these
+  // small neighborhoods before spending the beam on unrelated permutations.
+  const probeLimit = Math.min(192,budget.remaining);
+  const floor = budget.remaining - probeLimit;
+  const groups = fillIsPlannedOnDay(fill.h,state.dayBase,state.settings) && movable.length > 1
+    ? [...movable.map(entry=>[entry]),movable] : [movable];
+  for(const group of groups){
+    if(budget.remaining <= floor)break;
+    const result = searchFastGraphNeighborhood(state,fill,opts,candidates,dayStates,budget,
+      byIndex,group,budget.remaining - floor);
+    if(result)return result;
+  }
+  return null;
+}
+
+function searchFastGraphNeighborhood(state,fill,opts,candidates,dayStates,budget,byIndex,movable,maxProbes){
   const moving = new Set(movable.map(entry=>entry.fill.i));
   const fixed = state.fills.filter(entry=>!moving.has(entry.fill.i));
   const base = cloneFastGraphState(state);
@@ -108,7 +124,6 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
   const pending = [fill,...movable.map(entry=>entry.fill)].map(f=>({...f}));
   let frontier = [{state:base,pending,cost:0}];
   let probes = 0;
-  const maxProbes = Math.min(192,budget.remaining);
   budget.searches += 1;
   const accept = trial=>{
     if(opts.acceptState && !opts.acceptState(trial))return null;

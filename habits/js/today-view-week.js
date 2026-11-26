@@ -3223,7 +3223,7 @@ function candidateOccurrenceFitsOnDay(c,state,dayStates){
   if(h.type === 'task')return candidateOccurrenceAllowsDay(c,state.dayBase);
   const {reference,offset} = candidatePriorOccurrence(c,state.dayBase,dayStates);
   if(!candidateOccurrenceAllowsDay(c,state.dayBase,offset ? reference : undefined,offset))return false;
-  if(reference == null || habitPlanByDate(h) != null)return true;
+  if(reference == null || habitPlanByDate(h) != null || fillIsPlannedOnDay(h,state.dayBase,state.settings))return true;
   if(rhythmEligibleOnDay(h,reference,state.dayBase,state.weekday,offset))return true;
   if(h.breakable && dayStart(reference) === state.dayBase && !completedOnDay(h,state.dayBase))return true;
   if(!rhythmFlexAllowsDay(h,reference,state.dayBase,offset))return false;
